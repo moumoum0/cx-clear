@@ -1,0 +1,32 @@
+--input
+"D:\\project\\cxclear\\build\\compose\\tmp\\createDistributable\\libs"
+--runtime-image
+"D:\\project\\cxclear\\build\\compose\\tmp\\main\\runtime"
+--resource-dir
+"D:\\project\\cxclear\\build\\compose\\tmp\\resources"
+--java-options
+"'-Dcompose.application.resources.dir=$APPDIR\\resources'"
+--main-jar
+"cxclear-1.0.0-65fe99dc96b7f53d71736fbc21b83cba.jar"
+--main-class
+"dev.cxclear.MainKt"
+--icon
+"D:\\project\\cxclear\\build\\compose\\default-resources\\1.7.1\\default-icon-windows.ico"
+--java-options
+"'-Dcompose.application.configure.swing.globals=true'"
+--java-options
+"'-Dsun.java2d.uiScale.enabled=true'"
+--java-options
+"'-Dskiko.library.path=$APPDIR'"
+--type
+"app-image"
+--dest
+"D:\\project\\cxclear\\build\\compose\\binaries\\main\\app"
+--name
+"Cx Clear"
+--description
+"AI Agent disk cleanup tool"
+--app-version
+"1.0.0"
+--vendor
+"Cx Clear"
