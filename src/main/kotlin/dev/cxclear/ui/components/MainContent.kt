@@ -119,11 +119,10 @@ fun MainContent(currentScreen: Screen) {
         TopBar(
             selectedTools = selectedTools,
             onToolToggle = { id ->
+                // 只切换选择，不动已完成的扫描结果——换工具图标不该抹掉上一轮扫出来的内容，
+                // 用户想把新工具纳入统计时再点「重新扫描」即可。
                 if (scanPhase != ScanPhase.SCANNING) {
                     selectedTools = if (id in selectedTools) selectedTools - id else selectedTools + id
-                    scanPhase = ScanPhase.IDLE
-                    scanCategories = emptyList()
-                    selectedTargets = emptySet()
                 }
             },
             scanPhase = scanPhase,
