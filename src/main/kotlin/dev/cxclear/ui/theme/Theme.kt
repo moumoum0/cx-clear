@@ -89,10 +89,14 @@ object AppColors {
     val CategoryHistory = M3Light.onPrimaryContainer
     val CategoryRetained = M3Light.inverseSurface
 
-    /** 圆柱外壳：容器本体，取最浅的 surface 阶梯，避免与内容争视觉重量。 */
+    /**
+     * 圆柱外壳：容器本体，取最浅的 surface 阶梯，避免与内容争视觉重量。
+     * Edge 只比 Mid 深一阶 —— 用 surfaceDim 会在空筒两侧压出两道明显的灰边，
+     * 圆度靠这一点点明度差交代就够，再深就成了脏。
+     */
     val CylinderShellLight = M3Light.surfaceContainerLowest
     val CylinderShellMid = M3Light.surfaceContainerLow
-    val CylinderShellEdge = M3Light.surfaceDim
+    val CylinderShellEdge = M3Light.surfaceContainerHigh
 }
 
 object AppDimensions {

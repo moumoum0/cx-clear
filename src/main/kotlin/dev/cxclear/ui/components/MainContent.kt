@@ -2,11 +2,13 @@ package dev.cxclear.ui.components
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -22,6 +24,7 @@ import androidx.compose.material.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
@@ -79,20 +82,21 @@ fun MainContent(currentScreen: Screen) {
         selectedTargets = emptySet()
         scope.launch {
             val profiles = ALL_PROFILES.filter { it.id in selectedTools }
-            val results = mutableMapOf<String, ScanResult>()
+            // TargetsScanned 每次带来的是全量快照，直接整份替换即可，无需再逐项累加。
+            var results = emptyList<ScanResult>()
             val spaces = mutableMapOf<String, ToolSpaceResult>()
 
-            // 每来一个事件就重算一次分类，柱体因此按真实测量进度生长，
-            // 不再需要占位数据和固定时长的假动画。
+            // 定时快照每到一次就重算一次分类，柱体按真实测量进度生长，
+            // 节奏由 Scanner 的定时器拍平，不随磁盘忽快忽慢抖动。
             scanStream(profiles).collect { event ->
                 when (event) {
                     is ScanEvent.Started -> Unit
-                    is ScanEvent.TargetScanned -> results[event.result.targetId] = event.result
+                    is ScanEvent.TargetsScanned -> results = event.results
                     is ScanEvent.SpaceScanned -> spaces[event.space.toolId] = event.space
                 }
                 scanCategories = buildCategories(
                     profiles = profiles,
-                    results = results.values.toList(),
+                    results = results,
                     totalToolBytes = spaces.values.sumOf { it.bytes },
                 )
             }
@@ -145,7 +149,6 @@ fun MainContent(currentScreen: Screen) {
                             selectedTargets + targetId
                         }
                     },
-                    onStartScan = ::startScan,
                 )
                 Screen.CLEAN -> CleanView()
                 Screen.HISTORY -> HistoryView()
@@ -203,7 +206,15 @@ private fun buildCategories(
     val knownBytes = (packageItems + workingItems + historyItems).sumOf { it.bytes }
     val retainedBytes = (totalToolBytes - knownBytes).coerceAtLeast(0L)
 
+    // retained 排在最前：它在图例最上、在柱体顶端留空。可清理的三类自底向上填，
+    // 扫描时彩色只增不减，顶部空区被逐渐顶掉，柱身高度（=totalBytes）始终不变。
     return listOf(
+        ScanCategory(
+            id = "retained",
+            label = "应用保留数据",
+            bytes = retainedBytes,
+            color = AppColors.CategoryRetained,
+        ),
         ScanCategory(
             id = "packages",
             label = "插件与安装缓存",
@@ -225,12 +236,6 @@ private fun buildCategories(
             color = AppColors.CategoryHistory,
             items = historyItems,
         ),
-        ScanCategory(
-            id = "retained",
-            label = "应用保留数据",
-            bytes = retainedBytes,
-            color = AppColors.CategoryRetained,
-        ),
     )
 }
 
@@ -240,7 +245,6 @@ private fun ScanView(
     categories: List<ScanCategory>,
     selectedTargets: Set<String>,
     onTargetToggle: (String) -> Unit,
-    onStartScan: () -> Unit,
 ) {
     when (phase) {
         ScanPhase.IDLE -> Column(
@@ -261,22 +265,15 @@ private fun ScanView(
             )
         }
 
-        ScanPhase.SCANNING -> ScanResultView(
+        // 两个阶段必须共用同一个调用点：`when` 的每个分支是独立的组合 group，
+        // 分开写会让扫描结束时整棵子树被丢弃重建，柱体里的 Animatable 一起归零，
+        // 于是明明数据没变，柱子却要塌成空筒再长一遍。
+        ScanPhase.SCANNING, ScanPhase.DONE -> ScanResultView(
             categories = categories,
-            isScanning = true,
-            totalBytes = categories.sumOf { it.bytes },
-            selectedTargets = emptySet(),
-            onTargetToggle = {},
-            onRescan = onStartScan,
-        )
-
-        ScanPhase.DONE -> ScanResultView(
-            categories = categories,
-            isScanning = false,
+            isScanning = phase == ScanPhase.SCANNING,
             totalBytes = categories.sumOf { it.bytes },
             selectedTargets = selectedTargets,
             onTargetToggle = onTargetToggle,
-            onRescan = onStartScan,
         )
     }
 }
@@ -288,7 +285,6 @@ private fun ScanResultView(
     totalBytes: Long,
     selectedTargets: Set<String>,
     onTargetToggle: (String) -> Unit,
-    onRescan: () -> Unit,
 ) {
     var expandedCategories by remember(categories) { mutableStateOf(emptySet<String>()) }
     val selectedBytes = categories
@@ -309,76 +305,143 @@ private fun ScanResultView(
             modifier = Modifier.width(170.dp).fillMaxHeight(),
         )
 
+        val cleanableBytes = categories
+            .filter { it.id != "retained" }
+            .sumOf { it.bytes }
+
         Column(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxHeight()
-                .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.Center,
+                .verticalScroll(rememberScrollState())
+                .padding(vertical = 20.dp),
+            verticalArrangement = Arrangement.Top,
         ) {
             Text(
-                text = if (isScanning) "正在扫描应用空间…" else "应用共占用 ${formatBytes(totalBytes)}",
+                text = if (isScanning) "已扫描 ${formatBytes(totalBytes)}" else "应用共占用 ${formatBytes(totalBytes)}",
                 fontSize = 24.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = AppColors.TextPrimary,
             )
-            Spacer(Modifier.height(4.dp))
+            Spacer(Modifier.height(6.dp))
             Text(
                 text = if (isScanning) {
-                    "正在统计完整占用和可清理位置"
+                    "可清理共 ${formatBytes(cleanableBytes)}"
                 } else {
-                    "已选择 ${formatBytes(selectedBytes)} 可清理内容"
+                    "已选择 ${formatBytes(selectedBytes)} · 可清理共 ${formatBytes(cleanableBytes)}"
                 },
                 fontSize = 12.sp,
                 color = AppColors.TextTertiary,
             )
-            Spacer(Modifier.height(12.dp))
+            // 占比条两态各表意，且都随数据动态生长：
+            // 扫描时 = 可清理 / 总占用（随字节累加实时增长，呼应「可清理共 X」）；
+            // 完成后 = 已选 / 可清理（呼应「已选择 X」）。补间动画抹平两态切换。
+            Spacer(Modifier.height(8.dp))
+            val selectedFraction = if (isScanning) {
+                if (totalBytes > 0L) (cleanableBytes.toFloat() / totalBytes).coerceIn(0f, 1f) else 0f
+            } else {
+                if (cleanableBytes > 0L) (selectedBytes.toFloat() / cleanableBytes).coerceIn(0f, 1f) else 0f
+            }
+            // 补间到目标占比，勾选/取消时宽度滑动而非瞬跳。
+            val animatedFraction by animateFloatAsState(
+                targetValue = selectedFraction,
+                animationSpec = tween(320, easing = FastOutSlowInEasing),
+            )
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(4.dp)
+                    .background(AppColors.Surface3, RoundedCornerShape(99.dp)),
+            ) {
+                if (animatedFraction > 0f) {
+                    Box(
+                        Modifier
+                            .fillMaxWidth(animatedFraction)
+                            .fillMaxHeight()
+                            .background(AppColors.Primary, RoundedCornerShape(99.dp)),
+                    )
+                }
+            }
+            Spacer(Modifier.height(14.dp))
 
             categories.forEach { category ->
                 val canExpand = !isScanning && category.items.isNotEmpty()
                 val isExpanded = category.id in expandedCategories
+                val isRetained = category.id == "retained"
+                val fraction = if (!isScanning && totalBytes > 0L) {
+                    (category.bytes.toFloat() / totalBytes).coerceIn(0f, 1f)
+                } else 0f
+
                 Column(modifier = Modifier.fillMaxWidth()) {
-                    Row(
+                    Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .background(AppColors.Surface3.copy(alpha = 0.72f), RoundedCornerShape(10.dp))
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(AppColors.Surface3.copy(alpha = if (isRetained) 0.4f else 0.72f))
                             .clickable(enabled = canExpand) {
                                 expandedCategories = if (isExpanded) {
                                     expandedCategories - category.id
                                 } else {
                                     expandedCategories + category.id
                                 }
-                            }
-                            .padding(horizontal = 12.dp, vertical = 9.dp),
-                        verticalAlignment = Alignment.CenterVertically,
+                            },
                     ) {
-                        Box(
-                            Modifier
-                                .size(10.dp)
-                                .background(category.color, RoundedCornerShape(99.dp))
-                        )
-                        Spacer(Modifier.width(10.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text(category.label, fontSize = 13.sp, color = AppColors.TextSecondary)
-                            if (!isScanning && category.id == "retained") {
-                                Text("应用运行所需，不提供清理", fontSize = 10.sp, color = AppColors.TextTertiary)
-                            }
-                        }
-
-                        if (isScanning) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(16.dp),
-                                color = category.color,
-                                strokeWidth = 2.dp,
+                        // 行内占比底纹：宽度 = 该类 / 总占用，用分类色淡染。
+                        // retained 不染（它是留白概念），彩色只给可清理项。
+                        if (!isRetained && fraction > 0f) {
+                            Box(
+                                Modifier
+                                    .fillMaxWidth(fraction)
+                                    .fillMaxHeight()
+                                    .background(category.color.copy(alpha = 0.14f)),
                             )
-                        } else {
+                        }
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 9.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            // retained 在柱体里是留白，图例也用空心描边圈呼应，不给实心色块。
+                            if (isRetained) {
+                                Box(
+                                    Modifier
+                                        .size(10.dp)
+                                        .border(1.dp, AppColors.OutlineVariant, RoundedCornerShape(99.dp))
+                                )
+                            } else {
+                                Box(
+                                    Modifier
+                                        .size(10.dp)
+                                        .background(category.color, RoundedCornerShape(99.dp))
+                                )
+                            }
+                            Spacer(Modifier.width(10.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    category.label,
+                                    fontSize = 13.sp,
+                                    color = if (isRetained) AppColors.TextTertiary else AppColors.TextSecondary,
+                                )
+                                if (isRetained) {
+                                    Text("应用运行所需，不提供清理", fontSize = 10.sp, color = AppColors.TextTertiary)
+                                }
+                            }
+
                             Text(
                                 text = formatBytes(category.bytes),
                                 fontSize = 14.sp,
                                 fontWeight = FontWeight.Medium,
-                                color = AppColors.TextPrimary,
+                                color = if (isRetained) AppColors.TextSecondary else AppColors.TextPrimary,
                             )
-                            if (canExpand) {
+                            if (isScanning) {
+                                Spacer(Modifier.width(8.dp))
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(14.dp),
+                                    color = category.color,
+                                    strokeWidth = 2.dp,
+                                )
+                            } else if (canExpand) {
                                 Spacer(Modifier.width(8.dp))
                                 Text(
                                     text = if (isExpanded) "⌃" else "⌄",
@@ -402,16 +465,6 @@ private fun ScanResultView(
                 Spacer(Modifier.height(7.dp))
             }
 
-            if (!isScanning) {
-                Spacer(Modifier.height(3.dp))
-                Text(
-                    text = "重新扫描",
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = AppColors.Primary,
-                    modifier = Modifier.clickable(onClick = onRescan),
-                )
-            }
         }
     }
 }
@@ -498,21 +551,26 @@ private fun StorageCylinder(
     isScanning: Boolean,
     modifier: Modifier = Modifier,
 ) {
-    // 图例自上而下按占用递减，柱体自下而上堆叠，故这里反转。
-    val stack = remember(categories) { categories.asReversed() }
-    val totalBytes = stack.sumOf { it.bytes }.toFloat().coerceAtLeast(1f)
+    // 分母取全量（含首项的 retained），但 retained 本身不进柱体：可清理的几类
+    // 自底向上填，占比之和 < 1，剩下的就是顶部空筒——那块正是不可清理的保留数据，
+    // 以留白表达而非画出来。扫描时彩色段只增不减，顶部空区被顶掉，柱身高度不变。
+    val totalBytes = categories.sumOf { it.bytes }.toFloat().coerceAtLeast(1f)
+    // 图例自上而下按占用递减，柱体自下而上堆叠，故这里反转；同时丢掉 retained。
+    val stack = remember(categories) { categories.filter { it.id != "retained" }.asReversed() }
 
     // 每段一个独立占比动画：0 表示尚未出现。
     // 扫描期每来一批测量结果就重新补间，各段互不等待；结果就绪后同一组动画值
     // 继续补间到最终占比。「生长」和「重新分配高度」因此共用一套状态，
     // 不需要额外的全局进度，也不会出现顶面与最上段脱节。
     val shares = remember(stack.size) { List(stack.size) { Animatable(0f) } }
-    LaunchedEffect(stack.map { it.bytes }, isScanning) {
+    // key 只跟字节数走。别把 isScanning 加进来：扫描结束那一刻占比通常已经到位，
+    // 多这个 key 只会白重启一轮补间，看着像柱子又抖了一下。
+    LaunchedEffect(stack.map { it.bytes }) {
         stack.forEachIndexed { index, category ->
             launch {
                 shares[index].animateTo(
                     targetValue = category.bytes / totalBytes,
-                    animationSpec = tween(if (isScanning) 520 else 400, easing = FastOutSlowInEasing),
+                    animationSpec = tween(440, easing = FastOutSlowInEasing),
                 )
             }
         }
@@ -562,7 +620,7 @@ private fun StorageCylinder(
         )
         drawOval(
             brush = Brush.verticalGradient(
-                listOf(AppColors.CylinderShellEdge, AppColors.CylinderShellMid),
+                listOf(AppColors.CylinderShellMid, AppColors.CylinderShellLight),
             ),
             topLeft = Offset(left, bottom - capHeight / 2f),
             size = Size(cylinderWidth, capHeight),
@@ -583,10 +641,12 @@ private fun StorageCylinder(
                 // 不额外压暗，否则每条接缝都会读成一道投影。
                 // 柱面基本平涂，只在右侧收一点暗边交代圆度；不加高光，
                 // 否则会在整根柱子上留下一条与数据无关的白斑。
+                // 暗边混的是分类色自身的深色而非纯黑：混黑会把蓝色拉向灰，
+                // 一眼看过去像蒙了层脏，混同色系只降明度、不掉饱和。
                 val bodyBrush = Brush.horizontalGradient(
                     0f to slice.color,
-                    0.72f to slice.color,
-                    1f to lerp(slice.color, Color.Black, 0.10f),
+                    0.80f to slice.color,
+                    1f to lerp(slice.color, AppColors.CategoryHistory, 0.16f),
                     startX = left,
                     endX = right,
                 )
@@ -617,12 +677,13 @@ private fun StorageCylinder(
                     topLeft = Offset(left, fillTop - capHeight / 2f),
                     size = Size(cylinderWidth, capHeight),
                 )
-                // 筒壁投在顶面上的阴影，靠后沿最深。
+                // 筒壁投在顶面上的阴影，靠后沿最深。alpha 压得很低：
+                // 这是整根柱子上唯一的纯黑，稍重一点顶面就会读成一个凹坑。
                 drawOval(
                     brush = Brush.verticalGradient(
-                        listOf(Color.Black.copy(alpha = 0.22f), Color.Transparent),
+                        listOf(Color.Black.copy(alpha = 0.10f), Color.Transparent),
                         startY = fillTop - capHeight / 2f,
-                        endY = fillTop + capHeight * 0.32f,
+                        endY = fillTop + capHeight * 0.18f,
                     ),
                     topLeft = Offset(left, fillTop - capHeight / 2f),
                     size = Size(cylinderWidth, capHeight),
@@ -644,8 +705,9 @@ private fun StorageCylinder(
             }
         }
 
+        // 玻璃顶盖压在所有内容之上，alpha 高了会把最上段的颜色一起洗白。
         drawOval(
-            color = Color.White.copy(alpha = 0.45f),
+            color = Color.White.copy(alpha = 0.28f),
             topLeft = Offset(left, 0f),
             size = Size(cylinderWidth, capHeight),
         )
