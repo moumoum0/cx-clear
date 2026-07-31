@@ -7,8 +7,9 @@ import dev.cxclear.model.ToolProfile
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.channelFlow
+import kotlinx.coroutines.launch
 import java.nio.file.FileSystems
 import java.nio.file.Files
 import java.nio.file.LinkOption
@@ -126,43 +127,59 @@ fun scanResolved(toolId: String, resolved: ResolvedTarget): ScanResult {
 }
 
 /**
- * 并行扫描所有 profile 的所有 target。纯磁盘 IO，交给 IO 调度器。
- * 工具未安装（baseDir 不存在）时返回全 0 且 exists=false 的结果，由 UI 决定是否显示。
+ * 扫描过程中的增量事件。
+ *
+ * 扫描以事件流而不是一次性返回值上报，是为了让 UI 能反映真实进度：
+ * 每测完一项就能立刻更新，而不是扫完才一次性刷新。
  */
-suspend fun scanAll(profiles: List<ToolProfile>): List<ScanResult> = withContext(Dispatchers.IO) {
-    coroutineScope {
-        profiles.flatMap { profile ->
-            val base = profile.baseDir()
-            profile.targets.map { target ->
-                async {
-                    if (base == null) {
-                        ScanResult(profile.id, target.id, 0L, 0, exists = false)
-                    } else {
-                        scanResolved(profile.id, resolveTarget(base, target))
-                    }
-                }
-            }
-        }.awaitAll()
-    }
+sealed interface ScanEvent {
+    /** 本次扫描的工作项总数（可清理项 + 工具目录），用于算进度分母。 */
+    data class Started(val total: Int) : ScanEvent
+
+    /** 单个可清理项测量完成。 */
+    data class TargetScanned(val result: ScanResult) : ScanEvent
+
+    /** 单个工具目录的完整占用测量完成。 */
+    data class SpaceScanned(val space: ToolSpaceResult) : ScanEvent
 }
 
 /**
- * 统计每个工具目录的完整占用。这个结果用于空间柱，和“可清理项”扫描相互独立：
- * 柱子的总高度始终代表应用真实占用，而不是只代表垃圾大小。
+ * 扫描所有 profile，逐项上报。纯磁盘 IO，每项各自跑在 IO 调度器上。
+ *
+ * 工具目录总占用和可清理项分别测量，口径互相独立：总占用代表应用真实体积，
+ * 可清理项只代表其中能删的部分，两者相减就是必须保留的数据。
+ * 工具未安装（baseDir 为 null）时上报全 0 且 exists=false，由 UI 决定是否显示。
+ *
+ * 分两个阶段：先测完总占用，再扫可清理项。总占用是分母，先定下来后续每测出一项
+ * 都只是在已知总量里重新划分，占比不会被整体重算；若与可清理项并发上报，
+ * 总占用（要遍历整个目录，最慢）最后才到，分母会突变一次。
  */
-suspend fun scanToolSpaces(profiles: List<ToolProfile>): List<ToolSpaceResult> = withContext(Dispatchers.IO) {
-    coroutineScope {
-        profiles.map { profile ->
-            async {
-                val base = profile.baseDir()
-                if (base == null) {
-                    ToolSpaceResult(profile.id, 0L, 0)
-                } else {
-                    val (bytes, files) = measure(base)
-                    ToolSpaceResult(profile.id, bytes, files)
-                }
+fun scanStream(profiles: List<ToolProfile>): Flow<ScanEvent> = channelFlow {
+    val bases = profiles.map { it to it.baseDir() }
+    send(ScanEvent.Started(profiles.sumOf { it.targets.size } + profiles.size))
+
+    bases.map { (profile, base) ->
+        async(Dispatchers.IO) {
+            if (base == null) {
+                ToolSpaceResult(profile.id, 0L, 0)
+            } else {
+                val (bytes, files) = measure(base)
+                ToolSpaceResult(profile.id, bytes, files)
             }
-        }.awaitAll()
+        }
+    }.awaitAll().forEach { send(ScanEvent.SpaceScanned(it)) }
+
+    for ((profile, base) in bases) {
+        for (target in profile.targets) {
+            launch(Dispatchers.IO) {
+                val result = if (base == null) {
+                    ScanResult(profile.id, target.id, 0L, 0, exists = false)
+                } else {
+                    scanResolved(profile.id, resolveTarget(base, target))
+                }
+                send(ScanEvent.TargetScanned(result))
+            }
+        }
     }
 }
 

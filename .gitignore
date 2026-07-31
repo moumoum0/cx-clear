@@ -1,0 +1,27 @@
+# Build output
+build/
+out/
+
+# Gradle
+.gradle/
+
+# IDE
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Kotlin compiler
+.kotlin/
+
+# Claude Code
+.claude/settings.local.json
+
+# Logs
+*.log
+
+CLAUDE.md

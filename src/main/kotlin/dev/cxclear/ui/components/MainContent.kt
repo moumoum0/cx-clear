@@ -2,6 +2,8 @@ package dev.cxclear.ui.components
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -25,6 +27,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -33,16 +36,15 @@ import dev.cxclear.model.Risk
 import dev.cxclear.model.ScanResult
 import dev.cxclear.model.CleanTarget
 import dev.cxclear.profiles.ALL_PROFILES
+import dev.cxclear.scan.ScanEvent
+import dev.cxclear.scan.ToolSpaceResult
 import dev.cxclear.scan.formatBytes
-import dev.cxclear.scan.scanAll
-import dev.cxclear.scan.scanToolSpaces
+import dev.cxclear.scan.scanStream
 import dev.cxclear.ui.Screen
 import dev.cxclear.ui.theme.AppColors
 import dev.cxclear.ui.theme.AppDimensions
-import kotlinx.coroutines.async
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.math.max
 
 private enum class ScanPhase { IDLE, SCANNING, DONE }
 
@@ -73,18 +75,28 @@ fun MainContent(currentScreen: Screen) {
     fun startScan() {
         if (scanPhase == ScanPhase.SCANNING || selectedTools.isEmpty()) return
         scanPhase = ScanPhase.SCANNING
+        scanCategories = emptyList()
+        selectedTargets = emptySet()
         scope.launch {
             val profiles = ALL_PROFILES.filter { it.id in selectedTools }
-            val startedAt = System.currentTimeMillis()
-            val (results, toolSpaces) = coroutineScope {
-                val targetScan = async { scanAll(profiles) }
-                val spaceScan = async { scanToolSpaces(profiles) }
-                targetScan.await() to spaceScan.await()
-            }
-            val remainingAnimationTime = 1200L - (System.currentTimeMillis() - startedAt)
-            if (remainingAnimationTime > 0) delay(remainingAnimationTime)
+            val results = mutableMapOf<String, ScanResult>()
+            val spaces = mutableMapOf<String, ToolSpaceResult>()
 
-            scanCategories = buildCategories(profiles, results, toolSpaces.sumOf { it.bytes })
+            // 每来一个事件就重算一次分类，柱体因此按真实测量进度生长，
+            // 不再需要占位数据和固定时长的假动画。
+            scanStream(profiles).collect { event ->
+                when (event) {
+                    is ScanEvent.Started -> Unit
+                    is ScanEvent.TargetScanned -> results[event.result.targetId] = event.result
+                    is ScanEvent.SpaceScanned -> spaces[event.space.toolId] = event.space
+                }
+                scanCategories = buildCategories(
+                    profiles = profiles,
+                    results = results.values.toList(),
+                    totalToolBytes = spaces.values.sumOf { it.bytes },
+                )
+            }
+
             selectedTargets = scanCategories
                 .flatMap { it.items }
                 .filter { it.risk == Risk.SAFE && it.bytes > 0L }
@@ -196,28 +208,28 @@ private fun buildCategories(
             id = "packages",
             label = "插件与安装缓存",
             bytes = packageItems.sumOf { it.bytes },
-            color = Color(0xFFFFC928),
+            color = AppColors.CategoryPackages,
             items = packageItems,
         ),
         ScanCategory(
             id = "working",
             label = "日志与临时文件",
             bytes = workingItems.sumOf { it.bytes },
-            color = Color(0xFFFF8437),
+            color = AppColors.CategoryWorking,
             items = workingItems,
         ),
         ScanCategory(
             id = "history",
             label = "历史与会话",
             bytes = historyItems.sumOf { it.bytes },
-            color = Color(0xFFC43DE4),
+            color = AppColors.CategoryHistory,
             items = historyItems,
         ),
         ScanCategory(
             id = "retained",
             label = "应用保留数据",
             bytes = retainedBytes,
-            color = Color(0xFF8D96AC),
+            color = AppColors.CategoryRetained,
         ),
     )
 }
@@ -250,9 +262,9 @@ private fun ScanView(
         }
 
         ScanPhase.SCANNING -> ScanResultView(
-            categories = placeholderCategories(),
+            categories = categories,
             isScanning = true,
-            totalBytes = 0L,
+            totalBytes = categories.sumOf { it.bytes },
             selectedTargets = emptySet(),
             onTargetToggle = {},
             onRescan = onStartScan,
@@ -404,13 +416,6 @@ private fun ScanResultView(
     }
 }
 
-private fun placeholderCategories() = listOf(
-    ScanCategory("packages", "插件与安装缓存", 28L, Color(0xFFFFC928)),
-    ScanCategory("working", "日志与临时文件", 20L, Color(0xFFFF8437)),
-    ScanCategory("history", "历史与会话", 18L, Color(0xFFC43DE4)),
-    ScanCategory("retained", "应用保留数据", 34L, Color(0xFF8D96AC)),
-)
-
 @Composable
 private fun TargetSelectionRow(
     target: ScanTargetItem,
@@ -452,114 +457,197 @@ private fun TargetSelectionRow(
     }
 }
 
+/** 一段短圆柱的绘制几何，已折算为像素区间；Canvas 只负责按序画出。 */
+private data class CylinderSlice(
+    val color: Color,
+    val top: Float,
+    val bottom: Float,
+)
+
+/**
+ * 把各段占比自底向上摊成像素区间。
+ *
+ * 占比极小的段会被抬升到 [minHeight]，否则会退化成一条被邻段底盘完全盖住的线；
+ * 抬升后整体等比压回筒内，因此累计高度永远不会溢出筒身。
+ */
+private fun sliceCylinder(
+    colors: List<Color>,
+    shares: List<Float>,
+    bottom: Float,
+    bodyHeight: Float,
+    minHeight: Float,
+): List<CylinderSlice> {
+    val heights = shares.map { share ->
+        if (share <= 0.0005f) 0f else max(share * bodyHeight, minHeight)
+    }
+    val used = heights.sum()
+    val scale = if (used > bodyHeight) bodyHeight / used else 1f
+
+    var cursor = bottom
+    return colors.indices.mapNotNull { index ->
+        val height = heights[index] * scale
+        if (height <= 0f) return@mapNotNull null
+        val sliceTop = cursor - height
+        CylinderSlice(colors[index], sliceTop, cursor).also { cursor = sliceTop }
+    }
+}
+
 @Composable
 private fun StorageCylinder(
     categories: List<ScanCategory>,
     isScanning: Boolean,
     modifier: Modifier = Modifier,
 ) {
-    val growth = remember { Animatable(0.08f) }
-    LaunchedEffect(isScanning, categories) {
+    // 图例自上而下按占用递减，柱体自下而上堆叠，故这里反转。
+    val stack = remember(categories) { categories.asReversed() }
+    val totalBytes = stack.sumOf { it.bytes }.toFloat().coerceAtLeast(1f)
+
+    // 每段一个独立占比动画：0 表示尚未出现。
+    // 扫描期每来一批测量结果就重新补间，各段互不等待；结果就绪后同一组动画值
+    // 继续补间到最终占比。「生长」和「重新分配高度」因此共用一套状态，
+    // 不需要额外的全局进度，也不会出现顶面与最上段脱节。
+    val shares = remember(stack.size) { List(stack.size) { Animatable(0f) } }
+    LaunchedEffect(stack.map { it.bytes }, isScanning) {
+        stack.forEachIndexed { index, category ->
+            launch {
+                shares[index].animateTo(
+                    targetValue = category.bytes / totalBytes,
+                    animationSpec = tween(if (isScanning) 520 else 400, easing = FastOutSlowInEasing),
+                )
+            }
+        }
+    }
+
+    // 扫描期沿筒身上行的光带，作为「仍在统计」的活体信号。
+    val sweep = remember { Animatable(0f) }
+    LaunchedEffect(isScanning) {
         if (isScanning) {
-            growth.snapTo(0.08f)
-            growth.animateTo(
-                targetValue = 0.88f,
-                animationSpec = tween(1150, easing = FastOutSlowInEasing),
+            sweep.snapTo(0f)
+            sweep.animateTo(
+                targetValue = 1f,
+                animationSpec = infiniteRepeatable(tween(1600, easing = LinearEasing)),
             )
         } else {
-            growth.animateTo(
-                targetValue = 1f,
-                animationSpec = tween(360, easing = FastOutSlowInEasing),
-            )
+            sweep.snapTo(0f)
         }
     }
 
     Canvas(modifier = modifier) {
-        val cylinderWidth = size.width * 0.7f
+        val cylinderWidth = size.width * 0.66f
         val left = (size.width - cylinderWidth) / 2f
-        val capHeight = cylinderWidth * 0.24f
+        val right = left + cylinderWidth
+        val capHeight = cylinderWidth * 0.22f
         val top = capHeight / 2f
         val bottom = size.height - capHeight / 2f
         val bodyHeight = bottom - top
 
-        val shellBrush = Brush.horizontalGradient(
-            listOf(Color(0xFFE4E7ED), Color(0xFFFAFAFC), Color(0xFFD8DCE5)),
-            startX = left,
-            endX = left + cylinderWidth,
+        drawRect(
+            brush = Brush.horizontalGradient(
+                listOf(
+                    AppColors.CylinderShellEdge,
+                    AppColors.CylinderShellLight,
+                    AppColors.CylinderShellMid,
+                    AppColors.CylinderShellEdge,
+                ),
+                startX = left,
+                endX = right,
+            ),
+            topLeft = Offset(left, top),
+            size = Size(cylinderWidth, bodyHeight),
         )
-        drawRect(shellBrush, Offset(left, top), Size(cylinderWidth, bodyHeight))
         drawOval(
-            brush = Brush.verticalGradient(listOf(Color.White, Color(0xFFE5E8EF))),
+            brush = Brush.verticalGradient(listOf(Color.White, AppColors.CylinderShellMid)),
             topLeft = Offset(left, 0f),
             size = Size(cylinderWidth, capHeight),
         )
         drawOval(
-            brush = Brush.verticalGradient(listOf(Color(0xFFC8CDD8), Color(0xFFE9EBF0))),
+            brush = Brush.verticalGradient(
+                listOf(AppColors.CylinderShellEdge, AppColors.CylinderShellMid),
+            ),
             topLeft = Offset(left, bottom - capHeight / 2f),
             size = Size(cylinderWidth, capHeight),
         )
 
-        val sum = categories.sumOf { it.bytes }.toFloat().coerceAtLeast(1f)
-        val segments = categories.map { it to (it.bytes.toFloat() / sum) }.asReversed()
-        var segmentBottom = bottom
-        val filledHeight = bodyHeight * growth.value
-        val fillTop = bottom - filledHeight
+        val slices = sliceCylinder(
+            colors = stack.map { it.color },
+            shares = shares.map { it.value },
+            bottom = bottom,
+            bodyHeight = bodyHeight,
+            minHeight = capHeight * 0.55f,
+        )
+        val fillTop = slices.lastOrNull()?.top ?: bottom
 
-        clipRect(left, fillTop, left + cylinderWidth, bottom + capHeight / 2f) {
-            segments.forEach { (category, fraction) ->
-                val height = filledHeight * fraction
-                val segmentTop = segmentBottom - height
-                val segmentBrush = Brush.horizontalGradient(
-                    listOf(
-                        category.color.copy(alpha = 0.74f),
-                        category.color.copy(alpha = 0.98f),
-                        category.color.copy(alpha = 0.8f),
-                    ),
+        clipRect(left, top - capHeight / 2f, right, bottom + capHeight / 2f) {
+            slices.forEach { slice ->
+                // 侧面与底盘共用一支笔刷：底盘是同一段柱面的延续，
+                // 不额外压暗，否则每条接缝都会读成一道投影。
+                // 柱面基本平涂，只在右侧收一点暗边交代圆度；不加高光，
+                // 否则会在整根柱子上留下一条与数据无关的白斑。
+                val bodyBrush = Brush.horizontalGradient(
+                    0f to slice.color,
+                    0.72f to slice.color,
+                    1f to lerp(slice.color, Color.Black, 0.10f),
                     startX = left,
-                    endX = left + cylinderWidth,
+                    endX = right,
                 )
-                drawRect(segmentBrush, Offset(left, segmentTop), Size(cylinderWidth, height + 1f))
+                drawRect(
+                    brush = bodyBrush,
+                    topLeft = Offset(left, slice.top),
+                    size = Size(cylinderWidth, slice.bottom - slice.top),
+                )
+                // 每段只画自己朝下的底盘。它向下凸出、盖住下一段的顶端，
+                // 接缝的弧线由此产生；顶面留给最上面那段单独处理，避免互相穿插。
                 drawOval(
-                    brush = Brush.verticalGradient(
-                        listOf(category.color.copy(alpha = 0.98f), category.color.copy(alpha = 0.72f)),
-                        startY = segmentTop - capHeight / 2f,
-                        endY = segmentTop + capHeight / 2f,
-                    ),
-                    topLeft = Offset(left, segmentTop - capHeight / 2f),
+                    brush = bodyBrush,
+                    topLeft = Offset(left, slice.bottom - capHeight / 2f),
                     size = Size(cylinderWidth, capHeight),
                 )
-                segmentBottom = segmentTop
+            }
+
+            slices.lastOrNull()?.let { topSlice ->
+                drawOval(
+                    brush = Brush.verticalGradient(
+                        listOf(
+                            lerp(topSlice.color, Color.White, 0.32f),
+                            lerp(topSlice.color, Color.White, 0.08f),
+                        ),
+                        startY = fillTop - capHeight / 2f,
+                        endY = fillTop + capHeight / 2f,
+                    ),
+                    topLeft = Offset(left, fillTop - capHeight / 2f),
+                    size = Size(cylinderWidth, capHeight),
+                )
+                // 筒壁投在顶面上的阴影，靠后沿最深。
+                drawOval(
+                    brush = Brush.verticalGradient(
+                        listOf(Color.Black.copy(alpha = 0.22f), Color.Transparent),
+                        startY = fillTop - capHeight / 2f,
+                        endY = fillTop + capHeight * 0.32f,
+                    ),
+                    topLeft = Offset(left, fillTop - capHeight / 2f),
+                    size = Size(cylinderWidth, capHeight),
+                )
+            }
+
+            if (isScanning) {
+                val bandHeight = bodyHeight * 0.24f
+                val bandTop = top - bandHeight + (bodyHeight + bandHeight) * (1f - sweep.value)
+                drawRect(
+                    brush = Brush.verticalGradient(
+                        listOf(Color.Transparent, Color.White.copy(alpha = 0.34f), Color.Transparent),
+                        startY = bandTop,
+                        endY = bandTop + bandHeight,
+                    ),
+                    topLeft = Offset(left, bandTop),
+                    size = Size(cylinderWidth, bandHeight),
+                )
             }
         }
 
-        val topCategory = categories.firstOrNull()
-        if (topCategory != null) {
-            drawOval(
-                brush = Brush.verticalGradient(
-                    listOf(topCategory.color.copy(alpha = 0.98f), topCategory.color.copy(alpha = 0.7f)),
-                    startY = fillTop - capHeight / 2f,
-                    endY = fillTop + capHeight / 2f,
-                ),
-                topLeft = Offset(left, fillTop - capHeight / 2f),
-                size = Size(cylinderWidth, capHeight),
-            )
-        }
-
-        drawRect(
-            brush = Brush.horizontalGradient(
-                listOf(Color.White.copy(alpha = 0.35f), Color.Transparent),
-                startX = left + cylinderWidth * 0.12f,
-                endX = left + cylinderWidth * 0.42f,
-            ),
-            topLeft = Offset(left + cylinderWidth * 0.12f, fillTop),
-            size = Size(cylinderWidth * 0.3f, filledHeight),
-        )
-
-        drawOval(Color.White.copy(alpha = 0.5f), Offset(left, 0f), Size(cylinderWidth, capHeight))
         drawOval(
-            Color(0xFFAFB5C3).copy(alpha = 0.22f),
-            Offset(left, bottom - capHeight / 2f),
-            Size(cylinderWidth, capHeight),
+            color = Color.White.copy(alpha = 0.45f),
+            topLeft = Offset(left, 0f),
+            size = Size(cylinderWidth, capHeight),
         )
     }
 }
