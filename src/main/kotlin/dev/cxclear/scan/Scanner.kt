@@ -13,10 +13,11 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
@@ -26,7 +27,6 @@ import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.nio.file.Path
 import java.nio.file.attribute.BasicFileAttributes
-import kotlin.io.path.listDirectoryEntries
 import kotlin.io.path.name
 
 /** 一个 target 实际会被删掉的东西。Scanner 与 Cleaner 共用同一套解析结果，避免两边规则不一致。 */
@@ -78,7 +78,7 @@ fun resolveTarget(baseDir: Path, target: CleanTarget): ResolvedTarget {
             // 正是点开头的，用 shell glob 会漏掉。
             expandPathPattern(safeBase, target.relPath).flatMap { dir ->
                 if (isSafeTraversalDirectory(safeBase, dir)) {
-                    runCatching { dir.listDirectoryEntries() }.getOrDefault(emptyList())
+                    directoryEntries(dir)
                         .filter { isSafeDeletionPath(safeBase, it) }
                 } else {
                     emptyList()
@@ -101,7 +101,7 @@ fun resolveTarget(baseDir: Path, target: CleanTarget): ResolvedTarget {
                     emptyList()
                 } else {
                     val matcher = FileSystems.getDefault().getPathMatcher("glob:$pattern")
-                    val matched = runCatching { dir.listDirectoryEntries() }.getOrDefault(emptyList())
+                    val matched = directoryEntries(dir)
                         .filter { matcher.matches(it.fileName) }
                         .filter { isSafeDeletionPath(safeBase, it) }
                         .filter { matchesExpectedType(it, target.entryType) }
@@ -140,7 +140,7 @@ internal fun expandPathPattern(baseDir: Path, relPath: String): List<Path> {
                     emptyList()
                 } else {
                     runCatching {
-                        dir.listDirectoryEntries().filter {
+                        directoryEntries(dir).filter {
                             Files.isDirectory(it, LinkOption.NOFOLLOW_LINKS) &&
                                 isSafeDeletionPath(safeBase, it)
                         }
@@ -194,23 +194,36 @@ internal fun isSafeTraversalDirectory(baseDir: Path, candidate: Path): Boolean {
 
 private enum class LinkState { PLAIN, LINK_LIKE, UNKNOWN }
 
+private data class PathInspection(
+    val path: Path,
+    val attributes: BasicFileAttributes,
+    val linkState: LinkState,
+)
+
+/** 一次属性读取同时完成类型和链接判断；仅对无法分类的特殊项做跟随目录兜底检查。 */
+private fun inspectPath(path: Path): PathInspection? {
+    val normalized = path.toAbsolutePath().normalize()
+    val attrs = runCatching {
+        Files.readAttributes(normalized, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)
+    }.getOrNull() ?: return null
+    val state = when {
+        attrs.isSymbolicLink || attrs.isOther -> LinkState.LINK_LIKE
+        attrs.isDirectory || attrs.isRegularFile -> LinkState.PLAIN
+        Files.isDirectory(normalized) -> LinkState.LINK_LIKE
+        else -> LinkState.PLAIN
+    }
+    return PathInspection(normalized, attrs, state)
+}
+
 /** 属性读取失败时返回 UNKNOWN；所有安全判断都把 UNKNOWN 当成拒绝，而不是放行。 */
 private fun linkState(path: Path): LinkState {
-    if (Files.isSymbolicLink(path)) return LinkState.LINK_LIKE
-    return try {
-        val attrs = Files.readAttributes(path, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)
-        val followsAsDirectory = !attrs.isDirectory && Files.isDirectory(path)
-        if (attrs.isOther || followsAsDirectory) LinkState.LINK_LIKE else LinkState.PLAIN
-    } catch (_: Exception) {
-        LinkState.UNKNOWN
-    }
+    return inspectPath(path)?.linkState ?: LinkState.UNKNOWN
 }
 
 private fun matchesExpectedType(path: Path, expected: TargetEntryType): Boolean {
-    if (linkState(path) != LinkState.PLAIN) return false
-    val attrs = runCatching {
-        Files.readAttributes(path, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)
-    }.getOrNull() ?: return false
+    val inspection = inspectPath(path) ?: return false
+    if (inspection.linkState != LinkState.PLAIN) return false
+    val attrs = inspection.attributes
     return when (expected) {
         TargetEntryType.FILE -> attrs.isRegularFile
         TargetEntryType.DIRECTORY -> attrs.isDirectory
@@ -222,14 +235,11 @@ private fun lastModifiedOrNull(path: Path): Long? =
 
 /** Cleaner 复用的 NOFOLLOW_LINKS 身份读取。读取失败或特殊类型不生成可删除快照。 */
 internal fun readPathSnapshot(path: Path): PathSnapshot? {
-    val normalized = path.toAbsolutePath().normalize()
-    val attrs = runCatching {
-        Files.readAttributes(normalized, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)
-    }.getOrNull() ?: return null
-    val state = linkState(normalized)
-    if (state == LinkState.UNKNOWN) return null
+    val inspection = inspectPath(path) ?: return null
+    val normalized = inspection.path
+    val attrs = inspection.attributes
     val kind = when {
-        state == LinkState.LINK_LIKE -> PathSnapshotKind.LINK
+        inspection.linkState == LinkState.LINK_LIKE -> PathSnapshotKind.LINK
         attrs.isDirectory -> PathSnapshotKind.DIRECTORY
         attrs.isRegularFile -> PathSnapshotKind.FILE
         else -> return null
@@ -244,22 +254,68 @@ internal fun readPathSnapshot(path: Path): PathSnapshot? {
     )
 }
 
+private inline fun forEachDirectoryEntry(directory: Path, action: (Path) -> Unit) {
+    val entries = runCatching { Files.newDirectoryStream(directory) }.getOrNull() ?: return
+    try {
+        val iterator = entries.iterator()
+        while (true) {
+            val entry = try {
+                if (iterator.hasNext()) iterator.next() else break
+            } catch (_: Exception) {
+                break
+            }
+            action(entry)
+        }
+    } finally {
+        runCatching { entries.close() }
+    }
+}
+
+private fun directoryEntries(directory: Path): List<Path> = buildList {
+    forEachDirectoryEntry(directory) { add(it) }
+}
+
+private class ProgressBatch(
+    private val publish: (deltaBytes: Long, deltaCount: Int) -> Unit,
+) {
+    private var bytes = 0L
+    private var files = 0
+    private var entries = 0
+
+    fun add(deltaBytes: Long, deltaCount: Int) {
+        bytes += deltaBytes
+        files += deltaCount
+        entries++
+        if (entries >= PROGRESS_BATCH_SIZE) flush()
+    }
+
+    fun flush() {
+        if (bytes != 0L || files != 0) publish(bytes, files)
+        bytes = 0L
+        files = 0
+        entries = 0
+    }
+}
+
+private const val PROGRESS_BATCH_SIZE = 128
+
 /**
  * 递归统计大小与文件数。软链接不跟随，避免重复计算或走出目标范围。
  *
  * [onProgress] 每处理一个条目回调一次增量（字节, 文件数），供调用方实时累计
  * 「正在遍历中」的进度；默认空实现，一次性取最终值的调用（如 Cleaner）无额外开销。
  */
-private inline fun measure(
+private fun measure(
     path: Path,
     onProgress: (deltaBytes: Long, deltaCount: Int) -> Unit = { _, _ -> },
 ): Pair<Long, Int> {
+    val progress = ProgressBatch(onProgress)
     val root = readPathSnapshot(path) ?: return 0L to 0
     if (root.kind == PathSnapshotKind.LINK) {
-        onProgress(0L, 1); return 0L to 1
+        progress.add(0L, 1); progress.flush(); return 0L to 1
     }
     if (root.kind == PathSnapshotKind.FILE) {
-        onProgress(root.size, 1); return root.size to 1
+        progress.add(root.size, 1); progress.flush(); return root.size to 1
     }
 
     var bytes = 0L
@@ -268,22 +324,21 @@ private inline fun measure(
     stack.addLast(path)
     while (stack.isNotEmpty()) {
         val dir = stack.removeLast()
-        if (readPathSnapshot(dir)?.kind != PathSnapshotKind.DIRECTORY) continue
-        val entries = runCatching { dir.listDirectoryEntries() }.getOrNull() ?: continue
-        for (e in entries) {
+        forEachDirectoryEntry(dir) { e ->
             when (val snapshot = readPathSnapshot(e)) {
                 null -> Unit
                 else -> when (snapshot.kind) {
                     PathSnapshotKind.LINK -> {
-                        count++; onProgress(0L, 1)
+                        count++; progress.add(0L, 1)
                     }
                     PathSnapshotKind.DIRECTORY -> stack.addLast(e)
                     PathSnapshotKind.FILE -> {
-                        bytes += snapshot.size; count++; onProgress(snapshot.size, 1)
+                        bytes += snapshot.size; count++; progress.add(snapshot.size, 1)
                     }
                 }
             }
         }
+        progress.flush()
     }
     return bytes to count
 }
@@ -294,6 +349,51 @@ private data class PlanBuild(
     val files: Int,
 )
 
+/** 单个 target 内缓存已确认的真实目录，避免每个文件都从 base 重新检查整条父路径。 */
+private class TraversalSafety(baseDir: Path) {
+    private val base = baseDir.toAbsolutePath().normalize()
+    private val safeDirectories = hashSetOf<Path>()
+
+    init {
+        val inspection = inspectPath(base)
+        if (inspection?.linkState == LinkState.PLAIN && inspection.attributes.isDirectory) {
+            safeDirectories.add(base)
+        }
+    }
+
+    fun allowsEntry(candidate: Path): Boolean {
+        val path = candidate.toAbsolutePath().normalize()
+        if (path == base || !path.startsWith(base)) return false
+        return ensureSafeDirectory(path.parent ?: return false)
+    }
+
+    fun trustDirectory(snapshot: PathSnapshot): Boolean {
+        if (snapshot.kind != PathSnapshotKind.DIRECTORY || !allowsEntry(snapshot.path)) return false
+        safeDirectories.add(snapshot.path)
+        return true
+    }
+
+    private fun ensureSafeDirectory(directory: Path): Boolean {
+        val path = directory.toAbsolutePath().normalize()
+        if (!path.startsWith(base) || base !in safeDirectories) return false
+        if (path in safeDirectories) return true
+
+        val unchecked = ArrayDeque<Path>()
+        var current = path
+        while (current !in safeDirectories) {
+            if (current == base || !current.startsWith(base)) return false
+            unchecked.addFirst(current)
+            current = current.parent ?: return false
+        }
+        for (candidate in unchecked) {
+            val inspection = inspectPath(candidate) ?: return false
+            if (inspection.linkState != LinkState.PLAIN || !inspection.attributes.isDirectory) return false
+            safeDirectories.add(candidate)
+        }
+        return true
+    }
+}
+
 /**
  * 在扫描阶段把每个实际条目及身份完整冻结下来。Cleaner 只消费这份计划，绝不重新展开目录/glob。
  */
@@ -303,6 +403,8 @@ private fun buildDeletionPlan(
     onProgress: (deltaBytes: Long, deltaCount: Int) -> Unit = { _, _ -> },
 ): PlanBuild {
     val snapshots = linkedMapOf<Path, PathSnapshot>()
+    val safety = TraversalSafety(resolved.baseDir)
+    val progress = ProgressBatch(onProgress)
     var bytes = 0L
     var files = 0
 
@@ -312,41 +414,39 @@ private fun buildDeletionPlan(
             PathSnapshotKind.FILE -> {
                 bytes += snapshot.size
                 files++
-                onProgress(snapshot.size, 1)
+                progress.add(snapshot.size, 1)
             }
             PathSnapshotKind.LINK -> {
                 files++
-                onProgress(0L, 1)
+                progress.add(0L, 1)
             }
             PathSnapshotKind.DIRECTORY -> Unit
         }
     }
 
     for (root in resolved.paths) {
-        if (!isSafeDeletionPath(resolved.baseDir, root)) continue
+        if (!safety.allowsEntry(root)) continue
         val rootSnapshot = readPathSnapshot(root) ?: continue
         record(rootSnapshot)
         if (rootSnapshot.kind != PathSnapshotKind.DIRECTORY) continue
-        if (!isSafeTraversalDirectory(resolved.baseDir, root)) continue
+        if (!safety.trustDirectory(rootSnapshot)) continue
 
         val stack = ArrayDeque<Path>()
         stack.addLast(root)
         while (stack.isNotEmpty()) {
             val dir = stack.removeLast()
-            if (!isSafeTraversalDirectory(resolved.baseDir, dir)) continue
-            val entries = runCatching { dir.listDirectoryEntries() }.getOrNull() ?: continue
-            for (entry in entries) {
-                if (!isSafeDeletionPath(resolved.baseDir, entry)) continue
-                val snapshot = readPathSnapshot(entry) ?: continue
+            forEachDirectoryEntry(dir) { entry ->
+                if (!safety.allowsEntry(entry)) return@forEachDirectoryEntry
+                val snapshot = readPathSnapshot(entry) ?: return@forEachDirectoryEntry
                 record(snapshot)
-                if (snapshot.kind == PathSnapshotKind.DIRECTORY &&
-                    isSafeTraversalDirectory(resolved.baseDir, entry)
-                ) {
+                if (safety.trustDirectory(snapshot)) {
                     stack.addLast(entry)
                 }
             }
+            progress.flush()
         }
     }
+    progress.flush()
 
     return PlanBuild(
         plan = DeletionPlan(
@@ -473,6 +573,8 @@ sealed interface ScanEvent {
  */
 // 略长于 UI 数字翻转（~260ms），避免下一拍到来时上一次翻牌还没播完。
 private const val SNAPSHOT_INTERVAL_MS = 500L
+private const val SCAN_PARALLELISM = 8
+private val SCAN_DISPATCHER: CoroutineDispatcher = Dispatchers.IO.limitedParallelism(SCAN_PARALLELISM)
 
 /** 边跑 [workers] 边按固定节拍执行 [emit]，全部完成后立即再 emit 一次收尾。 */
 private suspend fun CoroutineScope.snapshotWhile(
@@ -484,11 +586,14 @@ private suspend fun CoroutineScope.snapshotWhile(
         workers.forEach { it.join() }
         allDone.complete(Unit)
     }
-    while (!allDone.isCompleted) {
-        delay(SNAPSHOT_INTERVAL_MS)
+    while (true) {
+        val finished = withTimeoutOrNull(SNAPSHOT_INTERVAL_MS) {
+            allDone.await()
+            true
+        } == true
         emit()
+        if (finished) break
     }
-    emit()
 }
 
 fun scanStream(profiles: List<ToolProfile>): Flow<ScanEvent> = channelFlow {
@@ -497,10 +602,10 @@ fun scanStream(profiles: List<ToolProfile>): Flow<ScanEvent> = channelFlow {
     // —— 阶段一：工具目录总占用。边测边报，供 UI「已找到」实时更新。 ——
     val spaceProgresses = profiles.map { SpaceProgress(it.id) }
     val spaceById = spaceProgresses.associateBy { it.toolId }
-    val spaceWorkers = profiles.map { profile ->
-        launch(Dispatchers.IO) {
-            val progress = spaceById.getValue(profile.id)
-            for (dir in profile.spaceDirs()) {
+    val spaceWorkers = profiles.flatMap { profile ->
+        profile.spaceDirs().map { dir ->
+            launch(SCAN_DISPATCHER) {
+                val progress = spaceById.getValue(profile.id)
                 measure(dir) { deltaBytes, deltaCount ->
                     if (deltaBytes != 0L) progress.bytes.addAndGet(deltaBytes)
                     if (deltaCount != 0) progress.files.addAndGet(deltaCount)
@@ -522,7 +627,7 @@ fun scanStream(profiles: List<ToolProfile>): Flow<ScanEvent> = channelFlow {
             for (target in profile.targets) {
                 val progress = progressByKey.getValue(TargetKey(profile.id, target.id))
                 add(
-                    launch(Dispatchers.IO) {
+                    launch(SCAN_DISPATCHER) {
                         scanWithProgress(profile, target, progress)
                     },
                 )

@@ -13,6 +13,7 @@ import java.nio.file.attribute.FileTime
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class ScannerSafetyTest {
@@ -50,6 +51,29 @@ class ScannerSafetyTest {
         val resolved = resolveTarget(base, target(relPath = "cache"))
 
         assertTrue(resolved.paths.isEmpty())
+        assertTrue(Files.exists(protected))
+    }
+
+    @Test
+    fun `deletion plan records but never traverses a nested directory link`() {
+        val base = Files.createTempDirectory("cxclear-base")
+        val cache = Files.createDirectory(base.resolve("cache"))
+        val local = Files.writeString(cache.resolve("local.tmp"), "local")
+        val outside = Files.createTempDirectory("cxclear-outside")
+        val protected = Files.writeString(outside.resolve("user-file.txt"), "keep")
+        val link = cache.resolve("linked")
+        assertTrue(
+            createDirectoryLink(link, outside),
+            "test environment must support a symbolic link or Windows junction",
+        )
+
+        val target = target(relPath = "cache")
+        val result = scanResolved("test", resolveTarget(base, target))
+        val plan = assertNotNull(result.deletionPlan)
+
+        assertTrue(plan.entries.any { it.path == local })
+        assertTrue(plan.entries.any { it.path == link })
+        assertFalse(plan.entries.any { it.path == protected })
         assertTrue(Files.exists(protected))
     }
 
