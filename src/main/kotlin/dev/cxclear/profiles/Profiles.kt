@@ -38,44 +38,77 @@ private fun appDataRoaming(): Path? {
         .firstOrNull { Files.isDirectory(it) }
 }
 
+/** `%LOCALAPPDATA%`。Windows 优先环境变量，再退回 `~/AppData/Local`。 */
+private fun appDataLocal(): Path? {
+    val candidates = buildList {
+        if (isWindows) System.getenv("LOCALAPPDATA")?.let { add(it) }
+        homeDir()?.resolve("AppData")?.resolve("Local")?.toString()?.let { add(it) }
+    }
+    return candidates.asSequence()
+        .filter { it.isNotBlank() }
+        .map { Paths.get(it) }
+        .firstOrNull { Files.isDirectory(it) }
+}
+
 private fun cursorHome(): Path? = homeSubdir(".cursor")
 
 private fun cursorAppData(): Path? =
     appDataRoaming()?.resolve("Cursor")?.takeIf { Files.isDirectory(it) }
 
+private fun codexHome(): Path? = homeSubdir(".codex")
+
+/** `~/.cache/codex-runtimes`：primary-runtime 的 python/node/native 依赖，体积通常远大于 `~/.codex`。 */
+private fun codexRuntimesCache(): Path? =
+    homeDir()?.resolve(".cache")?.resolve("codex-runtimes")?.takeIf { Files.isDirectory(it) }
+
+private fun claudeHome(): Path? = homeSubdir(".claude")
+
+/** CLI / IDE 扩展写入的 MCP 日志缓存（按项目切分）。 */
+private fun claudeCliNodejsCache(): Path? =
+    appDataLocal()?.resolve("claude-cli-nodejs")?.resolve("Cache")?.takeIf { Files.isDirectory(it) }
+
 /**
- * Codex — `~/.codex`。实测本机占用最大的工具，主要来自插件缓存和沙箱二进制。
+ * Codex — `~/.codex` + `~/.cache/codex-runtimes`。
+ * 不含 `%LOCALAPPDATA%\OpenAI\Codex` 安装目录、不含 Documents\Codex 用户工作区。
  * 顺序按占用从大到小，方便用户从上往下勾。
  */
 val CodexProfile = ToolProfile(
     id = "codex",
     name = "Codex",
-    subtitle = "~/.codex",
-    baseDir = { homeSubdir(".codex") },
+    subtitle = "~/.codex · ~/.cache/codex-runtimes",
+    baseDir = ::codexHome,
+    spaceDirs = { listOfNotNull(codexHome(), codexRuntimesCache()) },
     targets = listOf(
         CleanTarget(
-            id = "codex.plugins-cache",
-            label = "插件缓存",
-            relPath = "plugins/cache",
+            id = "codex.cached-runtimes",
+            label = "Primary Runtime 依赖",
+            relPath = "",
             kind = MatchKind.DIRECTORY_CONTENTS,
             risk = Risk.SAFE,
-            description = "已解包的插件运行时（openai-bundled / openai-primary-runtime）。下次启动自动重新解包。",
+            // 常占 1GB+，删后要重新下载，不默认勾。
+            defaultSelected = false,
+            description = "~/.cache/codex-runtimes 下的 python / node / native 运行时。不丢用户数据，但删除后首次使用相关插件会重新下载（体积大、耗时长）。",
+            baseDir = ::codexRuntimesCache,
         ),
         CleanTarget(
-            id = "codex.sandbox-bin",
-            label = "沙箱运行器（历史版本）",
-            relPath = ".sandbox-bin/codex-command-runner-*.exe",
-            kind = MatchKind.STALE_VERSIONS,
+            id = "codex.plugins-appserver",
+            label = "插件宿主程序副本",
+            relPath = "plugins/.plugin-appserver",
+            kind = MatchKind.DIRECTORY,
             risk = Risk.SAFE,
-            description = "每次升级都会留下一份旧的 codex-command-runner。保留最新版本，只删历史版本。",
+            // 约数百 MB；一般从安装目录再拷，但仍可能让插件宿主短暂不可用，不默认勾。
+            defaultSelected = false,
+            description = "安装目录二进制在 ~/.codex 下的副本（可与安装包重复）。删除后需要时会重新放置；请先退出 Codex 再清。",
         ),
         CleanTarget(
             id = "codex.tmp",
-            label = "临时解包目录",
+            label = "解包与同步缓存",
             relPath = ".tmp",
             kind = MatchKind.DIRECTORY_CONTENTS,
             risk = Risk.SAFE,
-            description = "bundled-marketplaces 与 plugins 的中间产物，纯临时数据。",
+            // config 可能正指向其中的 marketplace source；清完要等再同步，不默认勾。
+            defaultSelected = false,
+            description = "marketplace / 插件同步的中间目录（含 staging 残留）。可重建，但配置可能正引用此处，删除后需重新同步，期间插件列表可能暂不可用。",
         ),
         CleanTarget(
             id = "codex.logs-db",
@@ -83,15 +116,7 @@ val CodexProfile = ToolProfile(
             relPath = "logs_*.sqlite*",
             kind = MatchKind.GLOB,
             risk = Risk.SAFE,
-            description = "遥测与调试日志（含 -shm / -wal）。删除不影响会话历史。",
-        ),
-        CleanTarget(
-            id = "codex.sqlite-legacy",
-            label = "旧版数据库备份",
-            relPath = "sqlite",
-            kind = MatchKind.DIRECTORY,
-            risk = Risk.SAFE,
-            description = "早期版本遗留的 sqlite 目录，新版本已不再读取。",
+            description = "遥测与调试用的 logs_*.sqlite（含 -wal / -shm）。可重建，不影响对话内容。",
         ),
         CleanTarget(
             id = "codex.sessions",
@@ -99,28 +124,66 @@ val CodexProfile = ToolProfile(
             relPath = "sessions",
             kind = MatchKind.DIRECTORY_CONTENTS,
             risk = Risk.OPTIONAL,
-            description = "历史对话记录。删除后无法再回看或恢复之前的会话。",
+            description = "按日期存放的对话记录（rollout *.jsonl）。删除后无法再打开或恢复这些会话。",
+        ),
+        CleanTarget(
+            id = "codex.plugins-cache",
+            label = "已解包的插件",
+            relPath = "plugins/cache",
+            kind = MatchKind.DIRECTORY_CONTENTS,
+            risk = Risk.SAFE,
+            description = "marketplace 解包后的插件文件（如 browser、documents）。不含宿主程序本身；下次使用时会重新解包。",
+        ),
+        CleanTarget(
+            id = "codex.sandbox-bin",
+            label = "沙箱运行器（历史版本）",
+            // 同时覆盖带版本号与无版本号的旧 runner；STALE_VERSIONS 按 mtime 保留最新一份。
+            relPath = ".sandbox-bin/codex-command-runner*.exe",
+            kind = MatchKind.STALE_VERSIONS,
+            risk = Risk.SAFE,
+            description = "升级留下的旧版 command-runner（含无版本号旧文件）。只删历史版本，保留最新一份；不动同目录的 codex.exe。",
         ),
         CleanTarget(
             id = "codex.vendor-imports",
-            label = "vendor 导入缓存",
+            label = "官方 Skills 克隆",
             relPath = "vendor_imports",
             kind = MatchKind.DIRECTORY_CONTENTS,
             risk = Risk.SAFE,
-            description = "第三方依赖导入的中间缓存。",
+            // 需再从 GitHub 拉取，不默认勾。
+            defaultSelected = false,
+            description = "从 GitHub 拉取的官方 skills 仓库缓存。删除后需要时会重新下载；不影响你自己的 skills 目录。",
+        ),
+        CleanTarget(
+            id = "codex.sandbox-logs",
+            label = "沙箱日志",
+            // 只清日志，不动 setup_marker / ACL 状态等沙箱元数据。
+            relPath = ".sandbox/sandbox*.log",
+            kind = MatchKind.GLOB,
+            risk = Risk.SAFE,
+            description = "Windows 沙箱运行日志。可重建；不包含密钥与沙箱配置。",
+        ),
+        CleanTarget(
+            id = "codex.sqlite-legacy",
+            label = "旧版数据库目录",
+            relPath = "sqlite",
+            kind = MatchKind.DIRECTORY,
+            risk = Risk.SAFE,
+            description = "极早期版本遗留的 sqlite 目录；新版本已改用根目录下的独立库文件。多数机器上已不存在。",
         ),
     ),
 )
 
 /**
- * Claude Code — `~/.claude`。
- * 大头是安装包和按项目切分的会话记录。
+ * Claude Code — `~/.claude` + `%LOCALAPPDATA%\claude-cli-nodejs\Cache`。
+ * 不含 npm 安装目录、不含 Claude Desktop（`%LOCALAPPDATA%\Claude-3p`）。
+ * 顺序按占用从大到小，方便用户从上往下勾。
  */
 val ClaudeCodeProfile = ToolProfile(
     id = "claude",
     name = "Claude Code",
-    subtitle = "~/.claude",
-    baseDir = { homeSubdir(".claude") },
+    subtitle = "~/.claude · Local\\claude-cli-nodejs",
+    baseDir = ::claudeHome,
+    spaceDirs = { listOfNotNull(claudeHome(), claudeCliNodejsCache()) },
     targets = listOf(
         CleanTarget(
             id = "claude.downloads",
@@ -128,7 +191,15 @@ val ClaudeCodeProfile = ToolProfile(
             relPath = "downloads",
             kind = MatchKind.DIRECTORY_CONTENTS,
             risk = Risk.SAFE,
-            description = "已安装版本的安装程序，留着只是占地方，需要时会重新下载。",
+            description = "已下载的 claude-*-win32-x64.exe 安装包。不丢用户数据，但删除后升级/重装需重新下载（体积大）。",
+        ),
+        CleanTarget(
+            id = "claude.projects",
+            label = "项目会话记录",
+            relPath = "projects",
+            kind = MatchKind.DIRECTORY_CONTENTS,
+            risk = Risk.OPTIONAL,
+            description = "按项目切分的对话转录（含 subagents / tool-results）以及 auto memory（projects/*/memory）。删除后无法 --resume，也无法恢复这些记忆。",
         ),
         CleanTarget(
             id = "claude.plugins-marketplaces",
@@ -136,7 +207,17 @@ val ClaudeCodeProfile = ToolProfile(
             relPath = "plugins/marketplaces",
             kind = MatchKind.DIRECTORY_CONTENTS,
             risk = Risk.SAFE,
-            description = "克隆下来的插件市场仓库，下次用到时自动重新拉取。",
+            // 需再从 GitHub 拉取，不默认勾。
+            defaultSelected = false,
+            description = "克隆下来的插件市场仓库。删除后下次用插件时会重新拉取；不动 plugins 下的配置 JSON。",
+        ),
+        CleanTarget(
+            id = "claude.plugins-cache",
+            label = "已安装插件缓存",
+            relPath = "plugins/cache",
+            kind = MatchKind.DIRECTORY_CONTENTS,
+            risk = Risk.SAFE,
+            description = "已安装插件的解包/缓存副本。删除后需要时会重新解析；插件持久数据在 plugins/data，不在此项。",
         ),
         CleanTarget(
             id = "claude.telemetry",
@@ -144,7 +225,7 @@ val ClaudeCodeProfile = ToolProfile(
             relPath = "telemetry",
             kind = MatchKind.DIRECTORY_CONTENTS,
             risk = Risk.SAFE,
-            description = "本地埋点数据，不影响任何功能。",
+            description = "本地埋点与失败上报缓存，不影响功能。",
         ),
         CleanTarget(
             id = "claude.file-history",
@@ -152,7 +233,15 @@ val ClaudeCodeProfile = ToolProfile(
             relPath = "file-history",
             kind = MatchKind.DIRECTORY_CONTENTS,
             risk = Risk.OPTIONAL,
-            description = "被编辑文件的历史快照，用于回滚。删除后无法撤销之前的改动。",
+            description = "被编辑文件的历史快照，用于 checkpoint 回滚。删除后无法撤销之前的改动。",
+        ),
+        CleanTarget(
+            id = "claude.shell-snapshots",
+            label = "Shell 环境快照",
+            relPath = "shell-snapshots",
+            kind = MatchKind.DIRECTORY_CONTENTS,
+            risk = Risk.SAFE,
+            description = "会话启动时抓取的 shell 环境；正常退出会清掉，此处多为崩溃残留。",
         ),
         CleanTarget(
             id = "claude.cache",
@@ -160,7 +249,24 @@ val ClaudeCodeProfile = ToolProfile(
             relPath = "cache",
             kind = MatchKind.DIRECTORY_CONTENTS,
             risk = Risk.SAFE,
-            description = "内部缓存目录。",
+            description = "内部缓存（如 changelog.md）。删除后会在后台重新拉取。",
+        ),
+        CleanTarget(
+            id = "claude.cli-nodejs-cache",
+            label = "CLI / IDE MCP 日志缓存",
+            relPath = "",
+            kind = MatchKind.DIRECTORY_CONTENTS,
+            risk = Risk.SAFE,
+            description = "%LOCALAPPDATA%\\claude-cli-nodejs\\Cache 下按项目切分的 MCP 日志。可重建。",
+            baseDir = ::claudeCliNodejsCache,
+        ),
+        CleanTarget(
+            id = "claude.history",
+            label = "输入历史",
+            relPath = "history.jsonl",
+            kind = MatchKind.FILE,
+            risk = Risk.OPTIONAL,
+            description = "在提示符里输入过的每一行（上箭头回忆）。删除后无法再召回这些输入。",
         ),
         CleanTarget(
             id = "claude.paste-cache",
@@ -171,20 +277,12 @@ val ClaudeCodeProfile = ToolProfile(
             description = "大段粘贴文本的临时副本。",
         ),
         CleanTarget(
-            id = "claude.shell-snapshots",
-            label = "Shell 环境快照",
-            relPath = "shell-snapshots",
+            id = "claude.image-cache",
+            label = "图片附件缓存",
+            relPath = "image-cache",
             kind = MatchKind.DIRECTORY_CONTENTS,
             risk = Risk.SAFE,
-            description = "每个会话启动时抓取的 shell 环境，会话结束即失效。",
-        ),
-        CleanTarget(
-            id = "claude.debug",
-            label = "调试日志",
-            relPath = "debug",
-            kind = MatchKind.DIRECTORY_CONTENTS,
-            risk = Risk.SAFE,
-            description = "调试输出。",
+            description = "会话里附带图片的本地缓存。可重建；多数机器上可能尚未生成。",
         ),
         CleanTarget(
             id = "claude.backups",
@@ -192,15 +290,104 @@ val ClaudeCodeProfile = ToolProfile(
             relPath = "backups",
             kind = MatchKind.DIRECTORY_CONTENTS,
             risk = Risk.OPTIONAL,
-            description = "配置文件的历史备份，删除后无法回退配置。",
+            description = "~/.claude/backups 下的 .claude.json 迁移备份。删除后无法回退这些快照。",
         ),
         CleanTarget(
-            id = "claude.projects",
-            label = "项目会话记录",
-            relPath = "projects",
-            kind = MatchKind.DIRECTORY_CONTENTS,
+            id = "claude.home-json-backups",
+            label = "主目录配置备份",
+            relPath = ".claude.json.backup*",
+            kind = MatchKind.GLOB,
             risk = Risk.OPTIONAL,
-            description = "按项目切分的完整对话记录，也是 --resume 的数据来源。删除后无法恢复历史会话。",
+            description = "用户主目录下的 .claude.json.backup*。不动正在使用的 .claude.json。",
+            baseDir = ::homeDir,
+        ),
+        CleanTarget(
+            id = "claude.debug",
+            label = "调试日志",
+            relPath = "debug",
+            kind = MatchKind.DIRECTORY_CONTENTS,
+            risk = Risk.SAFE,
+            description = "--debug 或 /debug 写出的会话调试日志。",
+        ),
+        CleanTarget(
+            id = "claude.session-env",
+            label = "会话环境元数据",
+            relPath = "session-env",
+            kind = MatchKind.DIRECTORY_CONTENTS,
+            risk = Risk.SAFE,
+            description = "每会话的环境元数据目录，无用户可见内容。",
+        ),
+        CleanTarget(
+            id = "claude.tasks",
+            label = "会话任务列表",
+            relPath = "tasks",
+            kind = MatchKind.DIRECTORY_CONTENTS,
+            risk = Risk.SAFE,
+            description = "任务工具写出的每会话任务列表，会话结束后可清。",
+        ),
+        CleanTarget(
+            id = "claude.plans",
+            label = "Plan 模式文件",
+            relPath = "plans",
+            kind = MatchKind.DIRECTORY_CONTENTS,
+            risk = Risk.SAFE,
+            description = "plan mode 写出的计划文件。官方视为可清；多数机器上可能尚未生成。",
+        ),
+        CleanTarget(
+            id = "claude.feedback-bundles",
+            label = "反馈归档",
+            relPath = "feedback-bundles",
+            kind = MatchKind.DIRECTORY_CONTENTS,
+            risk = Risk.SAFE,
+            description = "/feedback 写出的脱敏转录归档。可清。",
+        ),
+        CleanTarget(
+            id = "claude.stats-cache",
+            label = "用量统计缓存",
+            relPath = "stats-cache.json",
+            kind = MatchKind.FILE,
+            risk = Risk.OPTIONAL,
+            description = "/usage 展示的历史 token / 费用汇总。删除后历史总计不可恢复（会重新累计）。",
+        ),
+        CleanTarget(
+            id = "claude.remote-settings",
+            label = "远程设置缓存",
+            relPath = "remote-settings.json",
+            kind = MatchKind.FILE,
+            risk = Risk.SAFE,
+            description = "组织下发的 server-managed settings 本地副本。下次启动会重新拉取。",
+        ),
+        CleanTarget(
+            id = "claude.policy-limits",
+            label = "策略限额缓存",
+            relPath = "policy-limits.json",
+            kind = MatchKind.FILE,
+            risk = Risk.SAFE,
+            description = "账号策略限额的本地缓存。会自动刷新。",
+        ),
+        CleanTarget(
+            id = "claude.todos-legacy",
+            label = "旧版 todos 目录",
+            relPath = "todos",
+            kind = MatchKind.DIRECTORY_CONTENTS,
+            risk = Risk.SAFE,
+            description = "旧版本遗留目录，新版本不再写入。多数机器上已不存在。",
+        ),
+        CleanTarget(
+            id = "claude.statsig-legacy",
+            label = "旧版 statsig 目录",
+            relPath = "statsig",
+            kind = MatchKind.DIRECTORY_CONTENTS,
+            risk = Risk.SAFE,
+            description = "旧版本遗留目录，新版本不再写入。多数机器上已不存在。",
+        ),
+        CleanTarget(
+            id = "claude.logs-legacy",
+            label = "旧版 logs 目录",
+            relPath = "logs",
+            kind = MatchKind.DIRECTORY_CONTENTS,
+            risk = Risk.SAFE,
+            description = "旧版本遗留目录，新版本不再写入。多数机器上已不存在。",
         ),
     ),
 )

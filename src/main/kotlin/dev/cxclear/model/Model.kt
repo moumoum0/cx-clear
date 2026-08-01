@@ -44,7 +44,11 @@ data class CleanTarget(
     val kind: MatchKind,
     val risk: Risk,
     val description: String,
-    /** 默认是否勾选。SAFE 项默认勾上，OPTIONAL 交给用户决定。 */
+    /**
+     * 默认是否勾选。
+     * 一般 SAFE 默认勾上、OPTIONAL 交给用户；重建成本高（大体积重下、会暂时影响功能）
+     * 的 SAFE 项应显式设为 false。
+     */
     val defaultSelected: Boolean = risk == Risk.SAFE,
     /**
      * 覆盖所属 profile 的根目录。

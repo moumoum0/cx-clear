@@ -77,6 +77,7 @@ private data class ScanTargetItem(
     val description: String,
     val bytes: Long,
     val risk: Risk,
+    val defaultSelected: Boolean,
 )
 
 @Composable
@@ -142,9 +143,10 @@ fun MainContent(currentScreen: Screen) {
                 )
             }
 
+            // 跟 CleanTarget.defaultSelected 对齐：SAFE 但重建成本高的项可显式不默认勾。
             selectedTargets = scanCategories
                 .flatMap { it.items }
-                .filter { it.risk == Risk.SAFE && it.bytes > 0L }
+                .filter { it.defaultSelected && it.bytes > 0L }
                 .mapTo(mutableSetOf()) { it.id }
             scanPhase = ScanPhase.DONE
         }
@@ -279,6 +281,7 @@ private fun buildCategories(
             description = target.description,
             bytes = resultByTarget[target.id]?.bytes ?: 0L,
             risk = target.risk,
+            defaultSelected = target.defaultSelected,
         )
     }
 
@@ -286,7 +289,7 @@ private fun buildCategories(
         .filter { target ->
             resultByTarget[target.id]?.exists == true &&
                 target.risk == Risk.SAFE &&
-                listOf("plugins", "downloads", "sandbox", "vendor", "extension", "cached").any {
+                listOf("plugins", "downloads", "sandbox", "vendor", "extension", "cached", "runtime").any {
                     target.id.contains(it)
                 }
         }
