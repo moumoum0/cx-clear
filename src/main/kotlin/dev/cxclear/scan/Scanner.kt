@@ -19,8 +19,8 @@ import java.nio.file.FileSystems
 import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.nio.file.Path
+import java.nio.file.attribute.BasicFileAttributes
 import kotlin.io.path.fileSize
-import kotlin.io.path.isDirectory
 import kotlin.io.path.isRegularFile
 import kotlin.io.path.listDirectoryEntries
 import kotlin.io.path.name
@@ -28,6 +28,8 @@ import kotlin.io.path.name
 /** 一个 target 实际会被删掉的东西。Scanner 与 Cleaner 共用同一套解析结果，避免两边规则不一致。 */
 data class ResolvedTarget(
     val target: CleanTarget,
+    /** 本项允许删除的根目录。Cleaner 会在实际删除前再次用它校验路径边界。 */
+    val baseDir: Path,
     /** 待删除的路径。DIRECTORY_CONTENTS 展开成一级子项，GLOB 展开成匹配到的文件。 */
     val paths: List<Path>,
 )
@@ -39,9 +41,17 @@ data class ToolSpaceResult(
     val fileCount: Int,
 )
 
-/** 解析 target 实际使用的根目录：优先 target 自己的 [CleanTarget.baseDir]。 */
-fun resolveBase(profile: ToolProfile, target: CleanTarget): Path? =
-    target.baseDir?.invoke() ?: profile.baseDir()
+/**
+ * 解析 target 实际使用的根目录。
+ *
+ * target 一旦声明了自己的 [CleanTarget.baseDir]，解析失败就必须返回 null，不能回退到
+ * profile 根目录，否则空 relPath 等规则可能把整个工具数据目录当成独立缓存清掉。
+ */
+fun resolveBase(profile: ToolProfile, target: CleanTarget): Path? {
+    val targetBase = target.baseDir
+    val resolved = if (targetBase != null) targetBase() else profile.baseDir()
+    return resolved?.toAbsolutePath()?.normalize()
+}
 
 /**
  * 把 [CleanTarget] 解析成具体路径列表。不做任何删除。
@@ -50,18 +60,21 @@ fun resolveBase(profile: ToolProfile, target: CleanTarget): Path? =
  *（配合 GLOB / STALE_VERSIONS）。
  */
 fun resolveTarget(baseDir: Path, target: CleanTarget): ResolvedTarget {
+    val safeBase = baseDir.toAbsolutePath().normalize()
     val paths: List<Path> = when (target.kind) {
         MatchKind.DIRECTORY, MatchKind.FILE -> {
-            expandPathPattern(baseDir, target.relPath)
+            expandPathPattern(safeBase, target.relPath)
                 .filter { Files.exists(it, LinkOption.NOFOLLOW_LINKS) }
+                .filter { isSafeDeletionPath(safeBase, it) }
         }
 
         MatchKind.DIRECTORY_CONTENTS -> {
             // listDirectoryEntries 会带上点开头的条目 —— Codex 的大头（.plugin-appserver 等）
             // 正是点开头的，用 shell glob 会漏掉。
-            expandPathPattern(baseDir, target.relPath).flatMap { dir ->
-                if (dir.isDirectory()) {
+            expandPathPattern(safeBase, target.relPath).flatMap { dir ->
+                if (isSafeTraversalDirectory(safeBase, dir)) {
                     runCatching { dir.listDirectoryEntries() }.getOrDefault(emptyList())
+                        .filter { isSafeDeletionPath(safeBase, it) }
                 } else {
                     emptyList()
                 }
@@ -74,17 +87,18 @@ fun resolveTarget(baseDir: Path, target: CleanTarget): ResolvedTarget {
             val dirPattern = if (slash < 0) null else relative.substring(0, slash)
             val pattern = if (slash < 0) relative else relative.substring(slash + 1)
             val dirs = if (dirPattern == null) {
-                listOf(baseDir)
+                listOf(safeBase)
             } else {
-                expandPathPattern(baseDir, dirPattern)
+                expandPathPattern(safeBase, dirPattern)
             }
             dirs.flatMap { dir ->
-                if (!dir.isDirectory()) {
+                if (!isSafeTraversalDirectory(safeBase, dir)) {
                     emptyList()
                 } else {
                     val matcher = FileSystems.getDefault().getPathMatcher("glob:$pattern")
                     val matched = runCatching { dir.listDirectoryEntries() }.getOrDefault(emptyList())
                         .filter { matcher.matches(it.fileName) }
+                        .filter { isSafeDeletionPath(safeBase, it) }
                     if (target.kind == MatchKind.STALE_VERSIONS) {
                         // 每个父目录内各自保留 mtime 最新的一份。
                         val newest = matched.maxByOrNull { lastModifiedOrZero(it) }
@@ -96,7 +110,7 @@ fun resolveTarget(baseDir: Path, target: CleanTarget): ResolvedTarget {
             }
         }
     }
-    return ResolvedTarget(target, paths)
+    return ResolvedTarget(target, safeBase, paths.distinct())
 }
 
 /**
@@ -104,28 +118,75 @@ fun resolveTarget(baseDir: Path, target: CleanTarget): ResolvedTarget {
  * 不含 `*` 时与 [Path.resolve] 等价（返回单元素列表）。
  */
 internal fun expandPathPattern(baseDir: Path, relPath: String): List<Path> {
+    val safeBase = baseDir.toAbsolutePath().normalize()
     val parts = relPath.replace('\\', '/').split('/').filter { it.isNotEmpty() }
-    if (parts.isEmpty()) return listOf(baseDir)
-    var currents = listOf(baseDir)
+    if (parts.any { it == "." || it == ".." }) return emptyList()
+    if (parts.isEmpty()) return listOf(safeBase)
+    var currents = listOf(safeBase)
     for (part in parts) {
         currents = if (part == "*") {
             currents.flatMap { dir ->
-                if (!dir.isDirectory()) {
+                if (!isSafeTraversalDirectory(safeBase, dir)) {
                     emptyList()
                 } else {
                     runCatching {
                         dir.listDirectoryEntries().filter {
-                            it.isDirectory() && !Files.isSymbolicLink(it)
+                            Files.isDirectory(it, LinkOption.NOFOLLOW_LINKS) &&
+                                isSafeDeletionPath(safeBase, it)
                         }
                     }.getOrDefault(emptyList())
                 }
             }
         } else {
-            currents.map { it.resolve(part) }
+            currents.mapNotNull { current ->
+                val candidate = current.resolve(part).toAbsolutePath().normalize()
+                candidate.takeIf { it.startsWith(safeBase) }
+            }
         }
     }
     return currents
 }
+
+/** 最终条目可以是链接（删除链接本身是安全的），但 base 到其父目录之间不能经过链接。 */
+internal fun isSafeDeletionPath(baseDir: Path, candidate: Path): Boolean {
+    val base = baseDir.toAbsolutePath().normalize()
+    val path = candidate.toAbsolutePath().normalize()
+    if (path == base || !path.startsWith(base)) return false
+    if (isLinkLikeDirectory(base)) return false
+
+    val parent = path.parent ?: return false
+    if (parent == base) return true
+    val relativeParent = runCatching { base.relativize(parent) }.getOrNull() ?: return false
+    var current = base
+    for (part in relativeParent) {
+        current = current.resolve(part)
+        if (isLinkLikeDirectory(current)) return false
+    }
+    return true
+}
+
+/** 只允许真实目录；符号链接和 Windows 目录联接点都不能作为遍历入口。 */
+internal fun isSafeTraversalDirectory(baseDir: Path, candidate: Path): Boolean {
+    val base = baseDir.toAbsolutePath().normalize()
+    val path = candidate.toAbsolutePath().normalize()
+    if (!path.startsWith(base)) return false
+    if (!Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS)) return false
+    if (isLinkLikeDirectory(base)) return false
+
+    val relative = runCatching { base.relativize(path) }.getOrNull() ?: return false
+    var current = base
+    for (part in relative) {
+        current = current.resolve(part)
+        if (isLinkLikeDirectory(current)) return false
+    }
+    return true
+}
+
+private fun isLinkLikeDirectory(path: Path): Boolean =
+    Files.isSymbolicLink(path) || runCatching {
+        val attrs = Files.readAttributes(path, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)
+        attrs.isOther || (!attrs.isDirectory && Files.isDirectory(path))
+    }.getOrDefault(false)
 
 private fun lastModifiedOrZero(p: Path): Long =
     runCatching { Files.getLastModifiedTime(p).toMillis() }.getOrDefault(0L)
@@ -140,14 +201,14 @@ private inline fun measure(
     path: Path,
     onProgress: (deltaBytes: Long, deltaCount: Int) -> Unit = { _, _ -> },
 ): Pair<Long, Int> {
-    if (Files.isSymbolicLink(path)) {
+    if (isLinkLikeDirectory(path)) {
         onProgress(0L, 1); return 0L to 1
     }
     if (path.isRegularFile()) {
         val b = runCatching { path.fileSize() }.getOrDefault(0L)
         onProgress(b, 1); return b to 1
     }
-    if (!path.isDirectory()) return 0L to 0
+    if (!Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS)) return 0L to 0
 
     var bytes = 0L
     var count = 0
@@ -158,10 +219,10 @@ private inline fun measure(
         val entries = runCatching { dir.listDirectoryEntries() }.getOrNull() ?: continue
         for (e in entries) {
             when {
-                Files.isSymbolicLink(e) -> {
+                isLinkLikeDirectory(e) -> {
                     count++; onProgress(0L, 1)
                 }
-                e.isDirectory() -> stack.addLast(e)
+                Files.isDirectory(e, LinkOption.NOFOLLOW_LINKS) -> stack.addLast(e)
                 else -> {
                     val b = runCatching { e.fileSize() }.getOrDefault(0L)
                     bytes += b; count++; onProgress(b, 1)

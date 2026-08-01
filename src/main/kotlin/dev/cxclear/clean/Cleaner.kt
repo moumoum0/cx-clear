@@ -4,6 +4,8 @@ import dev.cxclear.model.CleanEvent
 import dev.cxclear.model.CleanTarget
 import dev.cxclear.model.ToolProfile
 import dev.cxclear.scan.ResolvedTarget
+import dev.cxclear.scan.isSafeDeletionPath
+import dev.cxclear.scan.isSafeTraversalDirectory
 import dev.cxclear.scan.resolveBase
 import dev.cxclear.scan.resolveTarget
 import dev.cxclear.scan.scanResolved
@@ -35,7 +37,11 @@ private class DeleteOutcome {
 /**
  * 递归删除。删不掉的条目（被占用、权限不足）跳过并记账，不让单个文件中断整个清理。
  */
-private fun deleteRecursively(root: Path, outcome: DeleteOutcome) {
+private fun deleteRecursively(root: Path, allowedRoot: Path, outcome: DeleteOutcome) {
+    if (!isSafeDeletionPath(allowedRoot, root)) {
+        outcome.note(IOException("拒绝删除允许目录之外或经由目录链接的路径"))
+        return
+    }
     if (!Files.exists(root, java.nio.file.LinkOption.NOFOLLOW_LINKS)) return
 
     if (!Files.isDirectory(root, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
@@ -51,7 +57,21 @@ private fun deleteRecursively(root: Path, outcome: DeleteOutcome) {
 
     try {
         Files.walkFileTree(root, object : SimpleFileVisitor<Path>() {
+            override fun preVisitDirectory(dir: Path, attrs: BasicFileAttributes): FileVisitResult {
+                if (isSafeTraversalDirectory(allowedRoot, dir)) return FileVisitResult.CONTINUE
+
+                // 若运行时把子目录换成了链接/联接点，只删除链接本身，绝不进入其目标。
+                runCatching { Files.delete(dir) }.onFailure {
+                    outcome.note(it as? Exception ?: IOException(it.message, it))
+                }
+                return FileVisitResult.SKIP_SUBTREE
+            }
+
             override fun visitFile(file: Path, attrs: BasicFileAttributes): FileVisitResult {
+                if (!isSafeDeletionPath(allowedRoot, file)) {
+                    outcome.note(IOException("删除期间路径边界发生变化，已跳过"))
+                    return FileVisitResult.CONTINUE
+                }
                 val size = if (attrs.isSymbolicLink) 0L else attrs.size()
                 try {
                     Files.delete(file)
@@ -69,7 +89,11 @@ private fun deleteRecursively(root: Path, outcome: DeleteOutcome) {
 
             override fun postVisitDirectory(dir: Path, exc: IOException?): FileVisitResult {
                 // 目录里还有删不掉的文件时，删目录本身也会失败 —— 这不是新错误，静默跳过。
-                runCatching { Files.delete(dir) }
+                if (isSafeDeletionPath(allowedRoot, dir)) {
+                    runCatching { Files.delete(dir) }
+                } else {
+                    outcome.note(IOException("删除期间路径边界发生变化，已跳过"))
+                }
                 return FileVisitResult.CONTINUE
             }
         })
@@ -99,7 +123,7 @@ fun clean(requests: List<CleanRequest>): Flow<CleanEvent> = flow {
         val resolved: ResolvedTarget = resolveTarget(base, req.target)
         val outcome = DeleteOutcome()
         for (p in resolved.paths) {
-            deleteRecursively(p, outcome)
+            deleteRecursively(p, resolved.baseDir, outcome)
         }
 
         total += outcome.freed

@@ -789,6 +789,9 @@ private data class CylinderSlice(
  *
  * 占比极小的段会被抬升到 [minHeight]，否则会退化成一条被邻段底盘完全盖住的线；
  * 抬升后整体等比压回筒内，因此累计高度永远不会溢出筒身。
+ *
+ * [stubZero]：扫描初期各段份额还是 0 时，仍画出 [minHeight] 高的扁片，
+ * 避免整根柱体只剩空壳；结果出来后关掉，真正为 0 的段照旧不画。
  */
 private fun sliceCylinder(
     colors: List<Color>,
@@ -796,9 +799,13 @@ private fun sliceCylinder(
     bottom: Float,
     bodyHeight: Float,
     minHeight: Float,
+    stubZero: Boolean = false,
 ): List<CylinderSlice> {
     val heights = shares.map { share ->
-        if (share <= 0.0005f) 0f else max(share * bodyHeight, minHeight)
+        when {
+            share <= 0.0005f -> if (stubZero) minHeight else 0f
+            else -> max(share * bodyHeight, minHeight)
+        }
     }
     val used = heights.sum()
     val scale = if (used > bodyHeight) bodyHeight / used else 1f
@@ -901,6 +908,7 @@ private fun StorageCylinder(
             bottom = bottom,
             bodyHeight = bodyHeight,
             minHeight = capHeight * 0.55f,
+            stubZero = isScanning,
         )
         val fillTop = slices.lastOrNull()?.top ?: bottom
 
@@ -1020,25 +1028,11 @@ private fun TopBar(
     ) {
         ToolSelector(selectedTools, onToolToggle)
 
-        AnimatedContent(
-            targetState = showClean,
-            transitionSpec = {
-                if (targetState) {
-                    (fadeIn(Motion.normal()) + slideInHorizontally(Motion.normal()) { it / 5 }) togetherWith
-                        (fadeOut(Motion.fast()) + slideOutHorizontally(Motion.fast()) { -it / 5 })
-                } else {
-                    (fadeIn(Motion.normal()) + slideInHorizontally(Motion.normal()) { -it / 5 }) togetherWith
-                        (fadeOut(Motion.fast()) + slideOutHorizontally(Motion.fast()) { it / 5 })
-                }.using(SizeTransform(clip = false))
-            },
-            label = "topBarActions",
-            contentAlignment = Alignment.CenterEnd,
-        ) { cleanMode ->
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                if (cleanMode) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (showClean) {
                     OutlinedButton(
                         onClick = onStartScan,
                         enabled = !isCleaning && selectedTools.isNotEmpty(),
@@ -1053,16 +1047,8 @@ private fun TopBar(
                         Text("重新扫描", fontSize = 14.sp, fontWeight = FontWeight.Medium)
                     }
 
-                    val cleanBg by animateColorAsState(
-                        targetValue = if (cleanEnabled) AppColors.Primary else AppColors.PrimaryContainer,
-                        animationSpec = Motion.normal(),
-                        label = "cleanBtnBg",
-                    )
-                    val cleanFg by animateColorAsState(
-                        targetValue = if (cleanEnabled) AppColors.OnPrimary else AppColors.Primary,
-                        animationSpec = Motion.normal(),
-                        label = "cleanBtnFg",
-                    )
+                    val cleanBg = if (cleanEnabled) AppColors.Primary else AppColors.PrimaryContainer
+                    val cleanFg = if (cleanEnabled) AppColors.OnPrimary else AppColors.Primary
                     Button(
                         onClick = onRequestClean,
                         enabled = cleanEnabled,
@@ -1098,16 +1084,8 @@ private fun TopBar(
                     }
                 } else {
                     val scanEnabled = scanPhase != ScanPhase.SCANNING && selectedTools.isNotEmpty()
-                    val scanBg by animateColorAsState(
-                        targetValue = if (scanEnabled) AppColors.Primary else AppColors.PrimaryContainer,
-                        animationSpec = Motion.normal(),
-                        label = "scanBtnBg",
-                    )
-                    val scanFg by animateColorAsState(
-                        targetValue = if (scanEnabled) AppColors.OnPrimary else AppColors.Primary,
-                        animationSpec = Motion.normal(),
-                        label = "scanBtnFg",
-                    )
+                    val scanBg = if (scanEnabled) AppColors.Primary else AppColors.PrimaryContainer
+                    val scanFg = if (scanEnabled) AppColors.OnPrimary else AppColors.Primary
                     Button(
                         onClick = onStartScan,
                         enabled = scanEnabled,
