@@ -10,28 +10,19 @@ class ProfileRiskTest {
     @Test
     fun `user session data is optional and never selected by default`() {
         val protectedIds = setOf(
-            "codex.logs-db",
-            "codex.sandbox-logs",
-            "claude.cli-nodejs-cache",
-            "claude.debug",
             "claude.shell-snapshots",
             "claude.session-env",
             "claude.paste-cache",
             "claude.image-cache",
             "claude.feedback-bundles",
             "claude.todos-legacy",
-            "claude.logs-legacy",
             "claude.tasks",
             "claude.plans",
             "cursor.state-backup",
             "cursor.cached-profiles",
-            "cursor.app-logs",
-            "cursor.crashpad",
             "cursor.service-worker",
             "cursor.blob-storage",
             "cursor.partition-blob",
-            "cursor.process-monitor",
-            "cursor.home-logs",
             "cursor.agent-tools",
             "cursor.project-terminals",
         )
@@ -49,6 +40,29 @@ class ProfileRiskTest {
         ALL_PROFILES.flatMap { it.targets }
             .filter { it.risk == Risk.OPTIONAL }
             .forEach { assertFalse(it.defaultSelected, "${it.id} must not be selected by default") }
+    }
+
+    @Test
+    fun `logs diagnostics and claude downloads are safe and selected by default`() {
+        val defaultCleanIds = setOf(
+            "codex.logs-db",
+            "codex.sandbox-logs",
+            "claude.cli-nodejs-cache",
+            "claude.debug",
+            "claude.downloads",
+            "claude.logs-legacy",
+            "cursor.app-logs",
+            "cursor.crashpad",
+            "cursor.process-monitor",
+            "cursor.home-logs",
+        )
+        val targetsById = ALL_PROFILES.flatMap { it.targets }.associateBy { it.id }
+
+        defaultCleanIds.forEach { id ->
+            val target = targetsById.getValue(id)
+            assertEquals(Risk.SAFE, target.risk, "$id must be safe")
+            assertTrue(target.defaultSelected, "$id must be selected by default")
+        }
     }
 
     @Test

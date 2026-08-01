@@ -203,8 +203,8 @@ val CodexProfile = ToolProfile(
             label = "日志数据库",
             relPath = "logs_*.sqlite*",
             kind = MatchKind.GLOB,
-            risk = Risk.OPTIONAL,
-            description = "Codex 活跃调试日志库（含 -wal / -shm），可能记录会话事件与请求详情。删除后诊断历史不可恢复；请先完全退出 Codex。",
+            risk = Risk.SAFE,
+            description = "Codex 调试日志库（含 -wal / -shm）。用于问题诊断，不承载会话主数据；请先完全退出 Codex 再清理。",
         ),
         CleanTarget(
             id = "codex.sessions",
@@ -247,8 +247,8 @@ val CodexProfile = ToolProfile(
             // 只清日志，不动 setup_marker / ACL 状态等沙箱元数据。
             relPath = ".sandbox/sandbox*.log",
             kind = MatchKind.GLOB,
-            risk = Risk.OPTIONAL,
-            description = "Windows 沙箱运行日志。不包含密钥与沙箱配置，但删除后历史诊断记录不可恢复。",
+            risk = Risk.SAFE,
+            description = "Windows 沙箱运行日志。不包含密钥与沙箱配置，可直接清理。",
         ),
     ),
 )
@@ -273,7 +273,6 @@ val ClaudeCodeProfile = ToolProfile(
             relPath = "downloads",
             kind = MatchKind.DIRECTORY_CONTENTS,
             risk = Risk.SAFE,
-            defaultSelected = false,
             description = "已下载的 claude-*-win32-x64.exe 安装包。不丢用户数据，但删除后升级/重装需重新下载（体积大）。",
         ),
         CleanTarget(
@@ -348,8 +347,8 @@ val ClaudeCodeProfile = ToolProfile(
             label = "CLI / IDE MCP 日志缓存",
             relPath = "",
             kind = MatchKind.DIRECTORY_CONTENTS,
-            risk = Risk.OPTIONAL,
-            description = "%LOCALAPPDATA%\\claude-cli-nodejs\\Cache 下按项目切分的 MCP 日志。删除后历史诊断记录不可恢复。",
+            risk = Risk.SAFE,
+            description = "%LOCALAPPDATA%\\claude-cli-nodejs\\Cache 下按项目切分的 MCP 运行日志，可直接清理。",
             baseDir = ::claudeCliNodejsCache,
         ),
         CleanTarget(
@@ -398,8 +397,8 @@ val ClaudeCodeProfile = ToolProfile(
             label = "调试日志",
             relPath = "debug",
             kind = MatchKind.DIRECTORY_CONTENTS,
-            risk = Risk.OPTIONAL,
-            description = "--debug 或 /debug 写出的会话调试日志，可能包含会话诊断信息。删除后不可恢复。",
+            risk = Risk.SAFE,
+            description = "--debug 或 /debug 写出的会话调试日志，不承载会话主数据，可直接清理。",
         ),
         CleanTarget(
             id = "claude.session-env",
@@ -478,8 +477,8 @@ val ClaudeCodeProfile = ToolProfile(
             label = "旧版 logs 目录",
             relPath = "logs",
             kind = MatchKind.DIRECTORY_CONTENTS,
-            risk = Risk.OPTIONAL,
-            description = "旧版本遗留的历史日志。新版本不再写入，但删除后历史诊断记录不可恢复。",
+            risk = Risk.SAFE,
+            description = "旧版本遗留的历史日志。新版本不再写入，可直接清理。",
         ),
     ),
 )
@@ -591,8 +590,8 @@ val CursorProfile = ToolProfile(
             label = "应用日志",
             relPath = "logs",
             kind = MatchKind.DIRECTORY_CONTENTS,
-            risk = Risk.OPTIONAL,
-            description = "Cursor 主程序历史日志。删除后诊断记录不可恢复。",
+            risk = Risk.SAFE,
+            description = "Cursor 主程序历史运行日志，可直接清理。",
             baseDir = ::cursorAppData,
         ),
         CleanTarget(
@@ -600,8 +599,8 @@ val CursorProfile = ToolProfile(
             label = "崩溃转储",
             relPath = "Crashpad",
             kind = MatchKind.DIRECTORY_CONTENTS,
-            risk = Risk.OPTIONAL,
-            description = "崩溃报告与 minidump。删除后无法再用于问题诊断。",
+            risk = Risk.SAFE,
+            description = "崩溃报告与 minidump，仅用于问题诊断，可直接清理。",
             baseDir = ::cursorAppData,
         ),
         CleanTarget(
@@ -692,8 +691,8 @@ val CursorProfile = ToolProfile(
             label = "进程监控日志",
             relPath = "process-monitor",
             kind = MatchKind.DIRECTORY_CONTENTS,
-            risk = Risk.OPTIONAL,
-            description = "本地进程监控历史输出。删除后诊断记录不可恢复。",
+            risk = Risk.SAFE,
+            description = "本地进程监控历史输出，可直接清理。",
             baseDir = ::cursorAppData,
         ),
         CleanTarget(
@@ -712,8 +711,8 @@ val CursorProfile = ToolProfile(
             label = "Agent 日志",
             relPath = "logs",
             kind = MatchKind.DIRECTORY_CONTENTS,
-            risk = Risk.OPTIONAL,
-            description = "~/.cursor 下的连接与调试历史日志。删除后诊断记录不可恢复。",
+            risk = Risk.SAFE,
+            description = "~/.cursor 下的连接与调试历史日志，可直接清理。",
             baseDir = ::cursorHome,
         ),
         CleanTarget(
