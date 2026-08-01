@@ -24,10 +24,13 @@ import androidx.compose.material.Icon
 import androidx.compose.material.OutlinedButton
 import androidx.compose.material.Text
 import androidx.compose.material.TextButton
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
@@ -496,6 +499,10 @@ private fun ScanResultView(
                 val fraction = if (!isScanning && totalBytes > 0L) {
                     (category.bytes.toFloat() / totalBytes).coerceIn(0f, 1f)
                 } else 0f
+                val chevronRotation by animateFloatAsState(
+                    targetValue = if (isExpanded) 180f else 0f,
+                    animationSpec = tween(180, easing = FastOutSlowInEasing),
+                )
 
                 Column(modifier = Modifier.fillMaxWidth()) {
                     Box(
@@ -571,10 +578,13 @@ private fun ScanResultView(
                                 )
                             } else if (canExpand) {
                                 Spacer(Modifier.width(8.dp))
-                                Text(
-                                    text = if (isExpanded) "⌃" else "⌄",
-                                    fontSize = 15.sp,
-                                    color = AppColors.TextTertiary,
+                                Icon(
+                                    imageVector = Icons.Filled.KeyboardArrowDown,
+                                    contentDescription = if (isExpanded) "收起" else "展开",
+                                    modifier = Modifier
+                                        .size(18.dp)
+                                        .rotate(chevronRotation),
+                                    tint = AppColors.TextTertiary,
                                 )
                             }
                         }

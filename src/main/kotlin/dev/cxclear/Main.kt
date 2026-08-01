@@ -6,6 +6,7 @@ import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
+import dev.cxclear.ui.App
 import java.awt.Dimension
 
 private fun configureHighDpiRendering() {
@@ -31,8 +32,14 @@ private fun startApplication() = application {
         title = "Cx Clear",
         state = windowState,
         resizable = true,
+        undecorated = true,
+        // 透明底才能露出圆角外的桌面，否则仍是方角黑/白底。
+        transparent = true,
     ) {
         window.minimumSize = Dimension(800, 600)
-        dev.cxclear.ui.App()
+        App(
+            windowState = windowState,
+            onCloseRequest = ::exitApplication,
+        )
     }
 }

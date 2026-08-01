@@ -101,6 +101,9 @@ object AppColors {
 
 object AppDimensions {
     const val SidebarWidth = 88f
+    const val TitleBarHeight = 40f
+    /** 无边框窗口外轮廓圆角；最大化时不用。 */
+    const val WindowCornerRadius = 8f
     const val Radius = 12f
     const val RadiusFull = 999f
     const val SpacingSmall = 8f
