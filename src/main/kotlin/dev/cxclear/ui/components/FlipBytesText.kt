@@ -1,7 +1,6 @@
 package dev.cxclear.ui.components
 
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
@@ -30,15 +29,14 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import dev.cxclear.scan.formatBytes
+import dev.cxclear.ui.theme.Motion
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 
-private const val FlipDurationMs = 260
-
 private val UnitRank = mapOf("B" to 0, "KB" to 1, "MB" to 2, "GB" to 3, "TB" to 4)
+
 
 /**
  * 容量数字的翻转显示：每位数字与单位都只在新旧两值之间切换，
@@ -61,7 +59,7 @@ fun FlipBytesText(
         while (true) {
             if (displayed != latestBytes) {
                 displayed = latestBytes
-                delay(FlipDurationMs.toLong())
+                delay(Motion.FlipMs.toLong())
             } else {
                 snapshotFlow { latestBytes }.first { it != displayed }
             }
@@ -139,15 +137,15 @@ private fun FlipToken(
                 val to = rankOf(targetState)
                 val rising = to > from || (wrapRising && from == 9 && to == 0)
                 val enter = (if (rising) {
-                    slideInVertically(tween(FlipDurationMs)) { it }
+                    slideInVertically(Motion.flip()) { it }
                 } else {
-                    slideInVertically(tween(FlipDurationMs)) { -it }
-                }) + fadeIn(tween(FlipDurationMs))
+                    slideInVertically(Motion.flip()) { -it }
+                }) + fadeIn(Motion.flip())
                 val exit = (if (rising) {
-                    slideOutVertically(tween(FlipDurationMs)) { -it }
+                    slideOutVertically(Motion.flip()) { -it }
                 } else {
-                    slideOutVertically(tween(FlipDurationMs)) { it }
-                }) + fadeOut(tween(FlipDurationMs))
+                    slideOutVertically(Motion.flip()) { it }
+                }) + fadeOut(Motion.flip())
                 enter togetherWith exit
             },
             label = "flipToken",

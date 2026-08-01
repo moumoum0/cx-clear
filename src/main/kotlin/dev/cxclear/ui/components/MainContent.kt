@@ -1,11 +1,22 @@
 package dev.cxclear.ui.components
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -27,6 +38,7 @@ import androidx.compose.material.TextButton
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.runtime.*
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -59,6 +71,7 @@ import dev.cxclear.scan.scanStream
 import dev.cxclear.ui.Screen
 import dev.cxclear.ui.theme.AppColors
 import dev.cxclear.ui.theme.AppDimensions
+import dev.cxclear.ui.theme.Motion
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -111,10 +124,9 @@ fun MainContent(currentScreen: Screen) {
                     CleanHistory.append(event.totalFreedBytes)
                 }
             }
-            // 清掉刚删过的项，重新量残留：删不掉的（被占用）会留下，重扫后如实反映。
+            // 只切回 IDLE：分类数据留给结果区退场动画用，下次 startScan 会清空重扫。
             selectedTargets = emptySet()
             scanPhase = ScanPhase.IDLE
-            scanCategories = emptyList()
             isCleaning = false
             cleanTick++
         }
@@ -351,35 +363,51 @@ private fun ScanView(
     selectedTargets: Set<String>,
     onTargetToggle: (String) -> Unit,
 ) {
-    when (phase) {
-        ScanPhase.IDLE -> Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
-        ) {
-            Text(
-                text = "未开始扫描",
-                fontSize = 18.sp,
-                color = AppColors.TextSecondary,
-                fontWeight = FontWeight.Medium
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = "点击「开始扫描」查看应用占用与可清理内容",
-                fontSize = 14.sp,
-                color = AppColors.TextTertiary
+    // 只用 IDLE vs 有结果 做切换；SCANNING/DONE 共用同一 target，
+    // 避免扫描结束时整棵子树重建导致柱体 Animatable 归零重播。
+    val showingResults = phase != ScanPhase.IDLE
+    AnimatedContent(
+        targetState = showingResults,
+        transitionSpec = {
+            if (targetState) {
+                (fadeIn(Motion.normal()) + slideInVertically(Motion.normal()) { it / 14 }) togetherWith
+                    fadeOut(Motion.fast())
+            } else {
+                (fadeIn(Motion.normal()) + slideInVertically(Motion.normal()) { -it / 14 }) togetherWith
+                    (fadeOut(Motion.normal()) + slideOutVertically(Motion.normal()) { it / 14 })
+            }.using(SizeTransform(clip = false))
+        },
+        label = "scanPhase",
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center,
+    ) { results ->
+        if (!results) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+            ) {
+                Text(
+                    text = "未开始扫描",
+                    fontSize = 18.sp,
+                    color = AppColors.TextSecondary,
+                    fontWeight = FontWeight.Medium,
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "点击「开始扫描」查看应用占用与可清理内容",
+                    fontSize = 14.sp,
+                    color = AppColors.TextTertiary,
+                )
+            }
+        } else {
+            ScanResultView(
+                categories = categories,
+                isScanning = phase == ScanPhase.SCANNING,
+                totalBytes = categories.sumOf { it.bytes },
+                selectedTargets = selectedTargets,
+                onTargetToggle = onTargetToggle,
             )
         }
-
-        // 两个阶段必须共用同一个调用点：`when` 的每个分支是独立的组合 group，
-        // 分开写会让扫描结束时整棵子树被丢弃重建，柱体里的 Animatable 一起归零，
-        // 于是明明数据没变，柱子却要塌成空筒再长一遍。
-        ScanPhase.SCANNING, ScanPhase.DONE -> ScanResultView(
-            categories = categories,
-            isScanning = phase == ScanPhase.SCANNING,
-            totalBytes = categories.sumOf { it.bytes },
-            selectedTargets = selectedTargets,
-            onTargetToggle = onTargetToggle,
-        )
     }
 }
 
@@ -423,12 +451,20 @@ private fun ScanResultView(
             verticalArrangement = Arrangement.Top,
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = if (isScanning) "已找到 " else "应用共占用 ",
-                    fontSize = 24.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = AppColors.TextPrimary,
-                )
+                AnimatedContent(
+                    targetState = isScanning,
+                    transitionSpec = {
+                        fadeIn(Motion.normal()) togetherWith fadeOut(Motion.fast())
+                    },
+                    label = "scanTitle",
+                ) { scanning ->
+                    Text(
+                        text = if (scanning) "已找到 " else "应用共占用 ",
+                        fontSize = 24.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = AppColors.TextPrimary,
+                    )
+                }
                 FlipBytesText(
                     bytes = totalBytes,
                     fontSize = 24.sp,
@@ -436,28 +472,36 @@ private fun ScanResultView(
                     color = AppColors.TextPrimary,
                 )
             }
-            Spacer(Modifier.height(6.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                if (isScanning) {
-                    Text("可清理共 ", fontSize = 12.sp, color = AppColors.TextTertiary)
-                    FlipBytesText(
-                        bytes = cleanableBytes,
-                        fontSize = 12.sp,
-                        color = AppColors.TextTertiary,
-                    )
-                } else {
-                    Text("已选择 ", fontSize = 12.sp, color = AppColors.TextTertiary)
-                    FlipBytesText(
-                        bytes = selectedBytes,
-                        fontSize = 12.sp,
-                        color = AppColors.TextTertiary,
-                    )
-                    Text(" · 可清理共 ", fontSize = 12.sp, color = AppColors.TextTertiary)
-                    FlipBytesText(
-                        bytes = cleanableBytes,
-                        fontSize = 12.sp,
-                        color = AppColors.TextTertiary,
-                    )
+            Spacer(modifier = Modifier.height(6.dp))
+            AnimatedContent(
+                targetState = isScanning,
+                transitionSpec = {
+                    fadeIn(Motion.normal()) togetherWith fadeOut(Motion.fast())
+                },
+                label = "scanSubtitle",
+            ) { scanning ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (scanning) {
+                        Text("可清理共 ", fontSize = 12.sp, color = AppColors.TextTertiary)
+                        FlipBytesText(
+                            bytes = cleanableBytes,
+                            fontSize = 12.sp,
+                            color = AppColors.TextTertiary,
+                        )
+                    } else {
+                        Text("已选择 ", fontSize = 12.sp, color = AppColors.TextTertiary)
+                        FlipBytesText(
+                            bytes = selectedBytes,
+                            fontSize = 12.sp,
+                            color = AppColors.TextTertiary,
+                        )
+                        Text(" · 可清理共 ", fontSize = 12.sp, color = AppColors.TextTertiary)
+                        FlipBytesText(
+                            bytes = cleanableBytes,
+                            fontSize = 12.sp,
+                            color = AppColors.TextTertiary,
+                        )
+                    }
                 }
             }
             // 占比条两态各表意，且都随数据动态生长：
@@ -472,7 +516,8 @@ private fun ScanResultView(
             // 补间到目标占比，勾选/取消时宽度滑动而非瞬跳。
             val animatedFraction by animateFloatAsState(
                 targetValue = selectedFraction,
-                animationSpec = tween(320, easing = FastOutSlowInEasing),
+                animationSpec = Motion.medium(),
+                label = "selectedFraction",
             )
             Box(
                 Modifier
@@ -496,12 +541,18 @@ private fun ScanResultView(
                 val canExpand = !isScanning && category.items.isNotEmpty()
                 val isExpanded = category.id in expandedCategories
                 val isRetained = category.id == "retained"
-                val fraction = if (!isScanning && totalBytes > 0L) {
+                val targetFraction = if (!isScanning && totalBytes > 0L) {
                     (category.bytes.toFloat() / totalBytes).coerceIn(0f, 1f)
                 } else 0f
+                val fraction by animateFloatAsState(
+                    targetValue = targetFraction,
+                    animationSpec = Motion.medium(),
+                    label = "categoryFraction",
+                )
                 val chevronRotation by animateFloatAsState(
                     targetValue = if (isExpanded) 180f else 0f,
-                    animationSpec = tween(180, easing = FastOutSlowInEasing),
+                    animationSpec = Motion.fast(),
+                    label = "chevron",
                 )
 
                 Column(modifier = Modifier.fillMaxWidth()) {
@@ -590,13 +641,19 @@ private fun ScanResultView(
                         }
                     }
 
-                    if (isExpanded) {
-                        category.items.forEach { target ->
-                            TargetSelectionRow(
-                                target = target,
-                                checked = target.id in selectedTargets,
-                                onCheckedChange = { onTargetToggle(target.id) },
-                            )
+                    AnimatedVisibility(
+                        visible = isExpanded,
+                        enter = expandVertically(Motion.normal()) + fadeIn(Motion.normal()),
+                        exit = shrinkVertically(Motion.normal()) + fadeOut(Motion.fast()),
+                    ) {
+                        Column {
+                            category.items.forEach { target ->
+                                TargetSelectionRow(
+                                    target = target,
+                                    checked = target.id in selectedTargets,
+                                    onCheckedChange = { onTargetToggle(target.id) },
+                                )
+                            }
                         }
                     }
                 }
@@ -613,9 +670,16 @@ private fun TargetSelectionRow(
     checked: Boolean,
     onCheckedChange: () -> Unit,
 ) {
+    val rowBg by animateColorAsState(
+        targetValue = if (checked) AppColors.Primary.copy(alpha = 0.06f) else Color.Transparent,
+        animationSpec = Motion.fast(),
+        label = "targetRowBg",
+    )
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(rowBg)
             .clickable(onClick = onCheckedChange)
             .padding(start = 8.dp, top = 7.dp, bottom = 7.dp),
         verticalAlignment = Alignment.Top,
@@ -708,7 +772,7 @@ private fun StorageCylinder(
             launch {
                 shares[index].animateTo(
                     targetValue = category.bytes / totalBytes,
-                    animationSpec = tween(440, easing = FastOutSlowInEasing),
+                    animationSpec = Motion.grow(),
                 )
             }
         }
@@ -721,7 +785,9 @@ private fun StorageCylinder(
             sweep.snapTo(0f)
             sweep.animateTo(
                 targetValue = 1f,
-                animationSpec = infiniteRepeatable(tween(1600, easing = LinearEasing)),
+                animationSpec = infiniteRepeatable(
+                    tween(Motion.SweepMs, easing = LinearEasing),
+                ),
             )
         } else {
             sweep.snapTo(0f)
@@ -885,81 +951,121 @@ private fun TopBar(
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         ToolSelector(selectedTools, onToolToggle)
 
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            if (showClean) {
-                OutlinedButton(
-                    onClick = onStartScan,
-                    enabled = !isCleaning && selectedTools.isNotEmpty(),
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = AppColors.Primary,
-                        disabledContentColor = AppColors.Primary.copy(alpha = 0.5f),
-                    ),
-                    shape = RoundedCornerShape(AppDimensions.RadiusFull.dp),
-                    modifier = Modifier.height(40.dp),
-                    contentPadding = PaddingValues(horizontal = 24.dp, vertical = 0.dp),
-                ) {
-                    Text("重新扫描", fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                }
+        AnimatedContent(
+            targetState = showClean,
+            transitionSpec = {
+                if (targetState) {
+                    (fadeIn(Motion.normal()) + slideInHorizontally(Motion.normal()) { it / 5 }) togetherWith
+                        (fadeOut(Motion.fast()) + slideOutHorizontally(Motion.fast()) { -it / 5 })
+                } else {
+                    (fadeIn(Motion.normal()) + slideInHorizontally(Motion.normal()) { -it / 5 }) togetherWith
+                        (fadeOut(Motion.fast()) + slideOutHorizontally(Motion.fast()) { it / 5 })
+                }.using(SizeTransform(clip = false))
+            },
+            label = "topBarActions",
+            contentAlignment = Alignment.CenterEnd,
+        ) { cleanMode ->
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (cleanMode) {
+                    OutlinedButton(
+                        onClick = onStartScan,
+                        enabled = !isCleaning && selectedTools.isNotEmpty(),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = AppColors.Primary,
+                            disabledContentColor = AppColors.Primary.copy(alpha = 0.5f),
+                        ),
+                        shape = RoundedCornerShape(AppDimensions.RadiusFull.dp),
+                        modifier = Modifier.height(40.dp),
+                        contentPadding = PaddingValues(horizontal = 24.dp, vertical = 0.dp),
+                    ) {
+                        Text("重新扫描", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                    }
 
-                Button(
-                    onClick = onRequestClean,
-                    enabled = cleanEnabled,
-                    colors = ButtonDefaults.buttonColors(
-                        backgroundColor = AppColors.Primary,
-                        contentColor = AppColors.OnPrimary,
-                        disabledBackgroundColor = AppColors.PrimaryContainer,
-                        disabledContentColor = AppColors.Primary,
-                    ),
-                    shape = RoundedCornerShape(AppDimensions.RadiusFull.dp),
-                    modifier = Modifier.height(40.dp),
-                    contentPadding = PaddingValues(horizontal = 24.dp, vertical = 0.dp),
-                ) {
-                    if (isCleaning) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(16.dp),
-                            color = AppColors.OnPrimary,
-                            strokeWidth = 2.dp,
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Text("正在清理…", fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                    } else {
+                    val cleanBg by animateColorAsState(
+                        targetValue = if (cleanEnabled) AppColors.Primary else AppColors.PrimaryContainer,
+                        animationSpec = Motion.normal(),
+                        label = "cleanBtnBg",
+                    )
+                    val cleanFg by animateColorAsState(
+                        targetValue = if (cleanEnabled) AppColors.OnPrimary else AppColors.Primary,
+                        animationSpec = Motion.normal(),
+                        label = "cleanBtnFg",
+                    )
+                    Button(
+                        onClick = onRequestClean,
+                        enabled = cleanEnabled,
+                        colors = ButtonDefaults.buttonColors(
+                            backgroundColor = cleanBg,
+                            contentColor = cleanFg,
+                            disabledBackgroundColor = cleanBg,
+                            disabledContentColor = cleanFg,
+                        ),
+                        shape = RoundedCornerShape(AppDimensions.RadiusFull.dp),
+                        modifier = Modifier.height(40.dp),
+                        contentPadding = PaddingValues(horizontal = 24.dp, vertical = 0.dp),
+                    ) {
+                        if (isCleaning) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                color = AppColors.OnPrimary,
+                                strokeWidth = 2.dp,
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text("正在清理…", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                        } else {
+                            Text(
+                                text = if (selectedBytes > 0L) {
+                                    "清理选中 ${formatBytes(selectedBytes)}"
+                                } else {
+                                    "清理选中项"
+                                },
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Medium,
+                            )
+                        }
+                    }
+                } else {
+                    val scanEnabled = scanPhase != ScanPhase.SCANNING && selectedTools.isNotEmpty()
+                    val scanBg by animateColorAsState(
+                        targetValue = if (scanEnabled) AppColors.Primary else AppColors.PrimaryContainer,
+                        animationSpec = Motion.normal(),
+                        label = "scanBtnBg",
+                    )
+                    val scanFg by animateColorAsState(
+                        targetValue = if (scanEnabled) AppColors.OnPrimary else AppColors.Primary,
+                        animationSpec = Motion.normal(),
+                        label = "scanBtnFg",
+                    )
+                    Button(
+                        onClick = onStartScan,
+                        enabled = scanEnabled,
+                        colors = ButtonDefaults.buttonColors(
+                            backgroundColor = scanBg,
+                            contentColor = scanFg,
+                            disabledBackgroundColor = scanBg,
+                            disabledContentColor = scanFg,
+                        ),
+                        shape = RoundedCornerShape(AppDimensions.RadiusFull.dp),
+                        modifier = Modifier.height(40.dp),
+                        contentPadding = PaddingValues(horizontal = 24.dp, vertical = 0.dp),
+                    ) {
                         Text(
-                            text = if (selectedBytes > 0L) "清理选中 ${formatBytes(selectedBytes)}" else "清理选中项",
+                            text = when (scanPhase) {
+                                ScanPhase.IDLE -> "开始扫描"
+                                ScanPhase.SCANNING -> "正在扫描"
+                                ScanPhase.DONE -> "重新扫描"
+                            },
                             fontSize = 14.sp,
                             fontWeight = FontWeight.Medium,
                         )
                     }
-                }
-            } else {
-                Button(
-                    onClick = onStartScan,
-                    enabled = scanPhase != ScanPhase.SCANNING && selectedTools.isNotEmpty(),
-                    colors = ButtonDefaults.buttonColors(
-                        backgroundColor = AppColors.Primary,
-                        contentColor = AppColors.OnPrimary,
-                        disabledBackgroundColor = AppColors.PrimaryContainer,
-                        disabledContentColor = AppColors.Primary,
-                    ),
-                    shape = RoundedCornerShape(AppDimensions.RadiusFull.dp),
-                    modifier = Modifier.height(40.dp),
-                    contentPadding = PaddingValues(horizontal = 24.dp, vertical = 0.dp),
-                ) {
-                    Text(
-                        text = when (scanPhase) {
-                            ScanPhase.IDLE -> "开始扫描"
-                            ScanPhase.SCANNING -> "正在扫描"
-                            ScanPhase.DONE -> "重新扫描"
-                        },
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Medium,
-                    )
                 }
             }
         }
@@ -997,21 +1103,30 @@ private fun ToolIcon(
     isSelected: Boolean,
     onClick: () -> Unit,
 ) {
+    val bg by animateColorAsState(
+        targetValue = if (isSelected) AppColors.Primary else AppColors.Surface3,
+        animationSpec = Motion.normal(),
+        label = "toolIconBg",
+    )
+    val tint by animateColorAsState(
+        targetValue = if (isSelected) AppColors.OnPrimary else AppColors.TextSecondary,
+        animationSpec = Motion.normal(),
+        label = "toolIconTint",
+    )
+    val shape = RoundedCornerShape(AppDimensions.Radius.dp)
     Box(
         modifier = Modifier
             .size(48.dp)
-            .background(
-                color = if (isSelected) AppColors.Primary else AppColors.Surface3,
-                shape = RoundedCornerShape(AppDimensions.Radius.dp)
-            )
+            .clip(shape)
+            .background(color = bg, shape)
             .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center
+        contentAlignment = Alignment.Center,
     ) {
         Icon(
             painter = painterResource(iconPath),
             contentDescription = name,
-            tint = if (isSelected) AppColors.OnPrimary else AppColors.TextSecondary,
-            modifier = Modifier.size(24.dp)
+            tint = tint,
+            modifier = Modifier.size(24.dp),
         )
     }
 }
@@ -1081,7 +1196,8 @@ private fun CleanHistoryBars(daily: List<DailyClean>, modifier: Modifier = Modif
             val isLatest = index == daily.lastIndex
             val animated by animateFloatAsState(
                 targetValue = fraction,
-                animationSpec = tween(440, easing = FastOutSlowInEasing),
+                animationSpec = Motion.grow(),
+                label = "historyBar",
             )
             Column(
                 modifier = Modifier.width(BarWidth).fillMaxHeight(),
@@ -1161,7 +1277,8 @@ private fun DiskUsageCard(refreshKey: Int, modifier: Modifier = Modifier) {
     // 补间到实测占比，读取完成时柱身从左往右生长而非瞬现。
     val animatedFraction by animateFloatAsState(
         targetValue = if (hasData) fraction else 0f,
-        animationSpec = tween(560, easing = FastOutSlowInEasing),
+        animationSpec = Motion.slow(),
+        label = "diskUsage",
     )
     val spaceLabel = snapshot?.takeIf { it.hasData }?.let {
         "${formatBytes(it.usedBytes)} / ${formatBytes(it.totalBytes)}"
