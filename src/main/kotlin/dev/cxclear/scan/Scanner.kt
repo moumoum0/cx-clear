@@ -39,48 +39,92 @@ data class ToolSpaceResult(
     val fileCount: Int,
 )
 
+/** 解析 target 实际使用的根目录：优先 target 自己的 [CleanTarget.baseDir]。 */
+fun resolveBase(profile: ToolProfile, target: CleanTarget): Path? =
+    target.baseDir?.invoke() ?: profile.baseDir()
+
 /**
  * 把 [CleanTarget] 解析成具体路径列表。不做任何删除。
  *
- * relPath 允许带一层子目录，最后一段可以是 glob（配合 GLOB / STALE_VERSIONS）。
+ * relPath 允许带 `*` 路径段（展开为每层子目录），最后一段可以是文件名 glob
+ *（配合 GLOB / STALE_VERSIONS）。
  */
 fun resolveTarget(baseDir: Path, target: CleanTarget): ResolvedTarget {
     val paths: List<Path> = when (target.kind) {
         MatchKind.DIRECTORY, MatchKind.FILE -> {
-            val p = baseDir.resolve(target.relPath)
-            if (Files.exists(p, LinkOption.NOFOLLOW_LINKS)) listOf(p) else emptyList()
+            expandPathPattern(baseDir, target.relPath)
+                .filter { Files.exists(it, LinkOption.NOFOLLOW_LINKS) }
         }
 
         MatchKind.DIRECTORY_CONTENTS -> {
-            val dir = baseDir.resolve(target.relPath)
             // listDirectoryEntries 会带上点开头的条目 —— Codex 的大头（.plugin-appserver 等）
             // 正是点开头的，用 shell glob 会漏掉。
-            if (dir.isDirectory()) runCatching { dir.listDirectoryEntries() }.getOrDefault(emptyList())
-            else emptyList()
+            expandPathPattern(baseDir, target.relPath).flatMap { dir ->
+                if (dir.isDirectory()) {
+                    runCatching { dir.listDirectoryEntries() }.getOrDefault(emptyList())
+                } else {
+                    emptyList()
+                }
+            }
         }
 
         MatchKind.GLOB, MatchKind.STALE_VERSIONS -> {
             val relative = target.relPath.replace('\\', '/')
             val slash = relative.lastIndexOf('/')
-            val dir = if (slash < 0) baseDir else baseDir.resolve(relative.substring(0, slash))
+            val dirPattern = if (slash < 0) null else relative.substring(0, slash)
             val pattern = if (slash < 0) relative else relative.substring(slash + 1)
-            if (!dir.isDirectory()) {
-                emptyList()
+            val dirs = if (dirPattern == null) {
+                listOf(baseDir)
             } else {
-                val matcher = FileSystems.getDefault().getPathMatcher("glob:$pattern")
-                val matched = runCatching { dir.listDirectoryEntries() }.getOrDefault(emptyList())
-                    .filter { matcher.matches(it.fileName) }
-                if (target.kind == MatchKind.STALE_VERSIONS) {
-                    // 保留 mtime 最新的一份，它很可能是当前正在使用的版本。
-                    val newest = matched.maxByOrNull { lastModifiedOrZero(it) }
-                    matched.filter { it != newest }
+                expandPathPattern(baseDir, dirPattern)
+            }
+            dirs.flatMap { dir ->
+                if (!dir.isDirectory()) {
+                    emptyList()
                 } else {
-                    matched
+                    val matcher = FileSystems.getDefault().getPathMatcher("glob:$pattern")
+                    val matched = runCatching { dir.listDirectoryEntries() }.getOrDefault(emptyList())
+                        .filter { matcher.matches(it.fileName) }
+                    if (target.kind == MatchKind.STALE_VERSIONS) {
+                        // 每个父目录内各自保留 mtime 最新的一份。
+                        val newest = matched.maxByOrNull { lastModifiedOrZero(it) }
+                        matched.filter { it != newest }
+                    } else {
+                        matched
+                    }
                 }
             }
         }
     }
     return ResolvedTarget(target, paths)
+}
+
+/**
+ * 解析相对路径；单独的路径段 `*` 展开为该层每个非符号链接子目录。
+ * 不含 `*` 时与 [Path.resolve] 等价（返回单元素列表）。
+ */
+internal fun expandPathPattern(baseDir: Path, relPath: String): List<Path> {
+    val parts = relPath.replace('\\', '/').split('/').filter { it.isNotEmpty() }
+    if (parts.isEmpty()) return listOf(baseDir)
+    var currents = listOf(baseDir)
+    for (part in parts) {
+        currents = if (part == "*") {
+            currents.flatMap { dir ->
+                if (!dir.isDirectory()) {
+                    emptyList()
+                } else {
+                    runCatching {
+                        dir.listDirectoryEntries().filter {
+                            it.isDirectory() && !Files.isSymbolicLink(it)
+                        }
+                    }.getOrDefault(emptyList())
+                }
+            }
+        } else {
+            currents.map { it.resolve(part) }
+        }
+    }
+    return currents
 }
 
 private fun lastModifiedOrZero(p: Path): Long =
@@ -171,7 +215,8 @@ private class TargetProgress(
  * 扫描一个 target，遍历途中把增量实时写进 [progress]。逻辑与 [scanResolved] 等价，
  * 区别只是「边扫边报」而非「扫完一次性返回」，因此不复用后者，避免给 Cleaner 引入回调开销。
  */
-private fun scanWithProgress(base: Path, target: CleanTarget, progress: TargetProgress) {
+private fun scanWithProgress(profile: ToolProfile, target: CleanTarget, progress: TargetProgress) {
+    val base = resolveBase(profile, target) ?: return
     val paths = resolveTarget(base, target).paths
     if (paths.isNotEmpty()) progress.exists.set(true)
     for (p in paths) {
@@ -209,7 +254,7 @@ sealed interface ScanEvent {
  *
  * 工具目录总占用和可清理项分别测量，口径互相独立：总占用代表应用真实体积，
  * 可清理项只代表其中能删的部分，两者相减就是必须保留的数据。
- * 工具未安装（baseDir 为 null）时上报全 0 且 exists=false，由 UI 决定是否显示。
+ * 工具未安装（spaceDirs 为空）时上报全 0 且 exists=false，由 UI 决定是否显示。
  *
  * 分两个阶段：先测完总占用，再扫可清理项。总占用是分母，先定下来后续每测出一项
  * 都只是在已知总量里重新划分，占比不会被整体重算；若与可清理项并发上报，
@@ -223,33 +268,39 @@ sealed interface ScanEvent {
 private const val SNAPSHOT_INTERVAL_MS = 120L
 
 fun scanStream(profiles: List<ToolProfile>): Flow<ScanEvent> = channelFlow {
-    val bases = profiles.map { it to it.baseDir() }
     send(ScanEvent.Started(profiles.sumOf { it.targets.size } + profiles.size))
 
-    bases.map { (profile, base) ->
+    profiles.map { profile ->
         async(Dispatchers.IO) {
-            if (base == null) {
+            val dirs = profile.spaceDirs()
+            if (dirs.isEmpty()) {
                 ToolSpaceResult(profile.id, 0L, 0)
             } else {
-                val (bytes, files) = measure(base)
+                var bytes = 0L
+                var files = 0
+                for (dir in dirs) {
+                    val (b, c) = measure(dir)
+                    bytes += b
+                    files += c
+                }
                 ToolSpaceResult(profile.id, bytes, files)
             }
         }
     }.awaitAll().forEach { send(ScanEvent.SpaceScanned(it)) }
 
     // 每个 target 一份实时累计。worker 只往里写增量，定时器只读，互不阻塞。
-    val progresses = bases.flatMap { (profile, _) ->
+    val progresses = profiles.flatMap { profile ->
         profile.targets.map { TargetProgress(profile.id, it.id) }
     }
     val progressById = progresses.associateBy { it.targetId }
 
     val workers = buildList {
-        for ((profile, base) in bases) {
+        for (profile in profiles) {
             for (target in profile.targets) {
                 val progress = progressById.getValue(target.id)
                 add(
                     launch(Dispatchers.IO) {
-                        if (base != null) scanWithProgress(base, target, progress)
+                        scanWithProgress(profile, target, progress)
                     },
                 )
             }

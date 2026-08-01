@@ -4,6 +4,7 @@ import dev.cxclear.model.CleanEvent
 import dev.cxclear.model.CleanTarget
 import dev.cxclear.model.ToolProfile
 import dev.cxclear.scan.ResolvedTarget
+import dev.cxclear.scan.resolveBase
 import dev.cxclear.scan.resolveTarget
 import dev.cxclear.scan.scanResolved
 import kotlinx.coroutines.Dispatchers
@@ -89,7 +90,7 @@ fun clean(requests: List<CleanRequest>): Flow<CleanEvent> = flow {
     var failures = 0
 
     for (req in requests) {
-        val base = req.profile.baseDir()
+        val base = resolveBase(req.profile, req.target)
         if (base == null) {
             emit(CleanEvent.TargetDone(req.target.id, req.target.label, 0L, "目录不存在"))
             continue
@@ -114,6 +115,6 @@ fun clean(requests: List<CleanRequest>): Flow<CleanEvent> = flow {
 
 /** 清理后重新量一遍某项的残留，用于校验结果。 */
 fun remaining(request: CleanRequest): Long {
-    val base = request.profile.baseDir() ?: return 0L
+    val base = resolveBase(request.profile, request.target) ?: return 0L
     return scanResolved(request.profile.id, resolveTarget(base, request.target)).bytes
 }

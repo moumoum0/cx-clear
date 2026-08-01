@@ -31,7 +31,11 @@ enum class MatchKind {
 }
 
 /**
- * 一个可清理项。[relPath] 相对所属 [ToolProfile] 的 baseDir。
+ * 一个可清理项。[relPath] 相对 [baseDir]（若指定）或所属 [ToolProfile] 的 baseDir。
+ *
+ * [relPath] 中单独的路径段 `*` 表示「展开为该层每个子目录」
+ *（例：projects 下每个子目录里的 agent-tools）。最后一段的文件名 glob
+ *（配合 GLOB / STALE_VERSIONS）与路径段展开不冲突。
  */
 data class CleanTarget(
     val id: String,
@@ -42,6 +46,11 @@ data class CleanTarget(
     val description: String,
     /** 默认是否勾选。SAFE 项默认勾上，OPTIONAL 交给用户决定。 */
     val defaultSelected: Boolean = risk == Risk.SAFE,
+    /**
+     * 覆盖所属 profile 的根目录。
+     * 用于数据分散在多处的工具（如 Cursor：`~/.cursor` 与 `%APPDATA%\\Cursor`）。
+     */
+    val baseDir: (() -> Path?)? = null,
 )
 
 /**
@@ -54,6 +63,11 @@ data class ToolProfile(
     val subtitle: String,
     val baseDir: () -> Path?,
     val targets: List<CleanTarget>,
+    /**
+     * 计入「工具总占用」的目录列表（不含安装目录）。
+     * 默认只有 [baseDir]；多根工具（Cursor）在此列出全部数据根。
+     */
+    val spaceDirs: () -> List<Path> = { listOfNotNull(baseDir()) },
 )
 
 /** 单个 target 的扫描结果。 */

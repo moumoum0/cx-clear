@@ -14,13 +14,16 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.AlertDialog
 import androidx.compose.material.Button
 import androidx.compose.material.ButtonDefaults
 import androidx.compose.material.Checkbox
 import androidx.compose.material.CheckboxDefaults
 import androidx.compose.material.CircularProgressIndicator
 import androidx.compose.material.Icon
+import androidx.compose.material.OutlinedButton
 import androidx.compose.material.Text
+import androidx.compose.material.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -35,10 +38,17 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.cxclear.clean.CleanRequest
+import dev.cxclear.clean.clean
+import dev.cxclear.model.CleanEvent
 import dev.cxclear.model.Risk
 import dev.cxclear.model.ScanResult
 import dev.cxclear.model.CleanTarget
 import dev.cxclear.profiles.ALL_PROFILES
+import dev.cxclear.storage.CleanHistory
+import dev.cxclear.storage.DailyClean
+import dev.cxclear.storage.DiskUsage
+import dev.cxclear.storage.DiskUsageReader
 import dev.cxclear.scan.ScanEvent
 import dev.cxclear.scan.ToolSpaceResult
 import dev.cxclear.scan.formatBytes
@@ -46,7 +56,9 @@ import dev.cxclear.scan.scanStream
 import dev.cxclear.ui.Screen
 import dev.cxclear.ui.theme.AppColors
 import dev.cxclear.ui.theme.AppDimensions
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlin.math.max
 
 private enum class ScanPhase { IDLE, SCANNING, DONE }
@@ -73,7 +85,36 @@ fun MainContent(currentScreen: Screen) {
     var scanPhase by remember { mutableStateOf(ScanPhase.IDLE) }
     var scanCategories by remember { mutableStateOf(emptyList<ScanCategory>()) }
     var selectedTargets by remember { mutableStateOf(emptySet<String>()) }
+    var isCleaning by remember { mutableStateOf(false) }
+    var showCleanConfirm by remember { mutableStateOf(false) }
+    // 每完成一次清理 +1，累计卡片 key 在它上面，借此重新从磁盘读取最新统计。
+    var cleanTick by remember { mutableStateOf(0) }
     val scope = rememberCoroutineScope()
+
+    fun startClean() {
+        if (isCleaning) return
+        val requests = ALL_PROFILES.flatMap { profile ->
+            profile.targets
+                .filter { it.id in selectedTargets }
+                .map { CleanRequest(profile, it) }
+        }
+        if (requests.isEmpty()) return
+        isCleaning = true
+        scope.launch {
+            clean(requests).collect { event ->
+                if (event is CleanEvent.AllDone) {
+                    // 记实测删除量，不是扫描预估值。0 字节 append 会被自动忽略。
+                    CleanHistory.append(event.totalFreedBytes)
+                }
+            }
+            // 清掉刚删过的项，重新量残留：删不掉的（被占用）会留下，重扫后如实反映。
+            selectedTargets = emptySet()
+            scanPhase = ScanPhase.IDLE
+            scanCategories = emptyList()
+            isCleaning = false
+            cleanTick++
+        }
+    }
 
     fun startScan() {
         if (scanPhase == ScanPhase.SCANNING || selectedTools.isEmpty()) return
@@ -109,6 +150,11 @@ fun MainContent(currentScreen: Screen) {
         }
     }
 
+    val selectedBytes = scanCategories
+        .flatMap { it.items }
+        .filter { it.id in selectedTargets }
+        .sumOf { it.bytes }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -127,6 +173,11 @@ fun MainContent(currentScreen: Screen) {
             },
             scanPhase = scanPhase,
             onStartScan = ::startScan,
+            showClean = scanPhase == ScanPhase.DONE,
+            isCleaning = isCleaning,
+            selectedBytes = selectedBytes,
+            cleanEnabled = !isCleaning && selectedTargets.isNotEmpty() && selectedBytes > 0L,
+            onRequestClean = { showCleanConfirm = true },
         )
 
         Box(
@@ -158,9 +209,56 @@ fun MainContent(currentScreen: Screen) {
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(AppDimensions.SpacingLarge.dp)
         ) {
-            CleaningStatsCard(modifier = Modifier.weight(1f))
-            DiskUsageCard(modifier = Modifier.weight(1f))
+            CleaningStatsCard(refreshKey = cleanTick, modifier = Modifier.weight(1f))
+            DiskUsageCard(refreshKey = cleanTick, modifier = Modifier.weight(1f))
         }
+    }
+
+    if (showCleanConfirm) {
+        val hasOptional = scanCategories
+            .flatMap { it.items }
+            .any { it.id in selectedTargets && it.risk == Risk.OPTIONAL }
+        AlertDialog(
+            onDismissRequest = { showCleanConfirm = false },
+            title = { Text("确认清理", color = AppColors.TextPrimary, fontWeight = FontWeight.SemiBold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(
+                        "将删除已选择的 ${formatBytes(selectedBytes)} 内容，此操作不可恢复。",
+                        fontSize = 14.sp,
+                        color = AppColors.TextSecondary,
+                    )
+                    if (hasOptional) {
+                        Text(
+                            "其中包含会话历史等不可再生数据，删除后无法找回。",
+                            fontSize = 13.sp,
+                            color = AppColors.Error,
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showCleanConfirm = false
+                        startClean()
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        backgroundColor = AppColors.Error,
+                        contentColor = AppColors.OnPrimary,
+                    ),
+                    shape = RoundedCornerShape(AppDimensions.RadiusFull.dp),
+                ) {
+                    Text("确认清理", fontSize = 14.sp)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCleanConfirm = false }) {
+                    Text("取消", color = AppColors.TextSecondary, fontSize = 14.sp)
+                }
+            },
+            backgroundColor = AppColors.Surface2,
+        )
     }
 }
 
@@ -188,7 +286,9 @@ private fun buildCategories(
         .filter { target ->
             resultByTarget[target.id]?.exists == true &&
                 target.risk == Risk.SAFE &&
-                listOf("plugins", "downloads", "sandbox", "vendor").any { target.id.contains(it) }
+                listOf("plugins", "downloads", "sandbox", "vendor", "extension", "cached").any {
+                    target.id.contains(it)
+                }
         }
         .map(::item)
     val workingItems = targets
@@ -361,6 +461,7 @@ private fun ScanResultView(
                     )
                 }
             }
+
             Spacer(Modifier.height(14.dp))
 
             categories.forEach { category ->
@@ -427,12 +528,15 @@ private fun ScanResultView(
                                 }
                             }
 
-                            Text(
-                                text = formatBytes(category.bytes),
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Medium,
-                                color = if (isRetained) AppColors.TextSecondary else AppColors.TextPrimary,
-                            )
+                            // 保留数据 = 总占用 − 已扫可清理，扫描中会一路变小；行保留，字节扫完再出。
+                            if (!(isScanning && isRetained)) {
+                                Text(
+                                    text = formatBytes(category.bytes),
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = if (isRetained) AppColors.TextSecondary else AppColors.TextPrimary,
+                                )
+                            }
                             if (isScanning) {
                                 Spacer(Modifier.width(8.dp))
                                 CircularProgressIndicator(
@@ -737,6 +841,11 @@ private fun TopBar(
     onToolToggle: (String) -> Unit,
     scanPhase: ScanPhase,
     onStartScan: () -> Unit,
+    showClean: Boolean,
+    isCleaning: Boolean,
+    selectedBytes: Long,
+    cleanEnabled: Boolean,
+    onRequestClean: () -> Unit,
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -745,28 +854,79 @@ private fun TopBar(
     ) {
         ToolSelector(selectedTools, onToolToggle)
 
-        Button(
-            onClick = onStartScan,
-            enabled = scanPhase != ScanPhase.SCANNING && selectedTools.isNotEmpty(),
-            colors = ButtonDefaults.buttonColors(
-                backgroundColor = AppColors.Primary,
-                contentColor = AppColors.OnPrimary,
-                disabledBackgroundColor = AppColors.PrimaryContainer,
-                disabledContentColor = AppColors.Primary,
-            ),
-            shape = RoundedCornerShape(AppDimensions.RadiusFull.dp),
-            modifier = Modifier.height(40.dp),
-            contentPadding = PaddingValues(horizontal = 24.dp, vertical = 0.dp)
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                text = when (scanPhase) {
-                    ScanPhase.IDLE -> "开始扫描"
-                    ScanPhase.SCANNING -> "正在扫描…"
-                    ScanPhase.DONE -> "重新扫描"
-                },
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Medium
-            )
+            if (showClean) {
+                OutlinedButton(
+                    onClick = onStartScan,
+                    enabled = !isCleaning && selectedTools.isNotEmpty(),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = AppColors.Primary,
+                        disabledContentColor = AppColors.Primary.copy(alpha = 0.5f),
+                    ),
+                    shape = RoundedCornerShape(AppDimensions.RadiusFull.dp),
+                    modifier = Modifier.height(40.dp),
+                    contentPadding = PaddingValues(horizontal = 24.dp, vertical = 0.dp),
+                ) {
+                    Text("重新扫描", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                }
+
+                Button(
+                    onClick = onRequestClean,
+                    enabled = cleanEnabled,
+                    colors = ButtonDefaults.buttonColors(
+                        backgroundColor = AppColors.Primary,
+                        contentColor = AppColors.OnPrimary,
+                        disabledBackgroundColor = AppColors.PrimaryContainer,
+                        disabledContentColor = AppColors.Primary,
+                    ),
+                    shape = RoundedCornerShape(AppDimensions.RadiusFull.dp),
+                    modifier = Modifier.height(40.dp),
+                    contentPadding = PaddingValues(horizontal = 24.dp, vertical = 0.dp),
+                ) {
+                    if (isCleaning) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            color = AppColors.OnPrimary,
+                            strokeWidth = 2.dp,
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text("正在清理…", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                    } else {
+                        Text(
+                            text = if (selectedBytes > 0L) "清理选中 ${formatBytes(selectedBytes)}" else "清理选中项",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Medium,
+                        )
+                    }
+                }
+            } else {
+                Button(
+                    onClick = onStartScan,
+                    enabled = scanPhase != ScanPhase.SCANNING && selectedTools.isNotEmpty(),
+                    colors = ButtonDefaults.buttonColors(
+                        backgroundColor = AppColors.Primary,
+                        contentColor = AppColors.OnPrimary,
+                        disabledBackgroundColor = AppColors.PrimaryContainer,
+                        disabledContentColor = AppColors.Primary,
+                    ),
+                    shape = RoundedCornerShape(AppDimensions.RadiusFull.dp),
+                    modifier = Modifier.height(40.dp),
+                    contentPadding = PaddingValues(horizontal = 24.dp, vertical = 0.dp),
+                ) {
+                    Text(
+                        text = when (scanPhase) {
+                            ScanPhase.IDLE -> "开始扫描"
+                            ScanPhase.SCANNING -> "正在扫描…"
+                            ScanPhase.DONE -> "重新扫描"
+                        },
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium,
+                    )
+                }
+            }
         }
     }
 }
@@ -782,7 +942,7 @@ private fun ToolSelector(
     ) {
         ToolIcon("Codex", "icons/codex.svg", "codex" in selectedTools) { onToolToggle("codex") }
         ToolIcon("Claude", "icons/claude.svg", "claude" in selectedTools) { onToolToggle("claude") }
-        ToolIcon("Cursor", "icons/cursor.svg", false) { }
+        ToolIcon("Cursor", "icons/cursor.svg", "cursor" in selectedTools) { onToolToggle("cursor") }
 
         Box(
             modifier = Modifier
@@ -809,7 +969,7 @@ private fun ToolIcon(
                 color = if (isSelected) AppColors.Primary else AppColors.Surface3,
                 shape = RoundedCornerShape(AppDimensions.Radius.dp)
             )
-            .clickable(enabled = name != "Cursor", onClick = onClick),
+            .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
         Icon(
@@ -822,42 +982,284 @@ private fun ToolIcon(
 }
 
 @Composable
-private fun CleaningStatsCard(modifier: Modifier = Modifier) {
+private fun CleaningStatsCard(refreshKey: Int, modifier: Modifier = Modifier) {
+    // refreshKey 变化（一次清理完成）就重新从磁盘读，把最新记录带进来。
+    val total by remember(refreshKey) { mutableStateOf(CleanHistory.totalBytes()) }
+    val daily by remember(refreshKey) { mutableStateOf(CleanHistory.recentDaily(limit = 7)) }
+
     Box(
         modifier = modifier
             .height(180.dp)
             .background(AppColors.Surface2, RoundedCornerShape(AppDimensions.Radius.dp))
             .padding(AppDimensions.SpacingLarge.dp)
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(AppDimensions.SpacingMedium.dp)) {
-            Text("累计清理", fontSize = 14.sp, color = AppColors.TextSecondary, fontWeight = FontWeight.Medium)
-            Text("38.7 GB", fontSize = 36.sp, color = AppColors.TextPrimary, fontWeight = FontWeight.Bold)
-            Row(horizontalArrangement = Arrangement.spacedBy(AppDimensions.SpacingLarge.dp)) {
-                Column {
-                    Text("本周", fontSize = 12.sp, color = AppColors.TextTertiary)
-                    Text("2.4 GB", fontSize = 16.sp, color = AppColors.TextPrimary, fontWeight = FontWeight.Medium)
-                }
-                Column {
-                    Text("今日", fontSize = 12.sp, color = AppColors.TextTertiary)
-                    Text("320 MB", fontSize = 16.sp, color = AppColors.TextPrimary, fontWeight = FontWeight.Medium)
-                }
+        Column(modifier = Modifier.fillMaxSize()) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Top,
+            ) {
+                Text("累计清理", fontSize = 14.sp, color = AppColors.TextSecondary, fontWeight = FontWeight.Medium)
+                Text(
+                    text = formatBytes(total),
+                    fontSize = 28.sp,
+                    color = AppColors.TextPrimary,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+
+            Spacer(Modifier.weight(1f))
+
+            if (daily.isEmpty()) {
+                CleanHistoryBarsPlaceholder(
+                    modifier = Modifier.fillMaxWidth().height(72.dp),
+                )
+            } else {
+                CleanHistoryBars(
+                    daily = daily,
+                    modifier = Modifier.fillMaxWidth().height(72.dp),
+                )
             }
         }
     }
 }
 
+// 柱子固定宽度，靠左排列：只有一两根记录时也不会被 weight 拉宽成一整条。
+private val BarWidth = 26.dp
+private val BarSpacing = 8.dp
+private val BarLabelHeight = 16.dp
+
+/**
+ * 最近几次清理的柱状图。每根柱子 = 一天的清理总量，只画有记录的天（空天跳过）。
+ * 高度按当前窗口内的最大值归一，最新一根用主色高亮。
+ */
 @Composable
-private fun DiskUsageCard(modifier: Modifier = Modifier) {
+private fun CleanHistoryBars(daily: List<DailyClean>, modifier: Modifier = Modifier) {
+    val maxBytes = daily.maxOf { it.bytes }.coerceAtLeast(1L)
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(BarSpacing),
+        verticalAlignment = Alignment.Bottom,
+    ) {
+        daily.forEachIndexed { index, day ->
+            val fraction = (day.bytes.toFloat() / maxBytes).coerceIn(0.08f, 1f)
+            val isLatest = index == daily.lastIndex
+            val animated by animateFloatAsState(
+                targetValue = fraction,
+                animationSpec = tween(440, easing = FastOutSlowInEasing),
+            )
+            Column(
+                modifier = Modifier.width(BarWidth).fillMaxHeight(),
+                verticalArrangement = Arrangement.Bottom,
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                // 柱子只在这块「剩余高度」里按占比生长，日期标签始终有自己的固定高度。
+                Box(
+                    modifier = Modifier.fillMaxWidth().weight(1f),
+                    contentAlignment = Alignment.BottomCenter,
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .fillMaxHeight(animated)
+                            .clip(RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp))
+                            .background(if (isLatest) AppColors.Primary else AppColors.CategoryPackages),
+                    )
+                }
+                Text(
+                    text = "${day.date.monthValue}/${day.date.dayOfMonth}",
+                    fontSize = 9.sp,
+                    color = AppColors.TextTertiary,
+                    modifier = Modifier.height(BarLabelHeight),
+                )
+            }
+        }
+    }
+}
+
+/** 尚无清理记录时的骨架占位：几根等宽的空框，交代「这里将来会画柱状图」。 */
+@Composable
+private fun CleanHistoryBarsPlaceholder(modifier: Modifier = Modifier) {
+    val heights = listOf(0.4f, 0.68f, 0.32f, 0.84f, 0.52f)
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(BarSpacing),
+        verticalAlignment = Alignment.Bottom,
+    ) {
+        heights.forEach { fraction ->
+            Column(
+                modifier = Modifier.width(BarWidth).fillMaxHeight(),
+                verticalArrangement = Arrangement.Bottom,
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Box(
+                    modifier = Modifier.fillMaxWidth().weight(1f),
+                    contentAlignment = Alignment.BottomCenter,
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .fillMaxHeight(fraction)
+                            .clip(RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp))
+                            .background(AppColors.Surface3),
+                    )
+                }
+                Spacer(Modifier.height(BarLabelHeight))
+            }
+        }
+    }
+}
+
+/**
+ * C 盘占用卡：布局与左侧累计清理卡对齐——顶行左标签右百分比，底下一根横放圆柱。
+ * 磁盘读取走 IO 线程；清理完成（refreshKey 变化）后重读一次。
+ */
+@Composable
+private fun DiskUsageCard(refreshKey: Int, modifier: Modifier = Modifier) {
+    var usage by remember { mutableStateOf<DiskUsage?>(null) }
+    LaunchedEffect(refreshKey) {
+        usage = withContext(Dispatchers.IO) { DiskUsageReader.readSystemDrive() }
+    }
+    val snapshot = usage
+    val fraction = snapshot?.usedFraction ?: 0f
+    val hasData = snapshot?.hasData == true
+    // 补间到实测占比，读取完成时柱身从左往右生长而非瞬现。
+    val animatedFraction by animateFloatAsState(
+        targetValue = if (hasData) fraction else 0f,
+        animationSpec = tween(560, easing = FastOutSlowInEasing),
+    )
+
     Box(
         modifier = modifier
             .height(180.dp)
             .background(AppColors.Surface2, RoundedCornerShape(AppDimensions.Radius.dp))
             .padding(AppDimensions.SpacingLarge.dp)
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(AppDimensions.SpacingMedium.dp)) {
-            Text("C 盘占用", fontSize = 14.sp, color = AppColors.TextSecondary, fontWeight = FontWeight.Medium)
-            Text("180 / 512 GB", fontSize = 28.sp, color = AppColors.TextPrimary, fontWeight = FontWeight.Bold)
-            Text("剩余 332 GB (65%)", fontSize = 14.sp, color = AppColors.TextSecondary)
+        Column(modifier = Modifier.fillMaxSize()) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Top,
+            ) {
+                Text("C 盘占用", fontSize = 14.sp, color = AppColors.TextSecondary, fontWeight = FontWeight.Medium)
+                Text(
+                    text = if (hasData) "${(fraction * 100).toInt()}%" else "—",
+                    fontSize = 28.sp,
+                    color = AppColors.TextPrimary,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+
+            Spacer(Modifier.weight(1f))
+
+            // 与左侧柱状图同高，贴底；横放的扫描风圆柱表达占用占比。
+            DiskUsageCylinder(
+                fraction = animatedFraction,
+                modifier = Modifier.fillMaxWidth().height(72.dp),
+            )
+        }
+    }
+}
+
+/**
+ * 横放占用圆柱：柱面暗边、占用前缘端面高光对齐扫描页的 [StorageCylinder]。
+ * 左端只做闭口圆角收口，不画竖筒顶那种开口玻璃透视。
+ */
+@Composable
+private fun DiskUsageCylinder(fraction: Float, modifier: Modifier = Modifier) {
+    val fill = fraction.coerceIn(0f, 1f)
+    Canvas(modifier = modifier) {
+        val cylinderHeight = size.height * 0.66f
+        val top = (size.height - cylinderHeight) / 2f
+        val capWidth = cylinderHeight * 0.22f
+        val left = capWidth / 2f
+        val right = size.width - capWidth / 2f
+        val bodyWidth = right - left
+
+        // 空筒壳：竖直渐变交代横躺圆度。
+        drawRect(
+            brush = Brush.verticalGradient(
+                listOf(
+                    AppColors.CylinderShellEdge,
+                    AppColors.CylinderShellLight,
+                    AppColors.CylinderShellMid,
+                    AppColors.CylinderShellEdge,
+                ),
+                startY = top,
+                endY = top + cylinderHeight,
+            ),
+            topLeft = Offset(left, top),
+            size = Size(bodyWidth, cylinderHeight),
+        )
+        // 左右都是闭口端盖（对齐竖筒底），不用白色开口高光。
+        drawOval(
+            brush = Brush.horizontalGradient(
+                listOf(AppColors.CylinderShellLight, AppColors.CylinderShellMid),
+            ),
+            topLeft = Offset(0f, top),
+            size = Size(capWidth, cylinderHeight),
+        )
+        drawOval(
+            brush = Brush.horizontalGradient(
+                listOf(AppColors.CylinderShellMid, AppColors.CylinderShellLight),
+            ),
+            topLeft = Offset(right - capWidth / 2f, top),
+            size = Size(capWidth, cylinderHeight),
+        )
+
+        if (fill > 0f) {
+            val fillRight = left + bodyWidth * fill
+            val fillColor = AppColors.Primary
+            // 柱面基本平涂，只在下沿收一点暗边；混同色系深色，不混黑。
+            val bodyBrush = Brush.verticalGradient(
+                0f to fillColor,
+                0.80f to fillColor,
+                1f to lerp(fillColor, AppColors.CategoryHistory, 0.16f),
+                startY = top,
+                endY = top + cylinderHeight,
+            )
+            // 两端各放出半个端盖：左闭口圆角 + 占用前缘端面。
+            clipRect(
+                left - capWidth / 2f,
+                top,
+                right + capWidth / 2f,
+                top + cylinderHeight,
+            ) {
+                drawRect(
+                    brush = bodyBrush,
+                    topLeft = Offset(left, top),
+                    size = Size((fillRight - left).coerceAtLeast(0f), cylinderHeight),
+                )
+                // 左端闭口：与壳同形，刷成填充色，避免露灰边。
+                drawOval(
+                    brush = bodyBrush,
+                    topLeft = Offset(left - capWidth / 2f, top),
+                    size = Size(capWidth, cylinderHeight),
+                )
+                // 占用前缘的端面高光。
+                drawOval(
+                    brush = Brush.horizontalGradient(
+                        listOf(
+                            lerp(fillColor, Color.White, 0.32f),
+                            lerp(fillColor, Color.White, 0.08f),
+                        ),
+                        startX = fillRight - capWidth / 2f,
+                        endX = fillRight + capWidth / 2f,
+                    ),
+                    topLeft = Offset(fillRight - capWidth / 2f, top),
+                    size = Size(capWidth, cylinderHeight),
+                )
+                // 筒壁投在端面上的阴影，靠后沿最深。
+                drawOval(
+                    brush = Brush.horizontalGradient(
+                        listOf(Color.Black.copy(alpha = 0.10f), Color.Transparent),
+                        startX = fillRight - capWidth / 2f,
+                        endX = fillRight + capWidth * 0.18f,
+                    ),
+                    topLeft = Offset(fillRight - capWidth / 2f, top),
+                    size = Size(capWidth, cylinderHeight),
+                )
+            }
         }
     }
 }
