@@ -68,6 +68,17 @@ private fun claudeCliNodejsCache(): Path? =
     appDataLocal()?.resolve("claude-cli-nodejs")?.resolve("Cache")?.takeIf { Files.isDirectory(it) }
 
 /**
+ * Claude Desktop 应用数据根（Code 页宿主）。
+ * 优先 `%LOCALAPPDATA%\Claude-3p`；没有再退回 `%APPDATA%\Claude`（旧路径 / 部分安装）。
+ * 不含 Store MSIX 虚拟化目录、不含安装目录。
+ */
+private fun claudeDesktopAppData(): Path? {
+    val local = appDataLocal()?.resolve("Claude-3p")?.takeIf { Files.isDirectory(it) }
+    if (local != null) return local
+    return appDataRoaming()?.resolve("Claude")?.takeIf { Files.isDirectory(it) }
+}
+
+/**
  * Codex — `~/.codex` + `~/.cache/codex-runtimes`。
  * 不含 `%LOCALAPPDATA%\OpenAI\Codex` 安装目录、不含 Documents\Codex 用户工作区。
  * 顺序按占用从大到小，方便用户从上往下勾。
@@ -174,16 +185,16 @@ val CodexProfile = ToolProfile(
 )
 
 /**
- * Claude Code — `~/.claude` + `%LOCALAPPDATA%\claude-cli-nodejs\Cache`。
- * 不含 npm 安装目录、不含 Claude Desktop（`%LOCALAPPDATA%\Claude-3p`）。
+ * Claude Code — `~/.claude` + CLI MCP 缓存 + Desktop（`Claude-3p`）Electron 缓存。
+ * 不含 npm 安装目录、不含 Desktop 内嵌 claude-code 二进制 / 会话 / 登录态。
  * 顺序按占用从大到小，方便用户从上往下勾。
  */
 val ClaudeCodeProfile = ToolProfile(
     id = "claude",
     name = "Claude Code",
-    subtitle = "~/.claude · Local\\claude-cli-nodejs",
+    subtitle = "~/.claude · Local\\Claude-3p",
     baseDir = ::claudeHome,
-    spaceDirs = { listOfNotNull(claudeHome(), claudeCliNodejsCache()) },
+    spaceDirs = { listOfNotNull(claudeHome(), claudeCliNodejsCache(), claudeDesktopAppData()) },
     targets = listOf(
         CleanTarget(
             id = "claude.downloads",
@@ -226,6 +237,15 @@ val ClaudeCodeProfile = ToolProfile(
             kind = MatchKind.DIRECTORY_CONTENTS,
             risk = Risk.SAFE,
             description = "本地埋点与失败上报缓存，不影响功能。",
+        ),
+        CleanTarget(
+            id = "claude.desktop-electron-cache",
+            label = "桌面端 Electron 缓存",
+            relPath = "Cache",
+            kind = MatchKind.DIRECTORY_CONTENTS,
+            risk = Risk.SAFE,
+            description = "Claude Desktop（Claude-3p）的 Chromium HTTP 磁盘缓存，下次启动自动重建。不碰登录态与 Code 会话。",
+            baseDir = ::claudeDesktopAppData,
         ),
         CleanTarget(
             id = "claude.file-history",
