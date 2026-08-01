@@ -922,7 +922,7 @@ private fun TopBar(
                     Text(
                         text = when (scanPhase) {
                             ScanPhase.IDLE -> "开始扫描"
-                            ScanPhase.SCANNING -> "正在扫描…"
+                            ScanPhase.SCANNING -> "正在扫描"
                             ScanPhase.DONE -> "重新扫描"
                         },
                         fontSize = 14.sp,
