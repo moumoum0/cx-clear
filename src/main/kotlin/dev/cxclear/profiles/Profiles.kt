@@ -3,6 +3,7 @@ package dev.cxclear.profiles
 import dev.cxclear.model.CleanTarget
 import dev.cxclear.model.MatchKind
 import dev.cxclear.model.Risk
+import dev.cxclear.model.TargetEntryType
 import dev.cxclear.model.ToolProfile
 import java.nio.file.Files
 import java.nio.file.Path
@@ -63,6 +64,80 @@ private fun codexRuntimesCache(): Path? =
 
 private fun claudeHome(): Path? = homeSubdir(".claude")
 
+private fun directMatches(root: Path, vararg patterns: String): List<Path> {
+    val matchers = patterns.map { root.fileSystem.getPathMatcher("glob:$it") }
+    return Files.newDirectoryStream(root).use { entries ->
+        buildList {
+            for (entry in entries) {
+                if (matchers.any { it.matches(entry.fileName) }) add(entry)
+            }
+        }
+    }
+}
+
+private fun codexProtectedPaths(): List<Path> {
+    val root = codexHome() ?: return emptyList()
+    val fixed = listOf(
+        "sqlite",
+        "auth.json",
+        "config.toml",
+        "AGENTS.md",
+        "installation_id",
+        "session_index.jsonl",
+        ".codex-global-state.json",
+        ".codex-global-state.json.bak",
+        ".sandbox-secrets",
+        "memories",
+        "rules",
+        "skills",
+    ).map(root::resolve)
+    return fixed + directMatches(root, "state_*.sqlite*", "goals_*.sqlite*", "memories_*.sqlite*")
+}
+
+private fun claudeProtectedPaths(): List<Path> = buildList {
+    claudeHome()?.let { root ->
+        listOf(
+            "config.json",
+            "settings.json",
+            "statusline-command.sh",
+            "ide",
+            "sessions",
+            "skills",
+            "plugins/blocklist.json",
+            "plugins/known_marketplaces.json",
+            "plugins/data",
+        ).forEach { add(root.resolve(it)) }
+    }
+    homeDir()?.let { add(it.resolve(".claude.json")) }
+}
+
+private fun cursorProtectedPaths(): List<Path> = buildList {
+    cursorHome()?.let { root ->
+        listOf(
+            "argv.json",
+            "ide_state.json",
+            "mcp.json",
+            "agents",
+            "plans",
+            "plugins",
+            "skills",
+            "skills-cursor",
+            "worktrees",
+        ).forEach { add(root.resolve(it)) }
+    }
+    cursorAppData()?.let { root ->
+        listOf(
+            "User/settings.json",
+            "User/keybindings.json",
+            "User/snippets",
+            "User/globalStorage/state.vscdb",
+            "User/globalStorage/state.vscdb-shm",
+            "User/globalStorage/state.vscdb-wal",
+            "User/globalStorage/storage.json",
+        ).forEach { add(root.resolve(it)) }
+    }
+}
+
 /** CLI / IDE 扩展写入的 MCP 日志缓存（按项目切分）。 */
 private fun claudeCliNodejsCache(): Path? =
     appDataLocal()?.resolve("claude-cli-nodejs")?.resolve("Cache")?.takeIf { Files.isDirectory(it) }
@@ -88,6 +163,8 @@ val CodexProfile = ToolProfile(
     name = "Codex",
     subtitle = "~/.codex · ~/.cache/codex-runtimes",
     baseDir = ::codexHome,
+    processNamePrefixes = setOf("codex"),
+    protectedPaths = ::codexProtectedPaths,
     spaceDirs = { listOfNotNull(codexHome(), codexRuntimesCache()) },
     targets = listOf(
         CleanTarget(
@@ -126,8 +203,8 @@ val CodexProfile = ToolProfile(
             label = "日志数据库",
             relPath = "logs_*.sqlite*",
             kind = MatchKind.GLOB,
-            risk = Risk.SAFE,
-            description = "遥测与调试用的 logs_*.sqlite（含 -wal / -shm）。可重建，不影响对话内容。",
+            risk = Risk.OPTIONAL,
+            description = "Codex 活跃调试日志库（含 -wal / -shm），可能记录会话事件与请求详情。删除后诊断历史不可恢复；请先完全退出 Codex。",
         ),
         CleanTarget(
             id = "codex.sessions",
@@ -170,16 +247,8 @@ val CodexProfile = ToolProfile(
             // 只清日志，不动 setup_marker / ACL 状态等沙箱元数据。
             relPath = ".sandbox/sandbox*.log",
             kind = MatchKind.GLOB,
-            risk = Risk.SAFE,
-            description = "Windows 沙箱运行日志。可重建；不包含密钥与沙箱配置。",
-        ),
-        CleanTarget(
-            id = "codex.sqlite-legacy",
-            label = "旧版数据库目录",
-            relPath = "sqlite",
-            kind = MatchKind.DIRECTORY,
-            risk = Risk.SAFE,
-            description = "极早期版本遗留的 sqlite 目录；新版本已改用根目录下的独立库文件。多数机器上已不存在。",
+            risk = Risk.OPTIONAL,
+            description = "Windows 沙箱运行日志。不包含密钥与沙箱配置，但删除后历史诊断记录不可恢复。",
         ),
     ),
 )
@@ -194,6 +263,8 @@ val ClaudeCodeProfile = ToolProfile(
     name = "Claude Code",
     subtitle = "~/.claude · Local\\Claude-3p",
     baseDir = ::claudeHome,
+    processNamePrefixes = setOf("claude"),
+    protectedPaths = ::claudeProtectedPaths,
     spaceDirs = { listOfNotNull(claudeHome(), claudeCliNodejsCache(), claudeDesktopAppData()) },
     targets = listOf(
         CleanTarget(
@@ -202,6 +273,7 @@ val ClaudeCodeProfile = ToolProfile(
             relPath = "downloads",
             kind = MatchKind.DIRECTORY_CONTENTS,
             risk = Risk.SAFE,
+            defaultSelected = false,
             description = "已下载的 claude-*-win32-x64.exe 安装包。不丢用户数据，但删除后升级/重装需重新下载（体积大）。",
         ),
         CleanTarget(
@@ -260,8 +332,8 @@ val ClaudeCodeProfile = ToolProfile(
             label = "Shell 环境快照",
             relPath = "shell-snapshots",
             kind = MatchKind.DIRECTORY_CONTENTS,
-            risk = Risk.SAFE,
-            description = "会话启动时抓取的 shell 环境；正常退出会清掉，此处多为崩溃残留。",
+            risk = Risk.OPTIONAL,
+            description = "会话启动时抓取的 shell 环境。残留项可能仍被历史会话恢复流程引用，删除后不可恢复。",
         ),
         CleanTarget(
             id = "claude.cache",
@@ -276,8 +348,8 @@ val ClaudeCodeProfile = ToolProfile(
             label = "CLI / IDE MCP 日志缓存",
             relPath = "",
             kind = MatchKind.DIRECTORY_CONTENTS,
-            risk = Risk.SAFE,
-            description = "%LOCALAPPDATA%\\claude-cli-nodejs\\Cache 下按项目切分的 MCP 日志。可重建。",
+            risk = Risk.OPTIONAL,
+            description = "%LOCALAPPDATA%\\claude-cli-nodejs\\Cache 下按项目切分的 MCP 日志。删除后历史诊断记录不可恢复。",
             baseDir = ::claudeCliNodejsCache,
         ),
         CleanTarget(
@@ -293,16 +365,16 @@ val ClaudeCodeProfile = ToolProfile(
             label = "粘贴内容缓存",
             relPath = "paste-cache",
             kind = MatchKind.DIRECTORY_CONTENTS,
-            risk = Risk.SAFE,
-            description = "大段粘贴文本的临时副本。",
+            risk = Risk.OPTIONAL,
+            description = "用户粘贴的大段文本副本，可能仍被当前或历史会话引用。删除后内容不可恢复。",
         ),
         CleanTarget(
             id = "claude.image-cache",
             label = "图片附件缓存",
             relPath = "image-cache",
             kind = MatchKind.DIRECTORY_CONTENTS,
-            risk = Risk.SAFE,
-            description = "会话里附带图片的本地缓存。可重建；多数机器上可能尚未生成。",
+            risk = Risk.OPTIONAL,
+            description = "会话中附带图片的本地副本。原图不可重新取得时无法重建，删除后历史附件可能不可用。",
         ),
         CleanTarget(
             id = "claude.backups",
@@ -326,16 +398,16 @@ val ClaudeCodeProfile = ToolProfile(
             label = "调试日志",
             relPath = "debug",
             kind = MatchKind.DIRECTORY_CONTENTS,
-            risk = Risk.SAFE,
-            description = "--debug 或 /debug 写出的会话调试日志。",
+            risk = Risk.OPTIONAL,
+            description = "--debug 或 /debug 写出的会话调试日志，可能包含会话诊断信息。删除后不可恢复。",
         ),
         CleanTarget(
             id = "claude.session-env",
             label = "会话环境元数据",
             relPath = "session-env",
             kind = MatchKind.DIRECTORY_CONTENTS,
-            risk = Risk.SAFE,
-            description = "每会话的环境元数据目录，无用户可见内容。",
+            risk = Risk.OPTIONAL,
+            description = "每会话的环境元数据目录。可能影响历史会话恢复，删除后不可恢复。",
         ),
         CleanTarget(
             id = "claude.tasks",
@@ -358,8 +430,8 @@ val ClaudeCodeProfile = ToolProfile(
             label = "反馈归档",
             relPath = "feedback-bundles",
             kind = MatchKind.DIRECTORY_CONTENTS,
-            risk = Risk.SAFE,
-            description = "/feedback 写出的脱敏转录归档。可清。",
+            risk = Risk.OPTIONAL,
+            description = "/feedback 写出的脱敏转录归档。删除后该归档不可恢复。",
         ),
         CleanTarget(
             id = "claude.stats-cache",
@@ -390,8 +462,8 @@ val ClaudeCodeProfile = ToolProfile(
             label = "旧版 todos 目录",
             relPath = "todos",
             kind = MatchKind.DIRECTORY_CONTENTS,
-            risk = Risk.SAFE,
-            description = "旧版本遗留目录，新版本不再写入。多数机器上已不存在。",
+            risk = Risk.OPTIONAL,
+            description = "旧版本写入的任务数据。即使新版本不再使用，删除后历史任务内容仍不可恢复。",
         ),
         CleanTarget(
             id = "claude.statsig-legacy",
@@ -406,8 +478,8 @@ val ClaudeCodeProfile = ToolProfile(
             label = "旧版 logs 目录",
             relPath = "logs",
             kind = MatchKind.DIRECTORY_CONTENTS,
-            risk = Risk.SAFE,
-            description = "旧版本遗留目录，新版本不再写入。多数机器上已不存在。",
+            risk = Risk.OPTIONAL,
+            description = "旧版本遗留的历史日志。新版本不再写入，但删除后历史诊断记录不可恢复。",
         ),
     ),
 )
@@ -427,6 +499,8 @@ val CursorProfile = ToolProfile(
     name = "Cursor",
     subtitle = "~/.cursor · AppData\\Cursor",
     baseDir = { cursorHome() ?: cursorAppData() },
+    processNamePrefixes = setOf("cursor"),
+    protectedPaths = ::cursorProtectedPaths,
     spaceDirs = { listOfNotNull(cursorHome(), cursorAppData()) },
     targets = listOf(
         // —— AppData\\Cursor：缓存与临时（SAFE）——
@@ -489,6 +563,7 @@ val CursorProfile = ToolProfile(
             label = "编辑器版本缓存（历史）",
             relPath = "*",
             kind = MatchKind.STALE_VERSIONS,
+            entryType = TargetEntryType.DIRECTORY,
             risk = Risk.SAFE,
             description = "CachedData 下按 commit 分的旧版本资源。保留最新一份，只删历史版本。",
             baseDir = { cursorAppData()?.resolve("CachedData")?.takeIf { Files.isDirectory(it) } },
@@ -507,8 +582,8 @@ val CursorProfile = ToolProfile(
             label = "配置档案缓存",
             relPath = "CachedProfilesData",
             kind = MatchKind.DIRECTORY_CONTENTS,
-            risk = Risk.SAFE,
-            description = "Profile 相关缓存数据。",
+            risk = Risk.OPTIONAL,
+            description = "Profile 相关的缓存数据。不能保证所有内容均已同步，删除后离线档案信息可能不可恢复。",
             baseDir = ::cursorAppData,
         ),
         CleanTarget(
@@ -516,8 +591,8 @@ val CursorProfile = ToolProfile(
             label = "应用日志",
             relPath = "logs",
             kind = MatchKind.DIRECTORY_CONTENTS,
-            risk = Risk.SAFE,
-            description = "Cursor 主程序日志。",
+            risk = Risk.OPTIONAL,
+            description = "Cursor 主程序历史日志。删除后诊断记录不可恢复。",
             baseDir = ::cursorAppData,
         ),
         CleanTarget(
@@ -525,8 +600,8 @@ val CursorProfile = ToolProfile(
             label = "崩溃转储",
             relPath = "Crashpad",
             kind = MatchKind.DIRECTORY_CONTENTS,
-            risk = Risk.SAFE,
-            description = "崩溃报告与 minidump。",
+            risk = Risk.OPTIONAL,
+            description = "崩溃报告与 minidump。删除后无法再用于问题诊断。",
             baseDir = ::cursorAppData,
         ),
         CleanTarget(
@@ -534,8 +609,8 @@ val CursorProfile = ToolProfile(
             label = "Service Worker 缓存",
             relPath = "Service Worker",
             kind = MatchKind.DIRECTORY_CONTENTS,
-            risk = Risk.SAFE,
-            description = "内置页 Service Worker 缓存。",
+            risk = Risk.OPTIONAL,
+            description = "内置页 Service Worker 数据。可能同时包含缓存与持久状态，删除后需要重新注册。",
             baseDir = ::cursorAppData,
         ),
         CleanTarget(
@@ -543,8 +618,8 @@ val CursorProfile = ToolProfile(
             label = "Blob 存储",
             relPath = "blob_storage",
             kind = MatchKind.DIRECTORY_CONTENTS,
-            risk = Risk.SAFE,
-            description = "Chromium blob 临时存储。",
+            risk = Risk.OPTIONAL,
+            description = "Chromium blob 存储，可能包含尚未持久化的页面或附件数据。删除后不可恢复。",
             baseDir = ::cursorAppData,
         ),
         // Partitions 整目录含 Local Storage / Session Storage，不能整删。
@@ -599,8 +674,8 @@ val CursorProfile = ToolProfile(
             label = "内置浏览器 Blob 存储",
             relPath = "Partitions/cursor-browser/blob_storage",
             kind = MatchKind.DIRECTORY_CONTENTS,
-            risk = Risk.SAFE,
-            description = "内置浏览器分区的 blob 临时存储。",
+            risk = Risk.OPTIONAL,
+            description = "内置浏览器分区的 blob 存储，可能包含尚未持久化的页面数据。删除后不可恢复。",
             baseDir = ::cursorAppData,
         ),
         CleanTarget(
@@ -617,8 +692,8 @@ val CursorProfile = ToolProfile(
             label = "进程监控日志",
             relPath = "process-monitor",
             kind = MatchKind.DIRECTORY_CONTENTS,
-            risk = Risk.SAFE,
-            description = "本地进程监控输出。",
+            risk = Risk.OPTIONAL,
+            description = "本地进程监控历史输出。删除后诊断记录不可恢复。",
             baseDir = ::cursorAppData,
         ),
         CleanTarget(
@@ -637,8 +712,8 @@ val CursorProfile = ToolProfile(
             label = "Agent 日志",
             relPath = "logs",
             kind = MatchKind.DIRECTORY_CONTENTS,
-            risk = Risk.SAFE,
-            description = "~/.cursor 下的连接与调试日志。",
+            risk = Risk.OPTIONAL,
+            description = "~/.cursor 下的连接与调试历史日志。删除后诊断记录不可恢复。",
             baseDir = ::cursorHome,
         ),
         CleanTarget(
@@ -646,8 +721,8 @@ val CursorProfile = ToolProfile(
             label = "Agent 工具临时输出",
             relPath = "projects/*/agent-tools",
             kind = MatchKind.DIRECTORY_CONTENTS,
-            risk = Risk.SAFE,
-            description = "各项目下 Agent 工具写出的临时文本，可重建。不碰 canvases / 对话转录。",
+            risk = Risk.OPTIONAL,
+            description = "各项目下 Agent 工具写出的文本输出，可能仍被会话引用。删除后不能保证自动重建；不碰 canvases / 对话转录。",
             baseDir = ::cursorHome,
         ),
         CleanTarget(
@@ -655,8 +730,8 @@ val CursorProfile = ToolProfile(
             label = "项目终端快照",
             relPath = "projects/*/terminals",
             kind = MatchKind.DIRECTORY_CONTENTS,
-            risk = Risk.SAFE,
-            description = "各项目下终端输出的本地快照，仅供 Agent 上下文，可重建。",
+            risk = Risk.OPTIONAL,
+            description = "各项目下终端输出的本地快照，用于 Agent 上下文。历史命令输出不能自动重建。",
             baseDir = ::cursorHome,
         ),
         CleanTarget(

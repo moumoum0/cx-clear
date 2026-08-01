@@ -5,8 +5,11 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -41,6 +44,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
@@ -54,9 +58,11 @@ import androidx.compose.ui.unit.sp
 import dev.cxclear.clean.CleanRequest
 import dev.cxclear.clean.clean
 import dev.cxclear.model.CleanEvent
+import dev.cxclear.model.DeletionPlan
 import dev.cxclear.model.Risk
 import dev.cxclear.model.ScanResult
 import dev.cxclear.model.CleanTarget
+import dev.cxclear.model.TargetKey
 import dev.cxclear.profiles.ALL_PROFILES
 import dev.cxclear.storage.CleanHistory
 import dev.cxclear.storage.DailyClean
@@ -71,9 +77,12 @@ import dev.cxclear.ui.theme.AppColors
 import dev.cxclear.ui.theme.AppDimensions
 import dev.cxclear.ui.theme.Motion
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.math.PI
 import kotlin.math.max
+import kotlin.math.sin
 
 private enum class ScanPhase { IDLE, SCANNING, DONE }
 
@@ -86,12 +95,13 @@ private data class ScanCategory(
 )
 
 private data class ScanTargetItem(
-    val id: String,
+    val key: TargetKey,
     val label: String,
     val description: String,
     val bytes: Long,
     val risk: Risk,
     val defaultSelected: Boolean,
+    val deletionPlan: DeletionPlan?,
 )
 
 @Composable
@@ -102,39 +112,61 @@ fun MainContent(
     var selectedTools by remember { mutableStateOf(setOf("codex")) }
     var scanPhase by remember { mutableStateOf(ScanPhase.IDLE) }
     var scanCategories by remember { mutableStateOf(emptyList<ScanCategory>()) }
-    var selectedTargets by remember { mutableStateOf(emptySet<String>()) }
+    var selectedTargets by remember { mutableStateOf(emptySet<TargetKey>()) }
     var isCleaning by remember { mutableStateOf(false) }
     var showCleanConfirm by remember { mutableStateOf(false) }
+    var cleanError by remember { mutableStateOf<String?>(null) }
     // 每完成一次清理 +1，累计卡片 key 在它上面，借此重新从磁盘读取最新统计。
     var cleanTick by remember { mutableStateOf(0) }
     val scope = rememberCoroutineScope()
 
     fun startClean() {
         if (isCleaning) return
+        val plansByKey = scanCategories
+            .flatMap { it.items }
+            .mapNotNull { item -> item.deletionPlan?.let { item.key to it } }
+            .toMap()
         val requests = ALL_PROFILES.flatMap { profile ->
-            profile.targets
-                .filter { it.id in selectedTargets }
-                .map { CleanRequest(profile, it) }
+            profile.targets.mapNotNull { target ->
+                val key = TargetKey(profile.id, target.id)
+                val plan = plansByKey[key]
+                if (key in selectedTargets && plan != null) CleanRequest(profile, target, plan) else null
+            }
         }
         if (requests.isEmpty()) return
         isCleaning = true
         scope.launch {
-            clean(requests).collect { event ->
-                if (event is CleanEvent.AllDone) {
-                    // 记实测删除量，不是扫描预估值。0 字节 append 会被自动忽略。
-                    CleanHistory.append(event.totalFreedBytes)
+            val errors = mutableListOf<String>()
+            try {
+                clean(requests).collect { event ->
+                    when (event) {
+                        is CleanEvent.AllDone -> {
+                            // 记实测删除量，不是扫描预估值。0 字节 append 会被自动忽略。
+                            CleanHistory.append(event.totalFreedBytes)
+                        }
+                        is CleanEvent.Blocked -> errors +=
+                            "检测到 ${event.tools.joinToString("、")} 仍在运行。请完全退出后重新扫描。"
+                        is CleanEvent.TargetDone -> event.error?.let { errors += "${event.label}：$it" }
+                        is CleanEvent.Started -> Unit
+                    }
                 }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                errors += (e.message ?: "清理过程中发生未知错误")
+            } finally {
+                // 只切回 IDLE：分类数据留给结果区退场动画用，下次 startScan 会清空重扫。
+                selectedTargets = emptySet()
+                scanPhase = ScanPhase.IDLE
+                isCleaning = false
+                cleanTick++
+                cleanError = errors.distinct().joinToString("\n").ifBlank { null }
             }
-            // 只切回 IDLE：分类数据留给结果区退场动画用，下次 startScan 会清空重扫。
-            selectedTargets = emptySet()
-            scanPhase = ScanPhase.IDLE
-            isCleaning = false
-            cleanTick++
         }
     }
 
     fun startScan() {
-        if (scanPhase == ScanPhase.SCANNING || selectedTools.isEmpty()) return
+        if (isCleaning || scanPhase == ScanPhase.SCANNING || selectedTools.isEmpty()) return
         scanPhase = ScanPhase.SCANNING
         scanCategories = emptyList()
         selectedTargets = emptySet()
@@ -163,14 +195,14 @@ fun MainContent(
             selectedTargets = scanCategories
                 .flatMap { it.items }
                 .filter { it.defaultSelected && it.bytes > 0L }
-                .mapTo(mutableSetOf()) { it.id }
+                .mapTo(mutableSetOf()) { it.key }
             scanPhase = ScanPhase.DONE
         }
     }
 
     val selectedBytes = scanCategories
         .flatMap { it.items }
-        .filter { it.id in selectedTargets }
+        .filter { it.key in selectedTargets }
         .sumOf { it.bytes }
 
     Column(
@@ -211,11 +243,11 @@ fun MainContent(
                     phase = scanPhase,
                     categories = scanCategories,
                     selectedTargets = selectedTargets,
-                    onTargetToggle = { targetId ->
-                        selectedTargets = if (targetId in selectedTargets) {
-                            selectedTargets - targetId
+                    onTargetToggle = { targetKey ->
+                        selectedTargets = if (targetKey in selectedTargets) {
+                            selectedTargets - targetKey
                         } else {
-                            selectedTargets + targetId
+                            selectedTargets + targetKey
                         }
                     },
                 )
@@ -236,7 +268,7 @@ fun MainContent(
     if (showCleanConfirm) {
         val hasOptional = scanCategories
             .flatMap { it.items }
-            .any { it.id in selectedTargets && it.risk == Risk.OPTIONAL }
+            .any { it.key in selectedTargets && it.risk == Risk.OPTIONAL }
         AlertDialog(
             onDismissRequest = { showCleanConfirm = false },
             title = { Text("确认清理", color = AppColors.TextPrimary, fontWeight = FontWeight.SemiBold) },
@@ -279,6 +311,20 @@ fun MainContent(
             backgroundColor = AppColors.Surface2,
         )
     }
+
+    cleanError?.let { message ->
+        AlertDialog(
+            onDismissRequest = { cleanError = null },
+            title = { Text("清理未完全执行", color = AppColors.TextPrimary, fontWeight = FontWeight.SemiBold) },
+            text = { Text(message, fontSize = 14.sp, color = AppColors.TextSecondary) },
+            confirmButton = {
+                TextButton(onClick = { cleanError = null }) {
+                    Text("知道了", color = AppColors.Primary, fontSize = 14.sp)
+                }
+            },
+            backgroundColor = AppColors.Surface2,
+        )
+    }
 }
 
 private fun buildCategories(
@@ -286,41 +332,46 @@ private fun buildCategories(
     results: List<ScanResult>,
     totalToolBytes: Long,
 ): List<ScanCategory> {
-    val resultByTarget = results.associateBy { it.targetId }
-    val profileByTarget = profiles.flatMap { profile -> profile.targets.map { it.id to profile } }.toMap()
-    val targets = profiles.flatMap { it.targets }
+    val resultByTarget = results.associateBy { TargetKey(it.toolId, it.targetId) }
+    val targets = profiles.flatMap { profile -> profile.targets.map { profile to it } }
 
-    fun item(target: CleanTarget): ScanTargetItem {
-        val profileName = profileByTarget[target.id]?.name.orEmpty()
+    fun item(profile: dev.cxclear.model.ToolProfile, target: CleanTarget): ScanTargetItem {
+        val key = TargetKey(profile.id, target.id)
+        val result = resultByTarget.getValue(key)
         return ScanTargetItem(
-            id = target.id,
-            label = if (profileName.isBlank()) target.label else "$profileName · ${target.label}",
+            key = key,
+            label = "${profile.name} · ${target.label}",
             description = target.description,
-            bytes = resultByTarget[target.id]?.bytes ?: 0L,
+            bytes = result.bytes,
             risk = target.risk,
             defaultSelected = target.defaultSelected,
+            deletionPlan = result.deletionPlan,
         )
     }
 
     val packageItems = targets
-        .filter { target ->
-            resultByTarget[target.id]?.exists == true &&
+        .filter { (profile, target) ->
+            resultByTarget[TargetKey(profile.id, target.id)]?.exists == true &&
                 target.risk == Risk.SAFE &&
                 listOf("plugins", "downloads", "sandbox", "vendor", "extension", "cached", "runtime").any {
                     target.id.contains(it)
                 }
         }
-        .map(::item)
+        .map { (profile, target) -> item(profile, target) }
     val workingItems = targets
-        .filter { target ->
-            resultByTarget[target.id]?.exists == true &&
+        .filter { (profile, target) ->
+            val key = TargetKey(profile.id, target.id)
+            resultByTarget[key]?.exists == true &&
                 target.risk == Risk.SAFE &&
-                packageItems.none { it.id == target.id }
+                packageItems.none { it.key == key }
         }
-        .map(::item)
+        .map { (profile, target) -> item(profile, target) }
     val historyItems = targets
-        .filter { resultByTarget[it.id]?.exists == true && it.risk == Risk.OPTIONAL }
-        .map(::item)
+        .filter { (profile, target) ->
+            resultByTarget[TargetKey(profile.id, target.id)]?.exists == true &&
+                target.risk == Risk.OPTIONAL
+        }
+        .map { (profile, target) -> item(profile, target) }
 
     val knownBytes = (packageItems + workingItems + historyItems).sumOf { it.bytes }
     val retainedBytes = (totalToolBytes - knownBytes).coerceAtLeast(0L)
@@ -362,8 +413,8 @@ private fun buildCategories(
 private fun ScanView(
     phase: ScanPhase,
     categories: List<ScanCategory>,
-    selectedTargets: Set<String>,
-    onTargetToggle: (String) -> Unit,
+    selectedTargets: Set<TargetKey>,
+    onTargetToggle: (TargetKey) -> Unit,
 ) {
     // 只用 IDLE vs 有结果 做切换；SCANNING/DONE 共用同一 target，
     // 避免扫描结束时整棵子树重建导致柱体 Animatable 归零重播。
@@ -418,14 +469,14 @@ private fun ScanResultView(
     categories: List<ScanCategory>,
     isScanning: Boolean,
     totalBytes: Long,
-    selectedTargets: Set<String>,
-    onTargetToggle: (String) -> Unit,
+    selectedTargets: Set<TargetKey>,
+    onTargetToggle: (TargetKey) -> Unit,
 ) {
     // 单向展开：同时最多打开一个分类，避免多栏同时撑开把列表冲散。
     var expandedCategoryId by remember(categories) { mutableStateOf<String?>(null) }
     val selectedBytes = categories
         .flatMap { it.items }
-        .filter { it.id in selectedTargets }
+        .filter { it.key in selectedTargets }
         .sumOf { it.bytes }
 
     Row(
@@ -635,11 +686,7 @@ private fun ScanResultView(
                             }
                             if (isScanning) {
                                 Spacer(modifier = Modifier.width(8.dp))
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(14.dp),
-                                    color = category.color,
-                                    strokeWidth = 2.dp,
-                                )
+                                BreathingDots(color = category.color)
                             } else if (canExpand) {
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Icon(
@@ -678,9 +725,9 @@ private fun ScanResultView(
                                 }
                                 TargetSelectionRow(
                                     target = target,
-                                    checked = target.id in selectedTargets,
+                                    checked = target.key in selectedTargets,
                                     accent = category.color,
-                                    onCheckedChange = { onTargetToggle(target.id) },
+                                    onCheckedChange = { onTargetToggle(target.key) },
                                 )
                             }
                             Spacer(modifier = Modifier.height(4.dp))
@@ -690,6 +737,40 @@ private fun ScanResultView(
                 Spacer(modifier = Modifier.height(8.dp))
             }
 
+        }
+    }
+}
+
+@Composable
+private fun BreathingDots(color: Color) {
+    val transition = rememberInfiniteTransition(label = "breathingDots")
+    val phase by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = (2.0 * PI).toFloat(),
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = Motion.BreathMs, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart,
+        ),
+        label = "breathingDotsPhase",
+    )
+    Row(
+        modifier = Modifier.width(18.dp).height(14.dp),
+        horizontalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterHorizontally),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        repeat(3) { index ->
+            val wave = ((sin(phase - index * (2.0 * PI / 3.0)) + 1.0) / 2.0).toFloat()
+            Box(
+                Modifier
+                    .size(4.dp)
+                    .graphicsLayer {
+                        val scale = 0.72f + wave * 0.28f
+                        scaleX = scale
+                        scaleY = scale
+                        alpha = 0.38f + wave * 0.62f
+                    }
+                    .background(color, RoundedCornerShape(99.dp)),
+            )
         }
     }
 }
@@ -1081,7 +1162,7 @@ private fun TopBar(
                         }
                     }
                 } else {
-                    val scanEnabled = scanPhase != ScanPhase.SCANNING && selectedTools.isNotEmpty()
+                    val scanEnabled = !isCleaning && scanPhase != ScanPhase.SCANNING && selectedTools.isNotEmpty()
                     val scanBg = if (scanEnabled) AppColors.Primary else AppColors.PrimaryContainer
                     val scanFg = if (scanEnabled) AppColors.OnPrimary else AppColors.Primary
                     Button(

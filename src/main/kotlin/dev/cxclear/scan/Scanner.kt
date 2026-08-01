@@ -1,8 +1,13 @@
 package dev.cxclear.scan
 
 import dev.cxclear.model.CleanTarget
+import dev.cxclear.model.DeletionPlan
 import dev.cxclear.model.MatchKind
+import dev.cxclear.model.PathSnapshot
+import dev.cxclear.model.PathSnapshotKind
 import dev.cxclear.model.ScanResult
+import dev.cxclear.model.TargetEntryType
+import dev.cxclear.model.TargetKey
 import dev.cxclear.model.ToolProfile
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -15,13 +20,12 @@ import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
 import java.nio.file.FileSystems
 import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.nio.file.Path
 import java.nio.file.attribute.BasicFileAttributes
-import kotlin.io.path.fileSize
-import kotlin.io.path.isRegularFile
 import kotlin.io.path.listDirectoryEntries
 import kotlin.io.path.name
 
@@ -66,6 +70,7 @@ fun resolveTarget(baseDir: Path, target: CleanTarget): ResolvedTarget {
             expandPathPattern(safeBase, target.relPath)
                 .filter { Files.exists(it, LinkOption.NOFOLLOW_LINKS) }
                 .filter { isSafeDeletionPath(safeBase, it) }
+                .filter { matchesExpectedType(it, target.entryType) }
         }
 
         MatchKind.DIRECTORY_CONTENTS -> {
@@ -99,10 +104,15 @@ fun resolveTarget(baseDir: Path, target: CleanTarget): ResolvedTarget {
                     val matched = runCatching { dir.listDirectoryEntries() }.getOrDefault(emptyList())
                         .filter { matcher.matches(it.fileName) }
                         .filter { isSafeDeletionPath(safeBase, it) }
+                        .filter { matchesExpectedType(it, target.entryType) }
                     if (target.kind == MatchKind.STALE_VERSIONS) {
-                        // 每个父目录内各自保留 mtime 最新的一份。
-                        val newest = matched.maxByOrNull { lastModifiedOrZero(it) }
-                        matched.filter { it != newest }
+                        // 每个父目录内各自保留全部并列最新项；mtime 读不出来的也一律保留。
+                        val knownTimes = matched.mapNotNull { path ->
+                            lastModifiedOrNull(path)?.let { path to it }
+                        }
+                        val newestTime = knownTimes.maxOfOrNull { it.second }
+                        if (newestTime == null) emptyList()
+                        else knownTimes.filter { it.second < newestTime }.map { it.first }
                     } else {
                         matched
                     }
@@ -152,7 +162,7 @@ internal fun isSafeDeletionPath(baseDir: Path, candidate: Path): Boolean {
     val base = baseDir.toAbsolutePath().normalize()
     val path = candidate.toAbsolutePath().normalize()
     if (path == base || !path.startsWith(base)) return false
-    if (isLinkLikeDirectory(base)) return false
+    if (linkState(base) != LinkState.PLAIN) return false
 
     val parent = path.parent ?: return false
     if (parent == base) return true
@@ -160,7 +170,7 @@ internal fun isSafeDeletionPath(baseDir: Path, candidate: Path): Boolean {
     var current = base
     for (part in relativeParent) {
         current = current.resolve(part)
-        if (isLinkLikeDirectory(current)) return false
+        if (linkState(current) != LinkState.PLAIN) return false
     }
     return true
 }
@@ -171,25 +181,68 @@ internal fun isSafeTraversalDirectory(baseDir: Path, candidate: Path): Boolean {
     val path = candidate.toAbsolutePath().normalize()
     if (!path.startsWith(base)) return false
     if (!Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS)) return false
-    if (isLinkLikeDirectory(base)) return false
+    if (linkState(base) != LinkState.PLAIN) return false
 
     val relative = runCatching { base.relativize(path) }.getOrNull() ?: return false
     var current = base
     for (part in relative) {
         current = current.resolve(part)
-        if (isLinkLikeDirectory(current)) return false
+        if (linkState(current) != LinkState.PLAIN) return false
     }
     return true
 }
 
-private fun isLinkLikeDirectory(path: Path): Boolean =
-    Files.isSymbolicLink(path) || runCatching {
-        val attrs = Files.readAttributes(path, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)
-        attrs.isOther || (!attrs.isDirectory && Files.isDirectory(path))
-    }.getOrDefault(false)
+private enum class LinkState { PLAIN, LINK_LIKE, UNKNOWN }
 
-private fun lastModifiedOrZero(p: Path): Long =
-    runCatching { Files.getLastModifiedTime(p).toMillis() }.getOrDefault(0L)
+/** 属性读取失败时返回 UNKNOWN；所有安全判断都把 UNKNOWN 当成拒绝，而不是放行。 */
+private fun linkState(path: Path): LinkState {
+    if (Files.isSymbolicLink(path)) return LinkState.LINK_LIKE
+    return try {
+        val attrs = Files.readAttributes(path, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)
+        val followsAsDirectory = !attrs.isDirectory && Files.isDirectory(path)
+        if (attrs.isOther || followsAsDirectory) LinkState.LINK_LIKE else LinkState.PLAIN
+    } catch (_: Exception) {
+        LinkState.UNKNOWN
+    }
+}
+
+private fun matchesExpectedType(path: Path, expected: TargetEntryType): Boolean {
+    if (linkState(path) != LinkState.PLAIN) return false
+    val attrs = runCatching {
+        Files.readAttributes(path, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)
+    }.getOrNull() ?: return false
+    return when (expected) {
+        TargetEntryType.FILE -> attrs.isRegularFile
+        TargetEntryType.DIRECTORY -> attrs.isDirectory
+    }
+}
+
+private fun lastModifiedOrNull(path: Path): Long? =
+    runCatching { Files.getLastModifiedTime(path, LinkOption.NOFOLLOW_LINKS).toMillis() }.getOrNull()
+
+/** Cleaner 复用的 NOFOLLOW_LINKS 身份读取。读取失败或特殊类型不生成可删除快照。 */
+internal fun readPathSnapshot(path: Path): PathSnapshot? {
+    val normalized = path.toAbsolutePath().normalize()
+    val attrs = runCatching {
+        Files.readAttributes(normalized, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)
+    }.getOrNull() ?: return null
+    val state = linkState(normalized)
+    if (state == LinkState.UNKNOWN) return null
+    val kind = when {
+        state == LinkState.LINK_LIKE -> PathSnapshotKind.LINK
+        attrs.isDirectory -> PathSnapshotKind.DIRECTORY
+        attrs.isRegularFile -> PathSnapshotKind.FILE
+        else -> return null
+    }
+    return PathSnapshot(
+        path = normalized,
+        kind = kind,
+        fileKey = attrs.fileKey()?.toString(),
+        size = if (kind == PathSnapshotKind.FILE) attrs.size() else 0L,
+        creationMillis = attrs.creationTime().toMillis(),
+        lastModifiedMillis = attrs.lastModifiedTime().toMillis(),
+    )
+}
 
 /**
  * 递归统计大小与文件数。软链接不跟随，避免重复计算或走出目标范围。
@@ -201,14 +254,13 @@ private inline fun measure(
     path: Path,
     onProgress: (deltaBytes: Long, deltaCount: Int) -> Unit = { _, _ -> },
 ): Pair<Long, Int> {
-    if (isLinkLikeDirectory(path)) {
+    val root = readPathSnapshot(path) ?: return 0L to 0
+    if (root.kind == PathSnapshotKind.LINK) {
         onProgress(0L, 1); return 0L to 1
     }
-    if (path.isRegularFile()) {
-        val b = runCatching { path.fileSize() }.getOrDefault(0L)
-        onProgress(b, 1); return b to 1
+    if (root.kind == PathSnapshotKind.FILE) {
+        onProgress(root.size, 1); return root.size to 1
     }
-    if (!Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS)) return 0L to 0
 
     var bytes = 0L
     var count = 0
@@ -216,16 +268,19 @@ private inline fun measure(
     stack.addLast(path)
     while (stack.isNotEmpty()) {
         val dir = stack.removeLast()
+        if (readPathSnapshot(dir)?.kind != PathSnapshotKind.DIRECTORY) continue
         val entries = runCatching { dir.listDirectoryEntries() }.getOrNull() ?: continue
         for (e in entries) {
-            when {
-                isLinkLikeDirectory(e) -> {
-                    count++; onProgress(0L, 1)
-                }
-                Files.isDirectory(e, LinkOption.NOFOLLOW_LINKS) -> stack.addLast(e)
-                else -> {
-                    val b = runCatching { e.fileSize() }.getOrDefault(0L)
-                    bytes += b; count++; onProgress(b, 1)
+            when (val snapshot = readPathSnapshot(e)) {
+                null -> Unit
+                else -> when (snapshot.kind) {
+                    PathSnapshotKind.LINK -> {
+                        count++; onProgress(0L, 1)
+                    }
+                    PathSnapshotKind.DIRECTORY -> stack.addLast(e)
+                    PathSnapshotKind.FILE -> {
+                        bytes += snapshot.size; count++; onProgress(snapshot.size, 1)
+                    }
                 }
             }
         }
@@ -233,21 +288,88 @@ private inline fun measure(
     return bytes to count
 }
 
-/** 扫描单个 target。已解析过路径的话直接复用，省一次目录遍历。 */
-fun scanResolved(toolId: String, resolved: ResolvedTarget): ScanResult {
+private data class PlanBuild(
+    val plan: DeletionPlan,
+    val bytes: Long,
+    val files: Int,
+)
+
+/**
+ * 在扫描阶段把每个实际条目及身份完整冻结下来。Cleaner 只消费这份计划，绝不重新展开目录/glob。
+ */
+private fun buildDeletionPlan(
+    toolId: String,
+    resolved: ResolvedTarget,
+    onProgress: (deltaBytes: Long, deltaCount: Int) -> Unit = { _, _ -> },
+): PlanBuild {
+    val snapshots = linkedMapOf<Path, PathSnapshot>()
     var bytes = 0L
     var files = 0
-    for (p in resolved.paths) {
-        val (b, c) = measure(p)
-        bytes += b
-        files += c
+
+    fun record(snapshot: PathSnapshot) {
+        if (snapshots.putIfAbsent(snapshot.path, snapshot) != null) return
+        when (snapshot.kind) {
+            PathSnapshotKind.FILE -> {
+                bytes += snapshot.size
+                files++
+                onProgress(snapshot.size, 1)
+            }
+            PathSnapshotKind.LINK -> {
+                files++
+                onProgress(0L, 1)
+            }
+            PathSnapshotKind.DIRECTORY -> Unit
+        }
     }
+
+    for (root in resolved.paths) {
+        if (!isSafeDeletionPath(resolved.baseDir, root)) continue
+        val rootSnapshot = readPathSnapshot(root) ?: continue
+        record(rootSnapshot)
+        if (rootSnapshot.kind != PathSnapshotKind.DIRECTORY) continue
+        if (!isSafeTraversalDirectory(resolved.baseDir, root)) continue
+
+        val stack = ArrayDeque<Path>()
+        stack.addLast(root)
+        while (stack.isNotEmpty()) {
+            val dir = stack.removeLast()
+            if (!isSafeTraversalDirectory(resolved.baseDir, dir)) continue
+            val entries = runCatching { dir.listDirectoryEntries() }.getOrNull() ?: continue
+            for (entry in entries) {
+                if (!isSafeDeletionPath(resolved.baseDir, entry)) continue
+                val snapshot = readPathSnapshot(entry) ?: continue
+                record(snapshot)
+                if (snapshot.kind == PathSnapshotKind.DIRECTORY &&
+                    isSafeTraversalDirectory(resolved.baseDir, entry)
+                ) {
+                    stack.addLast(entry)
+                }
+            }
+        }
+    }
+
+    return PlanBuild(
+        plan = DeletionPlan(
+            toolId = toolId,
+            targetId = resolved.target.id,
+            baseDir = resolved.baseDir,
+            entries = snapshots.values.toList(),
+        ),
+        bytes = bytes,
+        files = files,
+    )
+}
+
+/** 扫描单个 target。已解析过路径的话直接复用，省一次目录遍历。 */
+fun scanResolved(toolId: String, resolved: ResolvedTarget): ScanResult {
+    val built = buildDeletionPlan(toolId, resolved)
     return ScanResult(
         toolId = toolId,
         targetId = resolved.target.id,
-        bytes = bytes,
-        fileCount = files,
-        exists = resolved.paths.isNotEmpty(),
+        bytes = built.bytes,
+        fileCount = built.files,
+        exists = built.plan.entries.isNotEmpty(),
+        deletionPlan = built.plan,
     )
 }
 
@@ -259,9 +381,11 @@ private class TargetProgress(
     val toolId: String,
     val targetId: String,
 ) {
+    val key = TargetKey(toolId, targetId)
     val bytes = AtomicLong(0L)
     val files = AtomicInteger(0)
     val exists = AtomicBoolean(false)
+    val deletionPlan = AtomicReference<DeletionPlan?>(null)
 
     fun snapshot(): ScanResult = ScanResult(
         toolId = toolId,
@@ -269,6 +393,7 @@ private class TargetProgress(
         bytes = bytes.get(),
         fileCount = files.get(),
         exists = exists.get(),
+        deletionPlan = deletionPlan.get(),
     )
 }
 
@@ -278,14 +403,14 @@ private class TargetProgress(
  */
 private fun scanWithProgress(profile: ToolProfile, target: CleanTarget, progress: TargetProgress) {
     val base = resolveBase(profile, target) ?: return
-    val paths = resolveTarget(base, target).paths
-    if (paths.isNotEmpty()) progress.exists.set(true)
-    for (p in paths) {
-        measure(p) { deltaBytes, deltaCount ->
-            if (deltaBytes != 0L) progress.bytes.addAndGet(deltaBytes)
-            if (deltaCount != 0) progress.files.addAndGet(deltaCount)
-        }
+    val resolved = resolveTarget(base, target)
+    progress.exists.set(resolved.paths.isNotEmpty())
+    val built = buildDeletionPlan(profile.id, resolved) { deltaBytes, deltaCount ->
+        if (deltaBytes != 0L) progress.bytes.addAndGet(deltaBytes)
+        if (deltaCount != 0) progress.files.addAndGet(deltaCount)
     }
+    progress.deletionPlan.set(built.plan)
+    progress.exists.set(built.plan.entries.isNotEmpty())
 }
 
 /**
@@ -391,11 +516,11 @@ fun scanStream(profiles: List<ToolProfile>): Flow<ScanEvent> = channelFlow {
     val progresses = profiles.flatMap { profile ->
         profile.targets.map { TargetProgress(profile.id, it.id) }
     }
-    val progressById = progresses.associateBy { it.targetId }
+    val progressByKey = progresses.associateBy { it.key }
     val workers = buildList {
         for (profile in profiles) {
             for (target in profile.targets) {
-                val progress = progressById.getValue(target.id)
+                val progress = progressByKey.getValue(TargetKey(profile.id, target.id))
                 add(
                     launch(Dispatchers.IO) {
                         scanWithProgress(profile, target, progress)
