@@ -97,7 +97,10 @@ private data class ScanTargetItem(
 )
 
 @Composable
-fun MainContent(currentScreen: Screen) {
+fun MainContent(
+    currentScreen: Screen,
+    modifier: Modifier = Modifier,
+) {
     var selectedTools by remember { mutableStateOf(setOf("codex")) }
     var scanPhase by remember { mutableStateOf(ScanPhase.IDLE) }
     var scanCategories by remember { mutableStateOf(emptyList<ScanCategory>()) }
@@ -173,7 +176,7 @@ fun MainContent(currentScreen: Screen) {
         .sumOf { it.bytes }
 
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxSize()
             .background(AppColors.Surface1)
             .padding(AppDimensions.SpacingLarge.dp),
@@ -201,6 +204,7 @@ fun MainContent(currentScreen: Screen) {
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f)
+                .clip(RoundedCornerShape(AppDimensions.Radius.dp))
                 .background(AppColors.Surface2, RoundedCornerShape(AppDimensions.Radius.dp)),
             contentAlignment = Alignment.Center
         ) {
@@ -419,7 +423,8 @@ private fun ScanResultView(
     selectedTargets: Set<String>,
     onTargetToggle: (String) -> Unit,
 ) {
-    var expandedCategories by remember(categories) { mutableStateOf(emptySet<String>()) }
+    // 单向展开：同时最多打开一个分类，避免多栏同时撑开把列表冲散。
+    var expandedCategoryId by remember(categories) { mutableStateOf<String?>(null) }
     val selectedBytes = categories
         .flatMap { it.items }
         .filter { it.id in selectedTargets }
@@ -430,7 +435,8 @@ private fun ScanResultView(
             .fillMaxSize()
             .padding(horizontal = 42.dp, vertical = 20.dp),
         horizontalArrangement = Arrangement.spacedBy(44.dp),
-        verticalAlignment = Alignment.CenterVertically,
+        // 顶对齐：展开后列表变高时若仍垂直居中，顶部会被父级裁掉。
+        verticalAlignment = Alignment.Top,
     ) {
         StorageCylinder(
             categories = categories,
@@ -447,7 +453,7 @@ private fun ScanResultView(
                 .weight(1f)
                 .fillMaxHeight()
                 .verticalScroll(rememberScrollState())
-                .padding(vertical = 20.dp),
+                .padding(vertical = 4.dp),
             verticalArrangement = Arrangement.Top,
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -507,7 +513,7 @@ private fun ScanResultView(
             // 占比条两态各表意，且都随数据动态生长：
             // 扫描时 = 可清理 / 总占用（随字节累加实时增长，呼应「可清理共 X」）；
             // 完成后 = 已选 / 可清理（呼应「已选择 X」）。补间动画抹平两态切换。
-            Spacer(Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(8.dp))
             val selectedFraction = if (isScanning) {
                 if (totalBytes > 0L) (cleanableBytes.toFloat() / totalBytes).coerceIn(0f, 1f) else 0f
             } else {
@@ -535,11 +541,11 @@ private fun ScanResultView(
                 }
             }
 
-            Spacer(Modifier.height(14.dp))
+            Spacer(modifier = Modifier.height(14.dp))
 
             categories.forEach { category ->
                 val canExpand = !isScanning && category.items.isNotEmpty()
-                val isExpanded = category.id in expandedCategories
+                val isExpanded = expandedCategoryId == category.id
                 val isRetained = category.id == "retained"
                 val targetFraction = if (!isScanning && totalBytes > 0L) {
                     (category.bytes.toFloat() / totalBytes).coerceIn(0f, 1f)
@@ -554,35 +560,43 @@ private fun ScanResultView(
                     animationSpec = Motion.fast(),
                     label = "chevron",
                 )
+                val cardAlpha = when {
+                    isRetained -> 0.4f
+                    isExpanded -> 0.92f
+                    else -> 0.72f
+                }
 
-                Column(modifier = Modifier.fillMaxWidth()) {
+                // 头行 + 子项共一张卡：展开时往下长，而不是头下另挂一串游离行。
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(AppColors.Surface3.copy(alpha = cardAlpha)),
+                ) {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(AppColors.Surface3.copy(alpha = if (isRetained) 0.4f else 0.72f))
                             .clickable(enabled = canExpand) {
-                                expandedCategories = if (isExpanded) {
-                                    expandedCategories - category.id
-                                } else {
-                                    expandedCategories + category.id
-                                }
+                                expandedCategoryId = if (isExpanded) null else category.id
                             },
                     ) {
                         // 行内占比底纹：宽度 = 该类 / 总占用，用分类色淡染。
                         // retained 不染（它是留白概念），彩色只给可清理项。
+                        // matchParentSize：不参与父测量，避免把分类头撑成整页高。
                         if (!isRetained && fraction > 0f) {
-                            Box(
-                                Modifier
-                                    .fillMaxWidth(fraction)
-                                    .fillMaxHeight()
-                                    .background(category.color.copy(alpha = 0.14f)),
-                            )
+                            Box(Modifier.matchParentSize()) {
+                                Box(
+                                    Modifier
+                                        .fillMaxWidth(fraction)
+                                        .fillMaxHeight()
+                                        .background(category.color.copy(alpha = if (isExpanded) 0.18f else 0.14f)),
+                                )
+                            }
                         }
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 12.dp, vertical = 9.dp),
+                                .padding(horizontal = 14.dp, vertical = 11.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             // retained 在柱体里是留白，图例也用空心描边圈呼应，不给实心色块。
@@ -599,11 +613,12 @@ private fun ScanResultView(
                                         .background(category.color, RoundedCornerShape(99.dp))
                                 )
                             }
-                            Spacer(Modifier.width(10.dp))
-                            Column(Modifier.weight(1f)) {
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column(modifier = Modifier.weight(1f)) {
                                 Text(
                                     category.label,
                                     fontSize = 13.sp,
+                                    fontWeight = if (isExpanded) FontWeight.SemiBold else FontWeight.Normal,
                                     color = if (isRetained) AppColors.TextTertiary else AppColors.TextSecondary,
                                 )
                                 if (isRetained) {
@@ -621,14 +636,14 @@ private fun ScanResultView(
                                 )
                             }
                             if (isScanning) {
-                                Spacer(Modifier.width(8.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
                                 CircularProgressIndicator(
                                     modifier = Modifier.size(14.dp),
                                     color = category.color,
                                     strokeWidth = 2.dp,
                                 )
                             } else if (canExpand) {
-                                Spacer(Modifier.width(8.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
                                 Icon(
                                     imageVector = Icons.Filled.KeyboardArrowDown,
                                     contentDescription = if (isExpanded) "收起" else "展开",
@@ -646,18 +661,35 @@ private fun ScanResultView(
                         enter = expandVertically(Motion.normal()) + fadeIn(Motion.normal()),
                         exit = shrinkVertically(Motion.normal()) + fadeOut(Motion.fast()),
                     ) {
-                        Column {
-                            category.items.forEach { target ->
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            Box(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .height(1.dp)
+                                    .background(AppColors.OutlineVariant.copy(alpha = 0.45f)),
+                            )
+                            category.items.forEachIndexed { index, target ->
+                                if (index > 0) {
+                                    Box(
+                                        Modifier
+                                            .fillMaxWidth()
+                                            .padding(start = 42.dp)
+                                            .height(1.dp)
+                                            .background(AppColors.OutlineVariant.copy(alpha = 0.28f)),
+                                    )
+                                }
                                 TargetSelectionRow(
                                     target = target,
                                     checked = target.id in selectedTargets,
+                                    accent = category.color,
                                     onCheckedChange = { onTargetToggle(target.id) },
                                 )
                             }
+                            Spacer(modifier = Modifier.height(4.dp))
                         }
                     }
                 }
-                Spacer(Modifier.height(7.dp))
+                Spacer(modifier = Modifier.height(8.dp))
             }
 
         }
@@ -668,46 +700,79 @@ private fun ScanResultView(
 private fun TargetSelectionRow(
     target: ScanTargetItem,
     checked: Boolean,
+    accent: Color,
     onCheckedChange: () -> Unit,
 ) {
+    val isOptional = target.risk == Risk.OPTIONAL
     val rowBg by animateColorAsState(
-        targetValue = if (checked) AppColors.Primary.copy(alpha = 0.06f) else Color.Transparent,
+        targetValue = if (checked) accent.copy(alpha = 0.10f) else Color.Transparent,
         animationSpec = Motion.fast(),
         label = "targetRowBg",
     )
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
             .background(rowBg)
             .clickable(onClick = onCheckedChange)
-            .padding(start = 8.dp, top = 7.dp, bottom = 7.dp),
-        verticalAlignment = Alignment.Top,
+            .padding(start = 10.dp, end = 14.dp, top = 10.dp, bottom = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
+        // 分类色竖条：把子项钉在所属类上，避免展开后看起来像另一套列表。
+        Box(
+            Modifier
+                .width(3.dp)
+                .height(18.dp)
+                .clip(RoundedCornerShape(99.dp))
+                .background(accent.copy(alpha = if (checked) 0.85f else 0.35f)),
+        )
+        Spacer(modifier = Modifier.width(10.dp))
         Checkbox(
             checked = checked,
             onCheckedChange = { onCheckedChange() },
             modifier = Modifier.size(18.dp),
-            colors = CheckboxDefaults.colors(checkedColor = AppColors.Primary),
+            colors = CheckboxDefaults.colors(
+                checkedColor = if (isOptional) AppColors.Optional else AppColors.Primary,
+            ),
         )
-        Spacer(Modifier.width(9.dp))
-        Column(Modifier.weight(1f)) {
+        Spacer(modifier = Modifier.width(10.dp))
+        Column(modifier = Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = target.label,
                     modifier = Modifier.weight(1f),
-                    fontSize = 12.sp,
+                    fontSize = 13.sp,
                     fontWeight = FontWeight.Medium,
                     color = AppColors.TextPrimary,
                 )
-                Text(formatBytes(target.bytes), fontSize = 12.sp, color = AppColors.TextSecondary)
+                if (isOptional) {
+                    Text(
+                        text = "不可恢复",
+                        fontSize = 10.sp,
+                        color = AppColors.Optional,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(AppColors.Optional.copy(alpha = 0.12f))
+                            .padding(horizontal = 6.dp, vertical = 2.dp),
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                }
+                Text(
+                    text = formatBytes(target.bytes),
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = AppColors.TextSecondary,
+                )
             }
-            Text(
-                text = target.description,
-                fontSize = 10.sp,
-                lineHeight = 14.sp,
-                color = AppColors.TextTertiary,
-            )
+            // 只在 OPTIONAL 亮说明：SAFE 的「会重建」对勾选决策没有增量信息。
+            if (isOptional && target.description.isNotBlank()) {
+                Spacer(modifier = Modifier.height(3.dp))
+                Text(
+                    text = target.description,
+                    fontSize = 11.sp,
+                    lineHeight = 15.sp,
+                    color = AppColors.TextTertiary,
+                )
+            }
         }
     }
 }

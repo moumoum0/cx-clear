@@ -4,7 +4,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -61,9 +63,11 @@ fun WindowScope.App(
             onClose = onCloseRequest,
         )
 
+        // 必须 weight 吃掉标题栏以下剩余高度；fillMaxSize 会按整窗量高，底边被窗口 clip 裁掉一块。
         Row(
             modifier = Modifier
-                .fillMaxSize()
+                .fillMaxWidth()
+                .weight(1f)
                 .background(AppColors.Surface1),
         ) {
             Sidebar(
@@ -71,7 +75,10 @@ fun WindowScope.App(
                 onScreenChange = { currentScreen = it },
             )
 
-            MainContent(currentScreen = currentScreen)
+            MainContent(
+                currentScreen = currentScreen,
+                modifier = Modifier.weight(1f).fillMaxHeight(),
+            )
         }
     }
 }
