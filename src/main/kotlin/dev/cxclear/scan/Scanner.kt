@@ -5,9 +5,9 @@ import dev.cxclear.model.MatchKind
 import dev.cxclear.model.ScanResult
 import dev.cxclear.model.ToolProfile
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
@@ -228,6 +228,21 @@ private fun scanWithProgress(profile: ToolProfile, target: CleanTarget, progress
 }
 
 /**
+ * 单个工具目录总占用遍历过程中的实时累计。与 [TargetProgress] 同理：
+ * worker 边遍历边写增量，定时器随时读出「当前已找到多少」。
+ */
+private class SpaceProgress(val toolId: String) {
+    val bytes = AtomicLong(0L)
+    val files = AtomicInteger(0)
+
+    fun snapshot(): ToolSpaceResult = ToolSpaceResult(
+        toolId = toolId,
+        bytes = bytes.get(),
+        fileCount = files.get(),
+    )
+}
+
+/**
  * 扫描过程中的增量事件。
  *
  * 扫描以事件流而不是一次性返回值上报，是为了让 UI 能反映真实进度：
@@ -238,15 +253,20 @@ sealed interface ScanEvent {
     data class Started(val total: Int) : ScanEvent
 
     /**
+     * 到目前为止各工具目录总占用快照。
+     *
+     * 与 [TargetsScanned] 一样由定时器按固定节拍推整份快照：阶段一测量
+     * spaceDirs 时边遍历边累加，UI 的「已找到」数字随拍更新，而不是等整阶段结束。
+     */
+    data class SpaceScanned(val spaces: List<ToolSpaceResult>) : ScanEvent
+
+    /**
      * 到目前为止已测完的全部可清理项快照。
      *
      * 不再每测完一项推一次，而是由定时器按固定节拍推整份快照：worker 只管写结果，
      * 节流集中在一处，UI 拿到的是稳定节奏的批量更新，而不是随磁盘忽快忽慢的抖动。
      */
     data class TargetsScanned(val results: List<ScanResult>) : ScanEvent
-
-    /** 单个工具目录的完整占用测量完成。 */
-    data class SpaceScanned(val space: ToolSpaceResult) : ScanEvent
 }
 
 /**
@@ -254,46 +274,63 @@ sealed interface ScanEvent {
  *
  * 工具目录总占用和可清理项分别测量，口径互相独立：总占用代表应用真实体积，
  * 可清理项只代表其中能删的部分，两者相减就是必须保留的数据。
- * 工具未安装（spaceDirs 为空）时上报全 0 且 exists=false，由 UI 决定是否显示。
+ * 工具未安装（spaceDirs 为空）时上报全 0，由 UI 决定是否显示。
  *
- * 分两个阶段：先测完总占用，再扫可清理项。总占用是分母，先定下来后续每测出一项
- * 都只是在已知总量里重新划分，占比不会被整体重算；若与可清理项并发上报，
- * 总占用（要遍历整个目录，最慢）最后才到，分母会突变一次。
+ * 分两个阶段：先测完总占用，再扫可清理项。总占用是分母，阶段一内边测边报
+ * （「已找到」随拍增长）；阶段一结束后分母固定，阶段二每测出一项都只是在已知
+ * 总量里重新划分，占比不会被整体重算。若两阶段并发上报，总占用（要遍历整个
+ * 目录，最慢）最后才到，分母会突变一次。
  *
- * 阶段二不按「每项测完推一次」上报，而是让 worker 边遍历边把增量累进各自的
- * [TargetProgress]，另一个协程每 [SNAPSHOT_INTERVAL_MS] 读出全部 target 的当前累计
- * 推一份快照——包括仍在遍历、尚未收尾的项，所以柱子是随扫描过程平滑长起来的，
- * 而不是一项测完才跳一格。全部 worker 完成后立即补推一份收尾全量。
+ * 两个阶段都不按「每项测完推一次」上报，而是让 worker 边遍历边把增量累进各自的
+ * 进度槽，另一个协程每 [SNAPSHOT_INTERVAL_MS] 读出当前累计推一份快照——包括仍在
+ * 遍历、尚未收尾的项。全部 worker 完成后立即补推一份收尾全量。
  */
-private const val SNAPSHOT_INTERVAL_MS = 120L
+// 略长于 UI 数字翻转（~260ms），避免下一拍到来时上一次翻牌还没播完。
+private const val SNAPSHOT_INTERVAL_MS = 500L
+
+/** 边跑 [workers] 边按固定节拍执行 [emit]，全部完成后立即再 emit 一次收尾。 */
+private suspend fun CoroutineScope.snapshotWhile(
+    workers: List<Job>,
+    emit: suspend () -> Unit,
+) {
+    val allDone = CompletableDeferred<Unit>()
+    launch {
+        workers.forEach { it.join() }
+        allDone.complete(Unit)
+    }
+    while (!allDone.isCompleted) {
+        delay(SNAPSHOT_INTERVAL_MS)
+        emit()
+    }
+    emit()
+}
 
 fun scanStream(profiles: List<ToolProfile>): Flow<ScanEvent> = channelFlow {
     send(ScanEvent.Started(profiles.sumOf { it.targets.size } + profiles.size))
 
-    profiles.map { profile ->
-        async(Dispatchers.IO) {
-            val dirs = profile.spaceDirs()
-            if (dirs.isEmpty()) {
-                ToolSpaceResult(profile.id, 0L, 0)
-            } else {
-                var bytes = 0L
-                var files = 0
-                for (dir in dirs) {
-                    val (b, c) = measure(dir)
-                    bytes += b
-                    files += c
+    // —— 阶段一：工具目录总占用。边测边报，供 UI「已找到」实时更新。 ——
+    val spaceProgresses = profiles.map { SpaceProgress(it.id) }
+    val spaceById = spaceProgresses.associateBy { it.toolId }
+    val spaceWorkers = profiles.map { profile ->
+        launch(Dispatchers.IO) {
+            val progress = spaceById.getValue(profile.id)
+            for (dir in profile.spaceDirs()) {
+                measure(dir) { deltaBytes, deltaCount ->
+                    if (deltaBytes != 0L) progress.bytes.addAndGet(deltaBytes)
+                    if (deltaCount != 0) progress.files.addAndGet(deltaCount)
                 }
-                ToolSpaceResult(profile.id, bytes, files)
             }
         }
-    }.awaitAll().forEach { send(ScanEvent.SpaceScanned(it)) }
+    }
+    snapshotWhile(spaceWorkers) {
+        send(ScanEvent.SpaceScanned(spaceProgresses.map { it.snapshot() }))
+    }
 
-    // 每个 target 一份实时累计。worker 只往里写增量，定时器只读，互不阻塞。
+    // —— 阶段二：可清理项。每个 target 一份实时累计。 ——
     val progresses = profiles.flatMap { profile ->
         profile.targets.map { TargetProgress(profile.id, it.id) }
     }
     val progressById = progresses.associateBy { it.targetId }
-
     val workers = buildList {
         for (profile in profiles) {
             for (target in profile.targets) {
@@ -306,21 +343,9 @@ fun scanStream(profiles: List<ToolProfile>): Flow<ScanEvent> = channelFlow {
             }
         }
     }
-
-    val allDone = CompletableDeferred<Unit>()
-    launch {
-        workers.forEach { it.join() }
-        allDone.complete(Unit)
-    }
-
-    // 定时读全部 target 的实时累计并推快照。无条件推：遍历中的项每一拍都在长，
-    // 快照内容基本每次都不同，不需要「变了才推」的判断。
-    while (!allDone.isCompleted) {
-        delay(SNAPSHOT_INTERVAL_MS)
+    snapshotWhile(workers) {
         send(ScanEvent.TargetsScanned(progresses.map { it.snapshot() }))
     }
-    // 收尾快照：保证最后一拍之后完成的增量也被 UI 收到。
-    send(ScanEvent.TargetsScanned(progresses.map { it.snapshot() }))
 }
 
 /** 人类可读的大小。Windows 资源管理器口径，1 KB = 1024 B。 */

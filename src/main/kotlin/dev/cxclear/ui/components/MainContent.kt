@@ -124,22 +124,22 @@ fun MainContent(currentScreen: Screen) {
         selectedTargets = emptySet()
         scope.launch {
             val profiles = ALL_PROFILES.filter { it.id in selectedTools }
-            // TargetsScanned 每次带来的是全量快照，直接整份替换即可，无需再逐项累加。
+            // SpaceScanned / TargetsScanned 每次都是全量快照，直接整份替换即可。
             var results = emptyList<ScanResult>()
-            val spaces = mutableMapOf<String, ToolSpaceResult>()
+            var spaces = emptyList<ToolSpaceResult>()
 
-            // 定时快照每到一次就重算一次分类，柱体按真实测量进度生长，
-            // 节奏由 Scanner 的定时器拍平，不随磁盘忽快忽慢抖动。
+            // 定时快照每到一次就重算一次分类：阶段一「已找到」随总占用生长，
+            // 阶段二柱体按可清理项测量进度生长；节奏由 Scanner 定时器拍平。
             scanStream(profiles).collect { event ->
                 when (event) {
                     is ScanEvent.Started -> Unit
+                    is ScanEvent.SpaceScanned -> spaces = event.spaces
                     is ScanEvent.TargetsScanned -> results = event.results
-                    is ScanEvent.SpaceScanned -> spaces[event.space.toolId] = event.space
                 }
                 scanCategories = buildCategories(
                     profiles = profiles,
                     results = results,
-                    totalToolBytes = spaces.values.sumOf { it.bytes },
+                    totalToolBytes = spaces.sumOf { it.bytes },
                 )
             }
 
@@ -419,22 +419,44 @@ private fun ScanResultView(
                 .padding(vertical = 20.dp),
             verticalArrangement = Arrangement.Top,
         ) {
-            Text(
-                text = if (isScanning) "已找到 ${formatBytes(totalBytes)}" else "应用共占用 ${formatBytes(totalBytes)}",
-                fontSize = 24.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = AppColors.TextPrimary,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = if (isScanning) "已找到 " else "应用共占用 ",
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = AppColors.TextPrimary,
+                )
+                FlipBytesText(
+                    bytes = totalBytes,
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = AppColors.TextPrimary,
+                )
+            }
             Spacer(Modifier.height(6.dp))
-            Text(
-                text = if (isScanning) {
-                    "可清理共 ${formatBytes(cleanableBytes)}"
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (isScanning) {
+                    Text("可清理共 ", fontSize = 12.sp, color = AppColors.TextTertiary)
+                    FlipBytesText(
+                        bytes = cleanableBytes,
+                        fontSize = 12.sp,
+                        color = AppColors.TextTertiary,
+                    )
                 } else {
-                    "已选择 ${formatBytes(selectedBytes)} · 可清理共 ${formatBytes(cleanableBytes)}"
-                },
-                fontSize = 12.sp,
-                color = AppColors.TextTertiary,
-            )
+                    Text("已选择 ", fontSize = 12.sp, color = AppColors.TextTertiary)
+                    FlipBytesText(
+                        bytes = selectedBytes,
+                        fontSize = 12.sp,
+                        color = AppColors.TextTertiary,
+                    )
+                    Text(" · 可清理共 ", fontSize = 12.sp, color = AppColors.TextTertiary)
+                    FlipBytesText(
+                        bytes = cleanableBytes,
+                        fontSize = 12.sp,
+                        color = AppColors.TextTertiary,
+                    )
+                }
+            }
             // 占比条两态各表意，且都随数据动态生长：
             // 扫描时 = 可清理 / 总占用（随字节累加实时增长，呼应「可清理共 X」）；
             // 完成后 = 已选 / 可清理（呼应「已选择 X」）。补间动画抹平两态切换。
@@ -533,8 +555,8 @@ private fun ScanResultView(
 
                             // 保留数据 = 总占用 − 已扫可清理，扫描中会一路变小；行保留，字节扫完再出。
                             if (!(isScanning && isRetained)) {
-                                Text(
-                                    text = formatBytes(category.bytes),
+                                FlipBytesText(
+                                    bytes = category.bytes,
                                     fontSize = 14.sp,
                                     fontWeight = FontWeight.Medium,
                                     color = if (isRetained) AppColors.TextSecondary else AppColors.TextPrimary,
