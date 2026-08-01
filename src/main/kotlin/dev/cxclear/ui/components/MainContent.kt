@@ -420,7 +420,7 @@ private fun ScanResultView(
             verticalArrangement = Arrangement.Top,
         ) {
             Text(
-                text = if (isScanning) "已扫描 ${formatBytes(totalBytes)}" else "应用共占用 ${formatBytes(totalBytes)}",
+                text = if (isScanning) "已找到 ${formatBytes(totalBytes)}" else "应用共占用 ${formatBytes(totalBytes)}",
                 fontSize = 24.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = AppColors.TextPrimary,
@@ -1115,7 +1115,7 @@ private fun CleanHistoryBarsPlaceholder(modifier: Modifier = Modifier) {
 
 /**
  * C 盘占用卡：布局与左侧累计清理卡对齐——顶行左标签右百分比，底下一根横放圆柱。
- * 磁盘读取走 IO 线程；清理完成（refreshKey 变化）后重读一次。
+ * 「C 盘占用」与左侧「累计清理」同顶对齐；正下方展示「已用 / 总量」。磁盘读取走 IO 线程；清理完成（refreshKey 变化）后重读一次。
  */
 @Composable
 private fun DiskUsageCard(refreshKey: Int, modifier: Modifier = Modifier) {
@@ -1131,6 +1131,9 @@ private fun DiskUsageCard(refreshKey: Int, modifier: Modifier = Modifier) {
         targetValue = if (hasData) fraction else 0f,
         animationSpec = tween(560, easing = FastOutSlowInEasing),
     )
+    val spaceLabel = snapshot?.takeIf { it.hasData }?.let {
+        "${formatBytes(it.usedBytes)} / ${formatBytes(it.totalBytes)}"
+    } ?: "—"
 
     Box(
         modifier = modifier
@@ -1142,9 +1145,17 @@ private fun DiskUsageCard(refreshKey: Int, modifier: Modifier = Modifier) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
+                // 与「累计清理」卡一致顶对齐，避免标题被大号百分比往下拽。
                 verticalAlignment = Alignment.Top,
             ) {
-                Text("C 盘占用", fontSize = 14.sp, color = AppColors.TextSecondary, fontWeight = FontWeight.Medium)
+                Column {
+                    Text("C 盘占用", fontSize = 14.sp, color = AppColors.TextSecondary, fontWeight = FontWeight.Medium)
+                    Text(
+                        text = spaceLabel,
+                        fontSize = 12.sp,
+                        color = AppColors.TextSecondary,
+                    )
+                }
                 Text(
                     text = if (hasData) "${(fraction * 100).toInt()}%" else "—",
                     fontSize = 28.sp,
