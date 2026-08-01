@@ -26,7 +26,7 @@ import dev.cxclear.ui.theme.AppColors
 import dev.cxclear.ui.theme.AppDimensions
 
 enum class Screen {
-    SCAN, CLEAN, HISTORY
+    SCAN, CHATS, SETTINGS
 }
 
 @Composable

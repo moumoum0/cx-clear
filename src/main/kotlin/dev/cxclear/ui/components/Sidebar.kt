@@ -9,7 +9,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.Icon
 import androidx.compose.material.Text
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.automirrored.filled.Chat
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -47,17 +49,17 @@ fun Sidebar(
         )
 
         SidebarItem(
-            icon = Icons.Default.Delete,
-            label = "清理",
-            isSelected = currentScreen == Screen.CLEAN,
-            onClick = { onScreenChange(Screen.CLEAN) }
+            icon = Icons.AutoMirrored.Filled.Chat,
+            label = "对话管理",
+            isSelected = currentScreen == Screen.CHATS,
+            onClick = { onScreenChange(Screen.CHATS) }
         )
 
         SidebarItem(
-            icon = Icons.Default.DateRange,
-            label = "历史",
-            isSelected = currentScreen == Screen.HISTORY,
-            onClick = { onScreenChange(Screen.HISTORY) }
+            icon = Icons.Default.Settings,
+            label = "设置",
+            isSelected = currentScreen == Screen.SETTINGS,
+            onClick = { onScreenChange(Screen.SETTINGS) }
         )
     }
 }

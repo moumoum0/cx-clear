@@ -251,8 +251,8 @@ fun MainContent(
                         }
                     },
                 )
-                Screen.CLEAN -> CleanView()
-                Screen.HISTORY -> HistoryView()
+                Screen.CHATS -> ChatsView()
+                Screen.SETTINGS -> SettingsView()
             }
         }
 
@@ -1071,20 +1071,20 @@ private fun StorageCylinder(
 }
 
 @Composable
-private fun CleanView() {
+private fun ChatsView() {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text("当前可清理的文件", fontSize = 18.sp, color = AppColors.TextSecondary, fontWeight = FontWeight.Medium)
+        Text("对话管理", fontSize = 18.sp, color = AppColors.TextSecondary, fontWeight = FontWeight.Medium)
         Spacer(modifier = Modifier.height(8.dp))
-        Text("未扫描无法操作", fontSize = 14.sp, color = AppColors.TextTertiary)
+        Text("即将推出", fontSize = 14.sp, color = AppColors.TextTertiary)
     }
 }
 
 @Composable
-private fun HistoryView() {
+private fun SettingsView() {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text("清理历史记录", fontSize = 18.sp, color = AppColors.TextSecondary, fontWeight = FontWeight.Medium)
+        Text("设置", fontSize = 18.sp, color = AppColors.TextSecondary, fontWeight = FontWeight.Medium)
         Spacer(modifier = Modifier.height(8.dp))
-        Text("暂无历史数据", fontSize = 14.sp, color = AppColors.TextTertiary)
+        Text("即将推出", fontSize = 14.sp, color = AppColors.TextTertiary)
     }
 }
 
