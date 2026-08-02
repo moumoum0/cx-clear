@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -28,7 +27,6 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
@@ -53,7 +51,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -69,18 +66,17 @@ import dev.cxclear.resources.Res
 import dev.cxclear.resources.claude
 import dev.cxclear.resources.codex
 import dev.cxclear.resources.cursor
-import dev.cxclear.scan.formatBytes
 import dev.cxclear.ui.theme.AppColors
 import dev.cxclear.ui.theme.AppDimensions
 import dev.cxclear.ui.theme.Motion
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.time.Instant
-import java.time.temporal.ChronoUnit
 import java.util.concurrent.atomic.AtomicInteger
 
 private enum class ViewState { IDLE, SCANNING, SCAN_DONE }
@@ -106,6 +102,8 @@ fun ChatsView(modifier: Modifier = Modifier) {
     var viewState by remember { mutableStateOf(ViewState.IDLE) }
     var allSessions by remember { mutableStateOf<List<ChatSessionSummary>>(emptyList()) }
     var foundCount by remember { mutableIntStateOf(0) }
+    // 删除完成后自增，触发下面的扫描 LaunchedEffect 重跑（清单必须重扫，不能就地改）。
+    var rescanToken by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(Unit) {
         policy = withContext(Dispatchers.IO) { RetentionStore.read() }
@@ -126,7 +124,7 @@ fun ChatsView(modifier: Modifier = Modifier) {
     }
 
     // 进入手动模式 / 切换工具筛选时自动扫，不再依赖按钮。
-    LaunchedEffect(selectedTool, mode) {
+    LaunchedEffect(selectedTool, mode, rescanToken) {
         if (mode != ChatsMode.MANUAL) return@LaunchedEffect
         val tools = resolveTools(selectedTool)
         if (tools.isEmpty()) return@LaunchedEffect
@@ -134,6 +132,7 @@ fun ChatsView(modifier: Modifier = Modifier) {
         foundCount = 0
         // worker 边扫边累加；UI 按固定节拍读快照，扫完立刻再推一次收尾。
         val latestCount = AtomicInteger(0)
+        var firstPublishAtNanos = -1L
         val sessions = coroutineScope {
             val job = async(Dispatchers.IO) {
                 scanAllChatSessions(tools) { count, _ -> latestCount.set(count) }
@@ -144,18 +143,25 @@ fun ChatsView(modifier: Modifier = Modifier) {
                     true
                 } == true
                 foundCount = latestCount.get()
+                if (firstPublishAtNanos < 0L) firstPublishAtNanos = System.nanoTime()
                 if (finished) break
             }
             job.await()
         }
+        // 最短撑到首次推数后的翻牌播完，避免扫太快时加载态被结果页掐断。
+        val flipMs = Motion.FlipMs.toLong()
+        val remainingFlipMs = if (firstPublishAtNanos < 0L) {
+            flipMs
+        } else {
+            val elapsedMs = (System.nanoTime() - firstPublishAtNanos) / 1_000_000L
+            (flipMs - elapsedMs).coerceAtLeast(0L)
+        }
+        if (remainingFlipMs > 0L) delay(remainingFlipMs)
         allSessions = sessions
         viewState = ViewState.SCAN_DONE
     }
 
     val now = remember { Instant.now() }
-    val cutoffMillis = now.minus(policy.days.toLong(), ChronoUnit.DAYS).toEpochMilli()
-    val staleCount = allSessions.count { it.updatedMillis < cutoffMillis }
-    val staleBytes = allSessions.filter { it.updatedMillis < cutoffMillis }.sumOf { it.sizeBytes }
 
     Column(
         modifier = modifier
@@ -174,9 +180,7 @@ fun ChatsView(modifier: Modifier = Modifier) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .weight(1f)
-                .clip(RoundedCornerShape(AppDimensions.Radius.dp))
-                .background(AppColors.Surface2, RoundedCornerShape(AppDimensions.Radius.dp)),
+                .weight(1f),
         ) {
             AnimatedContent(
                 targetState = mode,
@@ -191,9 +195,8 @@ fun ChatsView(modifier: Modifier = Modifier) {
                         viewState = viewState,
                         foundCount = foundCount,
                         allSessions = allSessions,
-                        policy = policy,
-                        staleCount = staleCount,
-                        staleBytes = staleBytes,
+                        nowMillis = now.toEpochMilli(),
+                        onRescan = { rescanToken++ },
                     )
                     ChatsMode.AUTO -> AutoPane(
                         policy = policy,
@@ -334,62 +337,17 @@ private fun ManualPane(
     viewState: ViewState,
     foundCount: Int,
     allSessions: List<ChatSessionSummary>,
-    policy: RetentionPolicy,
-    staleCount: Int,
-    staleBytes: Long,
+    nowMillis: Long,
+    onRescan: () -> Unit,
 ) {
-    when (viewState) {
-        ViewState.IDLE, ViewState.SCANNING -> Box(
-            modifier = Modifier.fillMaxSize(),
-            contentAlignment = Alignment.Center,
-        ) {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-            ) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(56.dp),
-                    color = AppColors.Primary,
-                    strokeWidth = 4.dp,
-                )
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = "已找到 ",
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = AppColors.TextPrimary,
-                    )
-                    FlipCountText(
-                        count = foundCount,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = AppColors.TextPrimary,
-                    )
-                    Text(
-                        text = " 个",
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = AppColors.TextPrimary,
-                    )
-                }
-            }
-        }
-        ViewState.SCAN_DONE -> Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(AppDimensions.SpacingLarge.dp)
-                .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(AppDimensions.SpacingLarge.dp),
-        ) {
-            StatsCard(
-                policy = policy,
-                totalCount = allSessions.size,
-                totalBytes = allSessions.sumOf { it.sizeBytes },
-                staleCount = staleCount,
-                staleBytes = staleBytes,
-            )
-        }
-    }
+    ChatsManualPane(
+        modifier = Modifier.fillMaxSize(),
+        isScanning = viewState != ViewState.SCAN_DONE,
+        foundCount = foundCount,
+        allSessions = allSessions,
+        nowMillis = nowMillis,
+        onDeleted = { _, _ -> onRescan() },
+    )
 }
 
 @Composable
@@ -557,124 +515,3 @@ private fun RetentionPolicyCard(
     }
 }
 
-@Composable
-private fun StatsCard(
-    policy: RetentionPolicy,
-    totalCount: Int,
-    totalBytes: Long,
-    staleCount: Int,
-    staleBytes: Long,
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(AppDimensions.Radius.dp))
-            .background(AppColors.Surface1)
-            .padding(AppDimensions.SpacingLarge.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
-    ) {
-        Text(
-            "扫描结果",
-            fontSize = 15.sp,
-            fontWeight = FontWeight.Medium,
-            color = AppColors.TextPrimary,
-        )
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(AppDimensions.SpacingLarge.dp),
-        ) {
-            StatTile(
-                label = "全部会话",
-                value = "$totalCount 个",
-                subtitle = formatBytes(totalBytes),
-                color = AppColors.Primary,
-                modifier = Modifier.weight(1f),
-            )
-
-            if (policy.enabled) {
-                StatTile(
-                    label = "超期会话",
-                    value = "$staleCount 个",
-                    subtitle = formatBytes(staleBytes),
-                    color = if (staleCount > 0) AppColors.Optional else AppColors.TextTertiary,
-                    modifier = Modifier.weight(1f),
-                )
-            }
-        }
-
-        if (policy.enabled && staleCount > 0) {
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .height(1.dp)
-                    .background(AppColors.OutlineVariant.copy(alpha = 0.4f)),
-            )
-
-            Text(
-                "下次启动应用时将自动清理 $staleCount 个超期会话，释放 ${formatBytes(staleBytes)}",
-                fontSize = 13.sp,
-                color = AppColors.TextSecondary,
-                lineHeight = 18.sp,
-            )
-        } else if (policy.enabled && staleCount == 0) {
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .height(1.dp)
-                    .background(AppColors.OutlineVariant.copy(alpha = 0.4f)),
-            )
-
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Check,
-                    contentDescription = null,
-                    tint = AppColors.Primary,
-                    modifier = Modifier.size(16.dp),
-                )
-                Text(
-                    "所有会话均在保留期内，无需清理",
-                    fontSize = 13.sp,
-                    color = AppColors.TextSecondary,
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun StatTile(
-    label: String,
-    value: String,
-    subtitle: String,
-    color: Color,
-    modifier: Modifier = Modifier,
-) {
-    Column(
-        modifier = modifier
-            .clip(RoundedCornerShape(10.dp))
-            .background(AppColors.Surface3)
-            .padding(14.dp),
-    ) {
-        Text(
-            label,
-            fontSize = 12.sp,
-            color = AppColors.TextSecondary,
-        )
-        Spacer(modifier = Modifier.height(6.dp))
-        Text(
-            value,
-            fontSize = 22.sp,
-            fontWeight = FontWeight.Bold,
-            color = color,
-        )
-        Text(
-            subtitle,
-            fontSize = 11.sp,
-            color = AppColors.TextTertiary,
-        )
-    }
-}

@@ -96,6 +96,12 @@ private fun isoToMillis(iso: String?): Long? {
     }.getOrNull()
 }
 
+/** 取路径字符串的最后一段目录名（同时兼容 `\` 与 `/`）。 */
+private fun lastPathSegment(raw: String): String = raw
+    .trimEnd('\\', '/')
+    .substringAfterLast('\\')
+    .substringAfterLast('/')
+
 /** 从 rollout jsonl 文件名里提取 UUID（最后一段 `-<uuid>`）。 */
 private fun codexFileId(file: Path): String {
     val name = file.fileName.toString()
@@ -115,37 +121,42 @@ private fun firstLineSummary(raw: String): String? = raw
     .firstOrNull { it.isNotBlank() && !it.startsWith('<') }
     ?.take(60)
 
-/** 从 rollout jsonl 里读会话标题（第一条 `session_meta` 的 `cwd`，或第一条用户消息摘要）。 */
-private fun readCodexTitle(file: Path): String? {
+/** 从 rollout jsonl 里读出的会话元信息：标题与所属项目（`session_meta.cwd` 末段）。 */
+private data class CodexMeta(val title: String?, val project: String?)
+
+/**
+ * 扫一遍 rollout jsonl 头部，取标题与项目名。
+ * 标题优先第一条用户消息，退回 cwd 末段；项目名一律取 cwd 末段。
+ */
+private fun readCodexMeta(file: Path): CodexMeta {
     return runCatching {
         Files.newBufferedReader(file).use { br ->
-            var fallbackCwd: String? = null
+            var project: String? = null
+            var title: String? = null
             var scanned = 0
             for (line in br.lineSequence()) {
                 if (scanned++ > 200) break
                 val obj = MiniJson.parse(line) ?: continue
                 when (obj.jsonStr("type")) {
-                    // session_meta 的 cwd 只做备用：用户第一句话比目录名更能标识会话。
+                    // session_meta 的 cwd 是项目名来源；标题只在没有用户消息时才退回用它。
                     "session_meta" -> {
                         val cwd = obj.jsonObj("payload")?.jsonStr("cwd")
-                        if (!cwd.isNullOrBlank()) {
-                            fallbackCwd = cwd.trimEnd('\\', '/')
-                                .substringAfterLast('\\')
-                                .substringAfterLast('/')
-                        }
+                        if (!cwd.isNullOrBlank()) project = lastPathSegment(cwd)
                     }
                     "event_msg" -> {
                         val payload = obj.jsonObj("payload") ?: continue
-                        if (payload.jsonStr("type") == "user_message") {
-                            val msg = payload.jsonStr("message")?.let(::firstLineSummary)
-                            if (!msg.isNullOrBlank()) return@use msg
+                        if (title == null && payload.jsonStr("type") == "user_message") {
+                            title = payload.jsonStr("message")?.let(::firstLineSummary)
+                                ?.takeIf { it.isNotBlank() }
                         }
                     }
                 }
+                // 两项都拿到就不必继续读了。
+                if (title != null && project != null) break
             }
-            fallbackCwd
+            CodexMeta(title ?: project, project)
         }
-    }.getOrNull()
+    }.getOrDefault(CodexMeta(null, null))
 }
 
 private fun scanCodexSessions(
@@ -169,15 +180,16 @@ private fun scanCodexSessions(
                         java.nio.file.LinkOption.NOFOLLOW_LINKS)
                     val updatedMs = isoToMillis(indexEntry?.updatedAt)
                         ?: attrs.lastModifiedTime().toMillis()
+                    val meta = readCodexMeta(file)
                     val title = indexEntry?.title?.ifBlank { null }
-                        ?: readCodexTitle(file)
+                        ?: meta.title
                         ?: file.fileName.toString()
                     val snap = readPathSnapshot(file) ?: return@runCatching
                     val summary = ChatSessionSummary(
                         tool = ChatTool.CODEX,
                         id = id,
                         title = title,
-                        project = null,
+                        project = meta.project,
                         updatedMillis = updatedMs,
                         sizeBytes = attrs.size(),
                         mainFile = file,
