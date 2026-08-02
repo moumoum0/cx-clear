@@ -2,7 +2,6 @@ package dev.cxclear.ui.components
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloatAsState
@@ -12,8 +11,6 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -149,8 +146,8 @@ fun MainContent(
             } catch (e: Exception) {
                 errors += (e.message ?: "清理过程中发生未知错误")
             } finally {
-                // 只切回 IDLE：分类数据留给结果区退场动画用，下次 startScan 会清空重扫。
                 selectedTargets = emptySet()
+                scanCategories = emptyList()
                 scanPhase = ScanPhase.IDLE
                 isCleaning = false
                 cleanTick++
@@ -199,20 +196,21 @@ fun MainContent(
         .filter { it.key in selectedTargets }
         .sumOf { it.bytes }
 
-    // CHATS / SETTINGS 页不需要扫描壳（TopBar、底部统计卡），直接全屏渲染。
-    if (currentScreen != Screen.SCAN) {
+    // CHATS 自带与扫描页同构的 TopBar + 内容卡外壳；SETTINGS 仍是占位全屏卡。
+    if (currentScreen == Screen.CHATS) {
+        ChatsView(modifier = modifier)
+        return
+    }
+    if (currentScreen == Screen.SETTINGS) {
         Box(
             modifier = modifier
                 .fillMaxSize()
                 .background(AppColors.Surface1)
                 .clip(RoundedCornerShape(AppDimensions.Radius.dp))
                 .background(AppColors.Surface2, RoundedCornerShape(AppDimensions.Radius.dp)),
+            contentAlignment = Alignment.Center,
         ) {
-            when (currentScreen) {
-                Screen.CHATS -> ChatsView()
-                Screen.SETTINGS -> SettingsView()
-                else -> Unit
-            }
+            SettingsView()
         }
         return
     }
@@ -418,6 +416,34 @@ private fun buildCategories(
     )
 }
 
+/** 尚无扫描数据时的零分类：与 [buildCategories] 同结构，便于 IDLE / 扫描初期直接画真实结果区。 */
+private fun emptyScanCategories(): List<ScanCategory> = listOf(
+    ScanCategory(
+        id = "retained",
+        label = "应用保留数据",
+        bytes = 0L,
+        color = AppColors.CategoryRetained,
+    ),
+    ScanCategory(
+        id = "packages",
+        label = "插件与安装缓存",
+        bytes = 0L,
+        color = AppColors.CategoryPackages,
+    ),
+    ScanCategory(
+        id = "working",
+        label = "日志与临时文件",
+        bytes = 0L,
+        color = AppColors.CategoryWorking,
+    ),
+    ScanCategory(
+        id = "history",
+        label = "历史与会话",
+        bytes = 0L,
+        color = AppColors.CategoryHistory,
+    ),
+)
+
 @Composable
 private fun ScanView(
     phase: ScanPhase,
@@ -425,122 +451,17 @@ private fun ScanView(
     selectedTargets: Set<TargetKey>,
     onTargetToggle: (TargetKey) -> Unit,
 ) {
-    // 只用 IDLE vs 有结果 做切换；SCANNING/DONE 共用同一 target，
-    // 避免扫描结束时整棵子树重建导致柱体 Animatable 归零重播。
-    val showingResults = phase != ScanPhase.IDLE
-    AnimatedContent(
-        targetState = showingResults,
-        transitionSpec = {
-            if (targetState) {
-                (fadeIn(Motion.normal()) + slideInVertically(Motion.normal()) { it / 14 }) togetherWith
-                    fadeOut(Motion.fast())
-            } else {
-                (fadeIn(Motion.normal()) + slideInVertically(Motion.normal()) { -it / 14 }) togetherWith
-                    (fadeOut(Motion.normal()) + slideOutVertically(Motion.normal()) { it / 14 })
-            }.using(SizeTransform(clip = false))
-        },
-        label = "scanPhase",
-        modifier = Modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center,
-    ) { results ->
-        if (!results) {
-            ScanResultPlaceholder()
-        } else {
-            ScanResultView(
-                categories = categories,
-                isScanning = phase == ScanPhase.SCANNING,
-                totalBytes = categories.sumOf { it.bytes },
-                selectedTargets = selectedTargets,
-                onTargetToggle = onTargetToggle,
-            )
-        }
-    }
-}
-
-/** 尚未扫描时的骨架：排布与 [ScanResultView] 一致，数据到位时原地填充。 */
-@Composable
-private fun ScanResultPlaceholder() {
-    // 右侧四行对应保留 / 插件缓存 / 日志临时 / 历史会话；标签条宽度略错开，避免齐刷刷一块灰。
-    val labelWidths = listOf(112.dp, 96.dp, 104.dp, 84.dp)
-
-    Row(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = 42.dp, vertical = 20.dp),
-        horizontalArrangement = Arrangement.spacedBy(44.dp),
-        verticalAlignment = Alignment.Top,
-    ) {
-        // 空筒壳：与有数据时同一支 [StorageCylinder]，只是还没有色段。
-        StorageCylinder(
-            categories = emptyList(),
-            isScanning = false,
-            modifier = Modifier.width(170.dp).fillMaxHeight(),
-        )
-
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxHeight()
-                .padding(vertical = 4.dp),
-            verticalArrangement = Arrangement.Top,
-        ) {
-            Box(
-                Modifier
-                    .width(168.dp)
-                    .height(28.dp)
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(AppColors.Surface3),
-            )
-            Spacer(modifier = Modifier.height(10.dp))
-            Box(
-                Modifier
-                    .width(120.dp)
-                    .height(12.dp)
-                    .clip(RoundedCornerShape(4.dp))
-                    .background(AppColors.Surface3),
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .height(4.dp)
-                    .background(AppColors.Surface3, RoundedCornerShape(99.dp)),
-            )
-
-            Spacer(modifier = Modifier.height(14.dp))
-
-            labelWidths.forEach { labelWidth ->
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 14.dp, vertical = 11.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Box(
-                        Modifier
-                            .size(10.dp)
-                            .background(AppColors.Surface3, RoundedCornerShape(99.dp)),
-                    )
-                    Spacer(modifier = Modifier.width(10.dp))
-                    Box(
-                        Modifier
-                            .width(labelWidth)
-                            .height(13.dp)
-                            .clip(RoundedCornerShape(4.dp))
-                            .background(AppColors.Surface3),
-                    )
-                    Spacer(modifier = Modifier.weight(1f))
-                    Box(
-                        Modifier
-                            .width(44.dp)
-                            .height(14.dp)
-                            .clip(RoundedCornerShape(4.dp))
-                            .background(AppColors.Surface3),
-                    )
-                }
-            }
-        }
-    }
+    // IDLE / 扫描共用同一套结果区（扫描态文案与柱体 stub），不再用灰底骨架。
+    // 扫光只在真正 SCANNING 时开；IDLE 静止，避免未点扫描也在「动」。
+    val displayCategories = categories.ifEmpty { emptyScanCategories() }
+    ScanResultView(
+        categories = displayCategories,
+        isScanning = phase != ScanPhase.DONE,
+        showCylinderSweep = phase == ScanPhase.SCANNING,
+        totalBytes = displayCategories.sumOf { it.bytes },
+        selectedTargets = selectedTargets,
+        onTargetToggle = onTargetToggle,
+    )
 }
 
 @Composable
@@ -550,6 +471,7 @@ private fun ScanResultView(
     totalBytes: Long,
     selectedTargets: Set<TargetKey>,
     onTargetToggle: (TargetKey) -> Unit,
+    showCylinderSweep: Boolean = isScanning,
 ) {
     // 单向展开：同时最多打开一个分类，避免多栏同时撑开把列表冲散。
     var expandedCategoryId by remember(categories) { mutableStateOf<String?>(null) }
@@ -569,6 +491,7 @@ private fun ScanResultView(
         StorageCylinder(
             categories = categories,
             isScanning = isScanning,
+            showSweep = showCylinderSweep,
             modifier = Modifier.width(170.dp).fillMaxHeight(),
         )
 
@@ -944,6 +867,7 @@ private fun sliceCylinder(
 private fun StorageCylinder(
     categories: List<ScanCategory>,
     isScanning: Boolean,
+    showSweep: Boolean = isScanning,
     modifier: Modifier = Modifier,
 ) {
     // 分母取全量（含首项的 retained），但 retained 本身不进柱体：可清理的几类
@@ -971,10 +895,10 @@ private fun StorageCylinder(
         }
     }
 
-    // 扫描期沿筒身上行的光带，作为「仍在统计」的活体信号。
+    // 扫描期沿筒身上行的光带，作为「仍在统计」的活体信号；与 isScanning 解耦，IDLE 可静置。
     val sweep = remember { Animatable(0f) }
-    LaunchedEffect(isScanning) {
-        if (isScanning) {
+    LaunchedEffect(showSweep) {
+        if (showSweep) {
             sweep.snapTo(0f)
             sweep.animateTo(
                 targetValue = 1f,
@@ -1088,7 +1012,7 @@ private fun StorageCylinder(
                 )
             }
 
-            if (isScanning) {
+            if (showSweep) {
                 val bandHeight = bodyHeight * 0.24f
                 val bandTop = top - bandHeight + (bodyHeight + bandHeight) * (1f - sweep.value)
                 drawRect(
@@ -1251,19 +1175,28 @@ private fun ToolSelector(
 }
 
 @Composable
-private fun ToolIcon(
+internal fun ToolIcon(
     name: String,
     iconPath: String,
     isSelected: Boolean,
+    enabled: Boolean = true,
     onClick: () -> Unit,
 ) {
     val bg by animateColorAsState(
-        targetValue = if (isSelected) AppColors.Primary else AppColors.Surface3,
+        targetValue = when {
+            !enabled -> AppColors.Surface3.copy(alpha = 0.55f)
+            isSelected -> AppColors.Primary
+            else -> AppColors.Surface3
+        },
         animationSpec = Motion.normal(),
         label = "toolIconBg",
     )
     val tint by animateColorAsState(
-        targetValue = if (isSelected) AppColors.OnPrimary else AppColors.TextSecondary,
+        targetValue = when {
+            !enabled -> AppColors.TextTertiary.copy(alpha = 0.55f)
+            isSelected -> AppColors.OnPrimary
+            else -> AppColors.TextSecondary
+        },
         animationSpec = Motion.normal(),
         label = "toolIconTint",
     )
@@ -1273,7 +1206,7 @@ private fun ToolIcon(
             .size(48.dp)
             .clip(shape)
             .background(color = bg, shape)
-            .clickable(onClick = onClick),
+            .then(if (enabled) Modifier.clickable(onClick = onClick) else Modifier),
         contentAlignment = Alignment.Center,
     ) {
         Icon(
