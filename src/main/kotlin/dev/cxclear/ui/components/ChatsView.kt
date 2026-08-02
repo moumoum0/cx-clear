@@ -28,6 +28,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
@@ -44,6 +45,7 @@ import androidx.compose.material.icons.filled.Warning
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -72,10 +74,14 @@ import dev.cxclear.ui.theme.AppColors
 import dev.cxclear.ui.theme.AppDimensions
 import dev.cxclear.ui.theme.Motion
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.time.Instant
 import java.time.temporal.ChronoUnit
+import java.util.concurrent.atomic.AtomicInteger
 
 private enum class ViewState { IDLE, SCANNING, SCAN_DONE }
 
@@ -83,6 +89,9 @@ private enum class ChatsMode { MANUAL, AUTO }
 
 /** 对话管理顶栏筛选：all = Codex + Claude；Cursor 不可选。 */
 private const val TOOL_FILTER_ALL = "all"
+
+/** 与扫描页 `SNAPSHOT_INTERVAL_MS` 对齐：进度数字每 0.5s 推一次。 */
+private const val SCAN_SNAPSHOT_INTERVAL_MS = 500L
 
 @Composable
 fun ChatsView(modifier: Modifier = Modifier) {
@@ -96,6 +105,7 @@ fun ChatsView(modifier: Modifier = Modifier) {
 
     var viewState by remember { mutableStateOf(ViewState.IDLE) }
     var allSessions by remember { mutableStateOf<List<ChatSessionSummary>>(emptyList()) }
+    var foundCount by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(Unit) {
         policy = withContext(Dispatchers.IO) { RetentionStore.read() }
@@ -121,7 +131,23 @@ fun ChatsView(modifier: Modifier = Modifier) {
         val tools = resolveTools(selectedTool)
         if (tools.isEmpty()) return@LaunchedEffect
         viewState = ViewState.SCANNING
-        val sessions = withContext(Dispatchers.IO) { scanAllChatSessions(tools) }
+        foundCount = 0
+        // worker 边扫边累加；UI 按固定节拍读快照，扫完立刻再推一次收尾。
+        val latestCount = AtomicInteger(0)
+        val sessions = coroutineScope {
+            val job = async(Dispatchers.IO) {
+                scanAllChatSessions(tools) { count, _ -> latestCount.set(count) }
+            }
+            while (true) {
+                val finished = withTimeoutOrNull(SCAN_SNAPSHOT_INTERVAL_MS) {
+                    job.join()
+                    true
+                } == true
+                foundCount = latestCount.get()
+                if (finished) break
+            }
+            job.await()
+        }
         allSessions = sessions
         viewState = ViewState.SCAN_DONE
     }
@@ -163,6 +189,7 @@ fun ChatsView(modifier: Modifier = Modifier) {
                 when (currentMode) {
                     ChatsMode.MANUAL -> ManualPane(
                         viewState = viewState,
+                        foundCount = foundCount,
                         allSessions = allSessions,
                         policy = policy,
                         staleCount = staleCount,
@@ -266,8 +293,10 @@ private fun ModeSegmentedControl(
         val colors = SegmentedButtonDefaults.colors(
             activeContainerColor = AppColors.Primary,
             activeContentColor = AppColors.OnPrimary,
+            activeBorderColor = AppColors.OutlineVariant,
             inactiveContainerColor = AppColors.Surface3,
             inactiveContentColor = AppColors.TextSecondary,
+            inactiveBorderColor = AppColors.OutlineVariant,
         )
         SegmentedButton(
             selected = mode == ChatsMode.MANUAL,
@@ -303,77 +332,62 @@ private fun ModeSegmentedControl(
 @Composable
 private fun ManualPane(
     viewState: ViewState,
+    foundCount: Int,
     allSessions: List<ChatSessionSummary>,
     policy: RetentionPolicy,
     staleCount: Int,
     staleBytes: Long,
 ) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(AppDimensions.SpacingLarge.dp)
-            .verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(AppDimensions.SpacingLarge.dp),
-    ) {
-        when (viewState) {
-            ViewState.IDLE, ViewState.SCANNING -> ManualPaneSkeleton()
-            ViewState.SCAN_DONE -> StatsCard(
+    when (viewState) {
+        ViewState.IDLE, ViewState.SCANNING -> Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center,
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(56.dp),
+                    color = AppColors.Primary,
+                    strokeWidth = 4.dp,
+                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = "已找到 ",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = AppColors.TextPrimary,
+                    )
+                    FlipCountText(
+                        count = foundCount,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = AppColors.TextPrimary,
+                    )
+                    Text(
+                        text = " 个",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = AppColors.TextPrimary,
+                    )
+                }
+            }
+        }
+        ViewState.SCAN_DONE -> Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(AppDimensions.SpacingLarge.dp)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(AppDimensions.SpacingLarge.dp),
+        ) {
+            StatsCard(
                 policy = policy,
                 totalCount = allSessions.size,
                 totalBytes = allSessions.sumOf { it.sizeBytes },
                 staleCount = staleCount,
                 staleBytes = staleBytes,
             )
-        }
-    }
-}
-
-@Composable
-private fun ManualPaneSkeleton() {
-    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        Box(
-            Modifier
-                .width(72.dp)
-                .height(14.dp)
-                .clip(RoundedCornerShape(4.dp))
-                .background(AppColors.Surface3),
-        )
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(AppDimensions.SpacingLarge.dp),
-        ) {
-            repeat(2) {
-                Column(
-                    modifier = Modifier
-                        .weight(1f)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(AppColors.Surface3)
-                        .padding(14.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Box(
-                        Modifier
-                            .width(56.dp)
-                            .height(12.dp)
-                            .clip(RoundedCornerShape(4.dp))
-                            .background(AppColors.Surface2),
-                    )
-                    Box(
-                        Modifier
-                            .width(80.dp)
-                            .height(22.dp)
-                            .clip(RoundedCornerShape(4.dp))
-                            .background(AppColors.Surface2),
-                    )
-                    Box(
-                        Modifier
-                            .width(48.dp)
-                            .height(11.dp)
-                            .clip(RoundedCornerShape(4.dp))
-                            .background(AppColors.Surface2),
-                    )
-                }
-            }
         }
     }
 }

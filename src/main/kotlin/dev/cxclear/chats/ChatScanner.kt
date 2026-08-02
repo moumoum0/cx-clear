@@ -148,7 +148,9 @@ private fun readCodexTitle(file: Path): String? {
     }.getOrNull()
 }
 
-private fun scanCodexSessions(): List<ChatSessionSummary> {
+private fun scanCodexSessions(
+    onFound: (ChatSessionSummary) -> Unit = {},
+): List<ChatSessionSummary> {
     val root = codexSessionsRoot() ?: return emptyList()
     val index = readCodexIndex()
     val sessions = mutableListOf<ChatSessionSummary>()
@@ -171,7 +173,7 @@ private fun scanCodexSessions(): List<ChatSessionSummary> {
                         ?: readCodexTitle(file)
                         ?: file.fileName.toString()
                     val snap = readPathSnapshot(file) ?: return@runCatching
-                    sessions += ChatSessionSummary(
+                    val summary = ChatSessionSummary(
                         tool = ChatTool.CODEX,
                         id = id,
                         title = title,
@@ -182,6 +184,8 @@ private fun scanCodexSessions(): List<ChatSessionSummary> {
                         rootDir = root,
                         entries = listOf(snap),
                     )
+                    sessions += summary
+                    onFound(summary)
                 }
             }
         }
@@ -257,7 +261,9 @@ private fun readClaudeTitle(file: Path): String? {
     return aiTitle ?: lastPrompt ?: firstUserText
 }
 
-private fun scanClaudeSessions(): List<ChatSessionSummary> {
+private fun scanClaudeSessions(
+    onFound: (ChatSessionSummary) -> Unit = {},
+): List<ChatSessionSummary> {
     val projectsRoot = claudeProjectsRoot() ?: return emptyList()
     val sessions = mutableListOf<ChatSessionSummary>()
 
@@ -289,7 +295,7 @@ private fun scanClaudeSessions(): List<ChatSessionSummary> {
 
                 val title = readClaudeTitle(entry) ?: uuid
 
-                sessions += ChatSessionSummary(
+                val summary = ChatSessionSummary(
                     tool = ChatTool.CLAUDE,
                     id = uuid,
                     title = title,
@@ -300,6 +306,8 @@ private fun scanClaudeSessions(): List<ChatSessionSummary> {
                     rootDir = projectsRoot,
                     entries = entries,
                 )
+                sessions += summary
+                onFound(summary)
             }
         }
     }
@@ -311,11 +319,25 @@ private fun scanClaudeSessions(): List<ChatSessionSummary> {
 // 公开 API
 // ─────────────────────────────────────────────
 
-/** 枚举本机所有 [ChatTool.CODEX] + [ChatTool.CLAUDE] 会话，按更新时间倒序。运行在 IO 线程。 */
-fun scanAllChatSessions(tools: Set<ChatTool> = ChatTool.entries.toSet()): List<ChatSessionSummary> {
+/**
+ * 枚举本机所有 [ChatTool.CODEX] + [ChatTool.CLAUDE] 会话，按更新时间倒序。运行在 IO 线程。
+ *
+ * [onProgress] 每找到一条会话回调累计数量与字节，供 UI 实时展示「已找到」。
+ */
+fun scanAllChatSessions(
+    tools: Set<ChatTool> = ChatTool.entries.toSet(),
+    onProgress: (count: Int, bytes: Long) -> Unit = { _, _ -> },
+): List<ChatSessionSummary> {
     val result = mutableListOf<ChatSessionSummary>()
-    if (ChatTool.CODEX in tools) result += scanCodexSessions()
-    if (ChatTool.CLAUDE in tools) result += scanClaudeSessions()
+    var count = 0
+    var bytes = 0L
+    val onFound: (ChatSessionSummary) -> Unit = { session ->
+        count++
+        bytes += session.sizeBytes
+        onProgress(count, bytes)
+    }
+    if (ChatTool.CODEX in tools) result += scanCodexSessions(onFound)
+    if (ChatTool.CLAUDE in tools) result += scanClaudeSessions(onFound)
     return result.sortedByDescending { it.updatedMillis }
 }
 

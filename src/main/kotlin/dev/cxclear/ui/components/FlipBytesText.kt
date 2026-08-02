@@ -15,7 +15,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
@@ -29,6 +31,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import dev.cxclear.scan.formatBytes
 import dev.cxclear.ui.theme.Motion
@@ -80,24 +83,13 @@ fun FlipBytesText(
     val digitHeight = with(density) { digitLayout.size.height.toDp() }
 
     Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
-        // 数字段自右向左编号：个位恒为 0，进位时左侧长出新列，右侧列身份稳定。
-        number.forEachIndexed { index, char ->
-            val fromRight = number.lastIndex - index
-            key("n$fromRight") {
-                if (char.isDigit()) {
-                    FlipToken(
-                        text = char.toString(),
-                        rankOf = { it.singleOrNull()?.digitToIntOrNull() ?: 0 },
-                        wrapRising = true,
-                        style = style,
-                        color = color,
-                        modifier = Modifier.width(digitWidth).height(digitHeight),
-                    )
-                } else {
-                    Text(text = char.toString(), style = style, color = color)
-                }
-            }
-        }
+        FlipNumberDigits(
+            number = number,
+            style = style,
+            color = color,
+            digitWidth = digitWidth,
+            digitHeight = digitHeight,
+        )
         if (unit.isNotEmpty()) {
             if (leadingSpace) {
                 Text(text = " ", style = style, color = color)
@@ -115,7 +107,83 @@ fun FlipBytesText(
 }
 
 /**
+ * 整数个数的翻转显示，节奏与 [FlipBytesText] 相同。
+ */
+@Composable
+fun FlipCountText(
+    count: Int,
+    fontSize: TextUnit,
+    color: Color,
+    fontWeight: FontWeight = FontWeight.Normal,
+    modifier: Modifier = Modifier,
+) {
+    var displayed by remember { mutableIntStateOf(count) }
+    val latestCount by rememberUpdatedState(count)
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            if (displayed != latestCount) {
+                displayed = latestCount
+                delay(Motion.FlipMs.toLong())
+            } else {
+                snapshotFlow { latestCount }.first { it != displayed }
+            }
+        }
+    }
+
+    val style = TextStyle(fontSize = fontSize, fontWeight = fontWeight)
+    val measurer = rememberTextMeasurer()
+    val digitLayout = remember(style, measurer) { measurer.measure("0", style) }
+    val density = LocalDensity.current
+    val digitWidth = with(density) { digitLayout.size.width.toDp() }
+    val digitHeight = with(density) { digitLayout.size.height.toDp() }
+
+    FlipNumberDigits(
+        number = displayed.coerceAtLeast(0).toString(),
+        style = style,
+        color = color,
+        digitWidth = digitWidth,
+        digitHeight = digitHeight,
+        modifier = modifier,
+    )
+}
+
+@Composable
+private fun FlipNumberDigits(
+    number: String,
+    style: TextStyle,
+    color: Color,
+    digitWidth: Dp,
+    digitHeight: Dp,
+    modifier: Modifier = Modifier,
+) {
+    Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
+        // 数字段自右向左编号：个位恒为 0，进位时左侧长出新列，右侧列身份稳定。
+        number.forEachIndexed { index, char ->
+            val fromRight = number.lastIndex - index
+            key("n$fromRight") {
+                if (char.isDigit()) {
+                    FlipToken(
+                        text = char.toString(),
+                        rankOf = { it.singleOrNull()?.digitToIntOrNull() ?: 0 },
+                        wrapRising = true,
+                        // 新进位列首次入场时从 0 翻到目标位，避免只有个位在转、高位直接跳出。
+                        appearFromZero = true,
+                        style = style,
+                        color = color,
+                        modifier = Modifier.width(digitWidth).height(digitHeight),
+                    )
+                } else {
+                    Text(text = char.toString(), style = style, color = color)
+                }
+            }
+        }
+    }
+}
+
+/**
  * @param wrapRising 数字进位 9→0 时仍视为「往上翻」；单位不适用。
+ * @param appearFromZero 首次入场先显示 0 再翻到 [text]，让新数位列也有翻牌过程。
  */
 @Composable
 private fun FlipToken(
@@ -125,13 +193,21 @@ private fun FlipToken(
     style: TextStyle,
     color: Color,
     modifier: Modifier = Modifier,
+    appearFromZero: Boolean = false,
 ) {
+    var shown by remember {
+        mutableStateOf(if (appearFromZero) "0" else text)
+    }
+    LaunchedEffect(text) {
+        shown = text
+    }
+
     Box(
         modifier = modifier.clipToBounds(),
         contentAlignment = Alignment.Center,
     ) {
         AnimatedContent(
-            targetState = text,
+            targetState = shown,
             transitionSpec = {
                 val from = rankOf(initialState)
                 val to = rankOf(targetState)
