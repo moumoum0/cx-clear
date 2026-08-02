@@ -5,11 +5,8 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -44,7 +41,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
@@ -80,9 +76,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlin.math.PI
 import kotlin.math.max
-import kotlin.math.sin
 
 private enum class ScanPhase { IDLE, SCANNING, DONE }
 
@@ -205,6 +199,25 @@ fun MainContent(
         .filter { it.key in selectedTargets }
         .sumOf { it.bytes }
 
+    // CHATS / SETTINGS 页不需要扫描壳（TopBar、底部统计卡），直接全屏渲染。
+    if (currentScreen != Screen.SCAN) {
+        Box(
+            modifier = modifier
+                .fillMaxSize()
+                .background(AppColors.Surface1)
+                .clip(RoundedCornerShape(AppDimensions.Radius.dp))
+                .background(AppColors.Surface2, RoundedCornerShape(AppDimensions.Radius.dp)),
+        ) {
+            when (currentScreen) {
+                Screen.CHATS -> ChatsView()
+                Screen.SETTINGS -> SettingsView()
+                else -> Unit
+            }
+        }
+        return
+    }
+
+    // SCAN 页：TopBar + 内容区 + 底部统计卡
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -238,22 +251,18 @@ fun MainContent(
                 .background(AppColors.Surface2, RoundedCornerShape(AppDimensions.Radius.dp)),
             contentAlignment = Alignment.Center
         ) {
-            when (currentScreen) {
-                Screen.SCAN -> ScanView(
-                    phase = scanPhase,
-                    categories = scanCategories,
-                    selectedTargets = selectedTargets,
-                    onTargetToggle = { targetKey ->
-                        selectedTargets = if (targetKey in selectedTargets) {
-                            selectedTargets - targetKey
-                        } else {
-                            selectedTargets + targetKey
-                        }
-                    },
-                )
-                Screen.CHATS -> ChatsView()
-                Screen.SETTINGS -> SettingsView()
-            }
+            ScanView(
+                phase = scanPhase,
+                categories = scanCategories,
+                selectedTargets = selectedTargets,
+                onTargetToggle = { targetKey ->
+                    selectedTargets = if (targetKey in selectedTargets) {
+                        selectedTargets - targetKey
+                    } else {
+                        selectedTargets + targetKey
+                    }
+                },
+            )
         }
 
         Row(
@@ -684,10 +693,7 @@ private fun ScanResultView(
                                     color = if (isRetained) AppColors.TextSecondary else AppColors.TextPrimary,
                                 )
                             }
-                            if (isScanning) {
-                                Spacer(modifier = Modifier.width(8.dp))
-                                BreathingDots(color = category.color)
-                            } else if (canExpand) {
+                            if (canExpand) {
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Icon(
                                     imageVector = Icons.Filled.KeyboardArrowDown,
@@ -737,40 +743,6 @@ private fun ScanResultView(
                 Spacer(modifier = Modifier.height(8.dp))
             }
 
-        }
-    }
-}
-
-@Composable
-private fun BreathingDots(color: Color) {
-    val transition = rememberInfiniteTransition(label = "breathingDots")
-    val phase by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = (2.0 * PI).toFloat(),
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = Motion.BreathMs, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart,
-        ),
-        label = "breathingDotsPhase",
-    )
-    Row(
-        modifier = Modifier.width(18.dp).height(14.dp),
-        horizontalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterHorizontally),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        repeat(3) { index ->
-            val wave = ((sin(phase - index * (2.0 * PI / 3.0)) + 1.0) / 2.0).toFloat()
-            Box(
-                Modifier
-                    .size(4.dp)
-                    .graphicsLayer {
-                        val scale = 0.72f + wave * 0.28f
-                        scaleX = scale
-                        scaleY = scale
-                        alpha = 0.38f + wave * 0.62f
-                    }
-                    .background(color, RoundedCornerShape(99.dp)),
-            )
         }
     }
 }
@@ -1067,15 +1039,6 @@ private fun StorageCylinder(
             topLeft = Offset(left, 0f),
             size = Size(cylinderWidth, capHeight),
         )
-    }
-}
-
-@Composable
-private fun ChatsView() {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text("对话管理", fontSize = 18.sp, color = AppColors.TextSecondary, fontWeight = FontWeight.Medium)
-        Spacer(modifier = Modifier.height(8.dp))
-        Text("即将推出", fontSize = 14.sp, color = AppColors.TextTertiary)
     }
 }
 

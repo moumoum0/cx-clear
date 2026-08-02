@@ -31,9 +31,6 @@ object Motion {
     /** 扫描柱体扫光一周 */
     const val SweepMs = 1600
 
-    /** 扫描行三点呼吸一周 */
-    const val BreathMs = 1100
-
     /** 侧栏选中轻微放大 */
     const val ScaleMs = 120
 

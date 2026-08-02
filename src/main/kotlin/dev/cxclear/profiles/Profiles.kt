@@ -269,7 +269,7 @@ val ClaudeCodeProfile = ToolProfile(
     targets = listOf(
         CleanTarget(
             id = "claude.downloads",
-            label = "安装包缓存",
+            label = "安装包预下载",
             relPath = "downloads",
             kind = MatchKind.DIRECTORY_CONTENTS,
             risk = Risk.SAFE,
