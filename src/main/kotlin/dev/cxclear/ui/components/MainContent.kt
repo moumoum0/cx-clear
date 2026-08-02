@@ -444,23 +444,7 @@ private fun ScanView(
         contentAlignment = Alignment.Center,
     ) { results ->
         if (!results) {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center,
-            ) {
-                Text(
-                    text = "未开始扫描",
-                    fontSize = 18.sp,
-                    color = AppColors.TextSecondary,
-                    fontWeight = FontWeight.Medium,
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "点击「开始扫描」查看应用占用与可清理内容",
-                    fontSize = 14.sp,
-                    color = AppColors.TextTertiary,
-                )
-            }
+            ScanResultPlaceholder()
         } else {
             ScanResultView(
                 categories = categories,
@@ -469,6 +453,92 @@ private fun ScanView(
                 selectedTargets = selectedTargets,
                 onTargetToggle = onTargetToggle,
             )
+        }
+    }
+}
+
+/** 尚未扫描时的骨架：排布与 [ScanResultView] 一致，数据到位时原地填充。 */
+@Composable
+private fun ScanResultPlaceholder() {
+    // 右侧四行对应保留 / 插件缓存 / 日志临时 / 历史会话；标签条宽度略错开，避免齐刷刷一块灰。
+    val labelWidths = listOf(112.dp, 96.dp, 104.dp, 84.dp)
+
+    Row(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 42.dp, vertical = 20.dp),
+        horizontalArrangement = Arrangement.spacedBy(44.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
+        // 空筒壳：与有数据时同一支 [StorageCylinder]，只是还没有色段。
+        StorageCylinder(
+            categories = emptyList(),
+            isScanning = false,
+            modifier = Modifier.width(170.dp).fillMaxHeight(),
+        )
+
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxHeight()
+                .padding(vertical = 4.dp),
+            verticalArrangement = Arrangement.Top,
+        ) {
+            Box(
+                Modifier
+                    .width(168.dp)
+                    .height(28.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(AppColors.Surface3),
+            )
+            Spacer(modifier = Modifier.height(10.dp))
+            Box(
+                Modifier
+                    .width(120.dp)
+                    .height(12.dp)
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(AppColors.Surface3),
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(4.dp)
+                    .background(AppColors.Surface3, RoundedCornerShape(99.dp)),
+            )
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            labelWidths.forEach { labelWidth ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp, vertical = 11.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Box(
+                        Modifier
+                            .size(10.dp)
+                            .background(AppColors.Surface3, RoundedCornerShape(99.dp)),
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Box(
+                        Modifier
+                            .width(labelWidth)
+                            .height(13.dp)
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(AppColors.Surface3),
+                    )
+                    Spacer(modifier = Modifier.weight(1f))
+                    Box(
+                        Modifier
+                            .width(44.dp)
+                            .height(14.dp)
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(AppColors.Surface3),
+                    )
+                }
+            }
         }
     }
 }
