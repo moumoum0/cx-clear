@@ -23,7 +23,7 @@ fun main() {
 
 private fun startApplication() = application {
     val windowState = rememberWindowState(
-        size = DpSize(1000.dp, 700.dp),
+        size = DpSize(1070.dp, 750.dp),
         position = WindowPosition.Aligned(androidx.compose.ui.Alignment.Center)
     )
 
@@ -36,7 +36,7 @@ private fun startApplication() = application {
         // 透明底才能露出圆角外的桌面，否则仍是方角黑/白底。
         transparent = true,
     ) {
-        window.minimumSize = Dimension(800, 600)
+        window.minimumSize = Dimension(856, 643)
         App(
             windowState = windowState,
             onCloseRequest = ::exitApplication,

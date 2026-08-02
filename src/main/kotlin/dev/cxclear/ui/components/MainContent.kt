@@ -20,16 +20,16 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.AlertDialog
-import androidx.compose.material.Button
-import androidx.compose.material.ButtonDefaults
-import androidx.compose.material.Checkbox
-import androidx.compose.material.CheckboxDefaults
-import androidx.compose.material.CircularProgressIndicator
-import androidx.compose.material.Icon
-import androidx.compose.material.OutlinedButton
-import androidx.compose.material.Text
-import androidx.compose.material.TextButton
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.runtime.*
@@ -44,7 +44,6 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.lerp
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -55,6 +54,12 @@ import dev.cxclear.model.DeletionPlan
 import dev.cxclear.model.Risk
 import dev.cxclear.model.ScanResult
 import dev.cxclear.model.CleanTarget
+import dev.cxclear.resources.Res
+import dev.cxclear.resources.claude
+import dev.cxclear.resources.codex
+import dev.cxclear.resources.cursor
+import org.jetbrains.compose.resources.DrawableResource
+import org.jetbrains.compose.resources.painterResource
 import dev.cxclear.model.TargetKey
 import dev.cxclear.profiles.ALL_PROFILES
 import dev.cxclear.storage.CleanHistory
@@ -247,7 +252,6 @@ fun MainContent(
                 .weight(1f)
                 .clip(RoundedCornerShape(AppDimensions.Radius.dp))
                 .background(AppColors.Surface2, RoundedCornerShape(AppDimensions.Radius.dp)),
-            contentAlignment = Alignment.Center
         ) {
             ScanView(
                 phase = scanPhase,
@@ -302,7 +306,7 @@ fun MainContent(
                         startClean()
                     },
                     colors = ButtonDefaults.buttonColors(
-                        backgroundColor = AppColors.Error,
+                        containerColor = AppColors.Error,
                         contentColor = AppColors.OnPrimary,
                     ),
                     shape = RoundedCornerShape(AppDimensions.RadiusFull.dp),
@@ -315,7 +319,7 @@ fun MainContent(
                     Text("取消", color = AppColors.TextSecondary, fontSize = 14.sp)
                 }
             },
-            backgroundColor = AppColors.Surface2,
+            containerColor = AppColors.Surface2,
         )
     }
 
@@ -329,7 +333,7 @@ fun MainContent(
                     Text("知道了", color = AppColors.Primary, fontSize = 14.sp)
                 }
             },
-            backgroundColor = AppColors.Surface2,
+            containerColor = AppColors.Surface2,
         )
     }
 }
@@ -502,6 +506,7 @@ private fun ScanResultView(
         Column(
             modifier = Modifier
                 .weight(1f)
+                .fillMaxWidth()
                 .fillMaxHeight()
                 .verticalScroll(rememberScrollState())
                 .padding(vertical = 4.dp),
@@ -1089,9 +1094,9 @@ private fun TopBar(
                         onClick = onRequestClean,
                         enabled = cleanEnabled,
                         colors = ButtonDefaults.buttonColors(
-                            backgroundColor = cleanBg,
+                            containerColor = cleanBg,
                             contentColor = cleanFg,
-                            disabledBackgroundColor = cleanBg,
+                            disabledContainerColor = cleanBg,
                             disabledContentColor = cleanFg,
                         ),
                         shape = RoundedCornerShape(AppDimensions.RadiusFull.dp),
@@ -1126,9 +1131,9 @@ private fun TopBar(
                         onClick = onStartScan,
                         enabled = scanEnabled,
                         colors = ButtonDefaults.buttonColors(
-                            backgroundColor = scanBg,
+                            containerColor = scanBg,
                             contentColor = scanFg,
-                            disabledBackgroundColor = scanBg,
+                            disabledContainerColor = scanBg,
                             disabledContentColor = scanFg,
                         ),
                         shape = RoundedCornerShape(AppDimensions.RadiusFull.dp),
@@ -1159,9 +1164,9 @@ private fun ToolSelector(
         horizontalArrangement = Arrangement.spacedBy(AppDimensions.SpacingSmall.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        ToolIcon("Codex", "icons/codex.svg", "codex" in selectedTools) { onToolToggle("codex") }
-        ToolIcon("Claude", "icons/claude.svg", "claude" in selectedTools) { onToolToggle("claude") }
-        ToolIcon("Cursor", "icons/cursor.svg", "cursor" in selectedTools) { onToolToggle("cursor") }
+        ToolIcon("Codex", Res.drawable.codex, "codex" in selectedTools) { onToolToggle("codex") }
+        ToolIcon("Claude", Res.drawable.claude, "claude" in selectedTools) { onToolToggle("claude") }
+        ToolIcon("Cursor", Res.drawable.cursor, "cursor" in selectedTools) { onToolToggle("cursor") }
 
         Box(
             modifier = Modifier
@@ -1177,7 +1182,7 @@ private fun ToolSelector(
 @Composable
 internal fun ToolIcon(
     name: String,
-    iconPath: String,
+    resource: DrawableResource,
     isSelected: Boolean,
     enabled: Boolean = true,
     onClick: () -> Unit,
@@ -1210,7 +1215,7 @@ internal fun ToolIcon(
         contentAlignment = Alignment.Center,
     ) {
         Icon(
-            painter = painterResource(iconPath),
+            painter = painterResource(resource),
             contentDescription = name,
             tint = tint,
             modifier = Modifier.size(24.dp),

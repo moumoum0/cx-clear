@@ -24,6 +24,7 @@ import dev.cxclear.ui.components.MainContent
 import dev.cxclear.ui.components.Sidebar
 import dev.cxclear.ui.theme.AppColors
 import dev.cxclear.ui.theme.AppDimensions
+import dev.cxclear.ui.theme.AppTheme
 
 enum class Screen {
     SCAN, CHATS, SETTINGS
@@ -42,6 +43,7 @@ fun WindowScope.App(
         RoundedCornerShape(AppDimensions.WindowCornerRadius.dp)
     }
 
+    AppTheme {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -80,5 +82,6 @@ fun WindowScope.App(
                 modifier = Modifier.weight(1f).fillMaxHeight(),
             )
         }
+    }
     }
 }

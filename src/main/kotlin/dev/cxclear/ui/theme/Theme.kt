@@ -1,5 +1,8 @@
 package dev.cxclear.ui.theme
 
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.lightColorScheme
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
 /**
@@ -109,4 +112,52 @@ object AppDimensions {
     const val SpacingSmall = 8f
     const val SpacingMedium = 16f
     const val SpacingLarge = 24f
+}
+
+/**
+ * M3 组件（Button / Checkbox / Switch / SegmentedButton 等）从 [MaterialTheme] 取默认色。
+ * 这里逐字段映射 [M3Light]，让「没显式传 colors 的组件」也落在同一套 token 上，
+ * 与 [AppColors] 门面保持同源，不引入游离色。
+ */
+private val AppColorScheme = lightColorScheme(
+    primary = M3Light.primary,
+    onPrimary = M3Light.onPrimary,
+    primaryContainer = M3Light.primaryContainer,
+    onPrimaryContainer = M3Light.onPrimaryContainer,
+    inversePrimary = M3Light.inversePrimary,
+    secondary = M3Light.secondary,
+    onSecondary = M3Light.onSecondary,
+    secondaryContainer = M3Light.secondaryContainer,
+    onSecondaryContainer = M3Light.onSecondaryContainer,
+    tertiary = M3Light.tertiary,
+    onTertiary = M3Light.onTertiary,
+    tertiaryContainer = M3Light.tertiaryContainer,
+    onTertiaryContainer = M3Light.onTertiaryContainer,
+    error = M3Light.error,
+    onError = M3Light.onError,
+    errorContainer = M3Light.errorContainer,
+    onErrorContainer = M3Light.onErrorContainer,
+    background = M3Light.background,
+    onBackground = M3Light.onBackground,
+    surface = M3Light.surface,
+    onSurface = M3Light.onSurface,
+    surfaceVariant = M3Light.surfaceVariant,
+    onSurfaceVariant = M3Light.onSurfaceVariant,
+    outline = M3Light.outline,
+    outlineVariant = M3Light.outlineVariant,
+    scrim = M3Light.scrim,
+    inverseSurface = M3Light.inverseSurface,
+    inverseOnSurface = M3Light.inverseOnSurface,
+    surfaceDim = M3Light.surfaceDim,
+    surfaceBright = M3Light.surfaceBright,
+    surfaceContainerLowest = M3Light.surfaceContainerLowest,
+    surfaceContainerLow = M3Light.surfaceContainerLow,
+    surfaceContainer = M3Light.surfaceContainer,
+    surfaceContainerHigh = M3Light.surfaceContainerHigh,
+    surfaceContainerHighest = M3Light.surfaceContainerHighest,
+)
+
+@Composable
+fun AppTheme(content: @Composable () -> Unit) {
+    MaterialTheme(colorScheme = AppColorScheme, content = content)
 }

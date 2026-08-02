@@ -240,7 +240,7 @@ private fun readClaudeTitle(file: Path): String? {
                                 ?.let { (it as? Map<String, Any?>)?.get("content") }
                             val text = when (content) {
                                 is String -> content.trim()
-                                is List<*> -> (content as List<Any?>).asSequence()
+                                is List<*> -> content.asSequence()
                                     .filterIsInstance<Map<String, Any?>>()
                                     .mapNotNull { it.jsonStr("text") }
                                     .firstOrNull()?.trim()
@@ -351,7 +351,7 @@ private fun loadClaudeMessages(file: Path): List<ChatMessage> {
                 ?.let { (it as? Map<String, Any?>)?.get("content") }
             val text = when (content) {
                 is String -> content.trim()
-                is List<*> -> @Suppress("UNCHECKED_CAST") (content as List<Any?>)
+                is List<*> -> content
                     .filterIsInstance<Map<String, Any?>>()
                     .mapNotNull { block ->
                         when (block.jsonStr("type")) {

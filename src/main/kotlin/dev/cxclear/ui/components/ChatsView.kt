@@ -4,12 +4,10 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -28,17 +26,20 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.Button
-import androidx.compose.material.ButtonDefaults
-import androidx.compose.material.Icon
-import androidx.compose.material.Switch
-import androidx.compose.material.SwitchDefaults
-import androidx.compose.material.Text
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
+import androidx.compose.material3.Text
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Apps
+import androidx.compose.material.icons.filled.AutoDelete
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.PanTool
-import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -50,11 +51,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -65,6 +63,10 @@ import dev.cxclear.chats.ChatTool
 import dev.cxclear.chats.RetentionPolicy
 import dev.cxclear.chats.RetentionStore
 import dev.cxclear.chats.scanAllChatSessions
+import dev.cxclear.resources.Res
+import dev.cxclear.resources.claude
+import dev.cxclear.resources.codex
+import dev.cxclear.resources.cursor
 import dev.cxclear.scan.formatBytes
 import dev.cxclear.ui.theme.AppColors
 import dev.cxclear.ui.theme.AppDimensions
@@ -201,9 +203,9 @@ private fun ChatsTopBar(
             AllFilterButton(isSelected = selectedTool == TOOL_FILTER_ALL) {
                 onToolSelect(TOOL_FILTER_ALL)
             }
-            ToolIcon("Codex", "icons/codex.svg", selectedTool == "codex") { onToolSelect("codex") }
-            ToolIcon("Claude", "icons/claude.svg", selectedTool == "claude") { onToolSelect("claude") }
-            ToolIcon("Cursor", "icons/cursor.svg", isSelected = false, enabled = false) {}
+            ToolIcon("Codex", Res.drawable.codex, selectedTool == "codex") { onToolSelect("codex") }
+            ToolIcon("Claude", Res.drawable.claude, selectedTool == "claude") { onToolSelect("claude") }
+            ToolIcon("Cursor", Res.drawable.cursor, isSelected = false, enabled = false) {}
         }
 
         ModeSegmentedControl(
@@ -246,98 +248,55 @@ private fun AllFilterButton(
     }
 }
 
-private val ModeSegmentWidth = 48.dp
+private val ModeSegmentWidth = 52.dp
 private val ModeControlHeight = 40.dp
 
-/** 斜杠上下端相对中线的水平偏移，越大越斜。滑块内侧边沿用同一斜度。 */
-private val ModeSlantOffset = 7.dp
-
 /**
- * 手动 / 自动切换：两侧共用一个胶囊底，不给单个分段画独立圆形按钮。
- * 中间一道贯穿上下的斜杠划开两半，选中态是一整块沿斜杠滑动的填充。
+ * 手动 / 自动切换：M3 原生连体分段按钮。两段共享一圈描边、选中段填主色，
+ * 段间由 M3 自己画分隔线，切换自带补间；只放图标，文案降到 contentDescription。
  */
 @Composable
 private fun ModeSegmentedControl(
     mode: ChatsMode,
     onModeChange: (ChatsMode) -> Unit,
 ) {
-    val shape = RoundedCornerShape(AppDimensions.RadiusFull.dp)
-    // 0 = 停在左半（手动），1 = 停在右半（自动）；中间过程就是滑动。
-    val slide by animateFloatAsState(
-        targetValue = if (mode == ChatsMode.AUTO) 1f else 0f,
-        animationSpec = Motion.normal(),
-        label = "modeSlide",
-    )
-    Box(
-        modifier = Modifier
-            .height(ModeControlHeight)
-            .width(ModeSegmentWidth * 2)
-            .clip(shape)
-            .background(AppColors.Surface3),
+    SingleChoiceSegmentedButtonRow(
+        modifier = Modifier.height(ModeControlHeight),
     ) {
-        Canvas(modifier = Modifier.matchParentSize()) {
-            val slant = ModeSlantOffset.toPx()
-            val half = size.width / 2f
-            val dx = slide * half
-            // 平行四边形：两条边都按 slant 倾斜，停在任一半时外侧边被胶囊裁掉，
-            // 内侧边正好压在斜杠上。
-            val indicator = Path().apply {
-                moveTo(dx + slant, 0f)
-                lineTo(dx + half + slant, 0f)
-                lineTo(dx + half - slant, size.height)
-                lineTo(dx - slant, size.height)
-                close()
-            }
-            drawPath(path = indicator, color = AppColors.Primary)
-            drawLine(
-                color = AppColors.Outline,
-                start = Offset(half + slant, 0f),
-                end = Offset(half - slant, size.height),
-                strokeWidth = 1.5.dp.toPx(),
-            )
-        }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            ModeSegment(
-                icon = Icons.Filled.PanTool,
-                label = "手动",
-                selected = mode == ChatsMode.MANUAL,
-                onClick = { onModeChange(ChatsMode.MANUAL) },
-            )
-            ModeSegment(
-                icon = Icons.Filled.Schedule,
-                label = "自动",
-                selected = mode == ChatsMode.AUTO,
-                onClick = { onModeChange(ChatsMode.AUTO) },
-            )
-        }
-    }
-}
-
-@Composable
-private fun ModeSegment(
-    icon: ImageVector,
-    label: String,
-    selected: Boolean,
-    onClick: () -> Unit,
-) {
-    val tint by animateColorAsState(
-        targetValue = if (selected) AppColors.OnPrimary else AppColors.TextSecondary,
-        animationSpec = Motion.normal(),
-        label = "modeSegTint",
-    )
-    Box(
-        modifier = Modifier
-            .fillMaxHeight()
-            .width(ModeSegmentWidth)
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = label,
-            tint = tint,
-            modifier = Modifier.size(20.dp),
+        val colors = SegmentedButtonDefaults.colors(
+            activeContainerColor = AppColors.Primary,
+            activeContentColor = AppColors.OnPrimary,
+            inactiveContainerColor = AppColors.Surface3,
+            inactiveContentColor = AppColors.TextSecondary,
         )
+        SegmentedButton(
+            selected = mode == ChatsMode.MANUAL,
+            onClick = { onModeChange(ChatsMode.MANUAL) },
+            shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
+            colors = colors,
+            icon = {},
+            modifier = Modifier.width(ModeSegmentWidth),
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Checklist,
+                contentDescription = "手动",
+                modifier = Modifier.size(20.dp),
+            )
+        }
+        SegmentedButton(
+            selected = mode == ChatsMode.AUTO,
+            onClick = { onModeChange(ChatsMode.AUTO) },
+            shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
+            colors = colors,
+            icon = {},
+            modifier = Modifier.width(ModeSegmentWidth),
+        ) {
+            Icon(
+                imageVector = Icons.Filled.AutoDelete,
+                contentDescription = "自动",
+                modifier = Modifier.size(20.dp),
+            )
+        }
     }
 }
 
@@ -560,7 +519,7 @@ private fun RetentionPolicyCard(
                     Button(
                         onClick = onSave,
                         colors = ButtonDefaults.buttonColors(
-                            backgroundColor = AppColors.Primary,
+                            containerColor = AppColors.Primary,
                             contentColor = AppColors.OnPrimary,
                         ),
                         shape = RoundedCornerShape(AppDimensions.RadiusFull.dp),

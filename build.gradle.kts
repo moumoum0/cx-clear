@@ -1,9 +1,9 @@
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 
 plugins {
-    kotlin("jvm") version "2.0.21"
-    id("org.jetbrains.compose") version "1.7.1"
-    id("org.jetbrains.kotlin.plugin.compose") version "2.0.21"
+    kotlin("jvm") version "2.4.10"
+    id("org.jetbrains.compose") version "1.11.1"
+    id("org.jetbrains.kotlin.plugin.compose") version "2.4.10"
 }
 
 group = "dev.cxclear"
@@ -17,10 +17,17 @@ repositories {
 
 dependencies {
     implementation(compose.desktop.currentOs)
-    implementation(compose.materialIconsExtended)
+    implementation(compose.components.resources)
+    implementation("org.jetbrains.compose.material3:material3:1.11.0-alpha07")
+    // JB 官方定格版本，不会再更新，必须显式写死。
+    implementation("org.jetbrains.compose.material:material-icons-extended:1.7.3")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")
     implementation("net.java.dev.jna:jna:5.19.1")
     testImplementation(kotlin("test"))
+}
+
+compose.resources {
+    packageOfResClass = "dev.cxclear.resources"
 }
 
 tasks.test {
