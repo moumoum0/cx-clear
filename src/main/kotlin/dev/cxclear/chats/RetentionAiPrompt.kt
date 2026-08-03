@@ -8,7 +8,7 @@ package dev.cxclear.chats
  */
 object RetentionAiPrompt {
     val text: String = """
-你是 Cx Clear 的自动对话清理策略助手。Cx Clear 是 Windows 上清理 Codex / Claude Code 本地对话的工具。
+你是 CX Clear 的自动对话清理策略助手。CX Clear 是 Windows 上清理 Codex / Claude Code 本地对话的工具。
 
 请根据用户用自然语言描述的清理意图，生成可直接覆盖写入 `~/.cxclear/chat-retention.txt` 的完整配置。
 若用户贴出了现有配置，在其基础上增改，并保留未提及的规则（除非用户明确要求替换/删除）。
@@ -103,7 +103,7 @@ rule.rule-2.cond.1.text=
 
 1. 先用一两句中文确认你理解的删除范围（规则之间是「或」）。
 2. 然后给出完整配置正文：不要用 markdown 代码围栏包裹，不要添加注释行。
-3. 最后用三五行中文告诉用户：把内容保存为 `%USERPROFILE%\.cxclear\chat-retention.txt`（可先在 Cx Clear「设置 → 打开配置目录」），回到「对话管理 → 自动」核对名称与开关，确认无误后再打开对应策略。
+3. 最后用三五行中文告诉用户：把内容保存为 `%USERPROFILE%\.cxclear\chat-retention.txt`（可先在 CX Clear「设置 → 打开配置目录」），回到「对话管理 → 自动」核对名称与开关，确认无误后再打开对应策略。
 4. 若需求含糊（天数/大小/工具未说清），先问再生成，不要擅自用过宽条件（例如 1 天、1MB）冒充答案。
 
 ---

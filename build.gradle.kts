@@ -43,13 +43,13 @@ compose.desktop {
 
         nativeDistributions {
             targetFormats(TargetFormat.Msi, TargetFormat.Dmg)
-            packageName = "Cx Clear"
+            packageName = "CX Clear"
             packageVersion = "1.0.0"
             description = "AI Agent disk cleanup tool"
-            vendor = "Cx Clear"
+            vendor = "CX Clear"
 
             windows {
-                menuGroup = "Cx Clear"
+                menuGroup = "CX Clear"
                 upgradeUuid = "B5F8A2C1-3D4E-5F6A-7B8C-9D0E1F2A3B4C"
                 dirChooser = true
                 perUserInstall = true

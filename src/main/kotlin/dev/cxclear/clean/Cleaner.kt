@@ -37,7 +37,11 @@ private class DeleteOutcome {
     }
 }
 
-private fun sameIdentity(
+/**
+ * 冻结快照与当前状态是否仍是同一个对象。会话删除（[dev.cxclear.chats.deleteSessions]）复用同一份判定：
+ * 校验分成两套实现，任一套漏比对一项就等于开了一条误删的旁路。
+ */
+internal fun sameIdentity(
     expected: PathSnapshot,
     current: PathSnapshot,
     allowDirectoryMtimeChange: Boolean = false,

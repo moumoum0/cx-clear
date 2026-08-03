@@ -164,21 +164,31 @@ fun groupSessions(
 
         ChatGroupDimension.TIME -> {
             // 「今天」按自然日切，其余按滚动天数切；一条会话只落最前面命中的那一档。
-            val startOfToday = LocalDate.now(ZoneId.systemDefault())
-                .atStartOfDay(ZoneId.systemDefault())
-                .toInstant()
-                .toEpochMilli()
-            val remaining = sessions.toMutableList()
-            TIME_BUCKETS.mapNotNull { bucket ->
-                val hits = when (bucket.withinDays) {
-                    null -> remaining.toList()
-                    1L -> remaining.filter { it.updatedMillis >= startOfToday }
-                    else -> {
-                        val floor = nowMillis - bucket.withinDays * 24L * 3600_000L
-                        remaining.filter { it.updatedMillis >= floor }
+            // 单次遍历分桶，避免逐档 filter + Set 差集在会话多时拖慢 UI 线程。
+            val zone = ZoneId.systemDefault()
+            val startOfToday = LocalDate.now(zone).atStartOfDay(zone).toInstant().toEpochMilli()
+            val dayMs = 24L * 3600_000L
+            val floors = LongArray(TIME_BUCKETS.size) { index ->
+                when (val days = TIME_BUCKETS[index].withinDays) {
+                    null -> Long.MIN_VALUE
+                    1L -> startOfToday
+                    else -> nowMillis - days * dayMs
+                }
+            }
+            val buckets = Array(TIME_BUCKETS.size) { mutableListOf<ChatSessionSummary>() }
+            for (session in sessions) {
+                val t = session.updatedMillis
+                var assigned = floors.lastIndex
+                for (i in floors.indices) {
+                    if (t >= floors[i]) {
+                        assigned = i
+                        break
                     }
                 }
-                remaining -= hits.toSet()
+                buckets[assigned].add(session)
+            }
+            TIME_BUCKETS.mapIndexedNotNull { index, bucket ->
+                val hits = buckets[index]
                 if (hits.isEmpty()) null else ChatGroup(bucket.key, bucket.label, sorted(hits))
             }
         }

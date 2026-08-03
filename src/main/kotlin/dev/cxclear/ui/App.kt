@@ -114,7 +114,7 @@ fun WindowScope.App(
                 ),
         ) {
             AppTitleBar(
-                title = "Cx Clear",
+                title = "CX Clear",
                 isMaximized = isMaximized,
                 onMinimize = { windowState.isMinimized = true },
                 onToggleMaximize = {

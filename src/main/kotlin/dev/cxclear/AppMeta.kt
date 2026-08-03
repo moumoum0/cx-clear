@@ -2,7 +2,7 @@ package dev.cxclear
 
 /** 与 `build.gradle.kts` 的 version / packageVersion 对齐；发版时两处一起改。 */
 object AppMeta {
-    const val NAME = "Cx Clear"
+    const val NAME = "CX Clear"
     const val VERSION = "1.0.0"
     const val DEVELOPER = "moumoum"
 

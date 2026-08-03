@@ -29,7 +29,7 @@ private fun startApplication() = application {
 
     Window(
         onCloseRequest = ::exitApplication,
-        title = "Cx Clear",
+        title = "CX Clear",
         state = windowState,
         resizable = true,
         undecorated = true,

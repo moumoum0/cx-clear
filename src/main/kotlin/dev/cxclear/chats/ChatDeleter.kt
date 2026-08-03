@@ -1,6 +1,7 @@
 package dev.cxclear.chats
 
 import dev.cxclear.clean.isToolProcessRunning
+import dev.cxclear.clean.sameIdentity
 import dev.cxclear.model.PathSnapshotKind
 import dev.cxclear.model.ToolProfile
 import dev.cxclear.profiles.ALL_PROFILES
@@ -96,13 +97,10 @@ private fun deleteEntries(session: ChatSessionSummary): Pair<Long, List<String>>
             // 已经不存在，跳过（可能是同一树里父级先被删了）
             continue
         }
-        // 身份校验：文件被替换时拒绝删除。
-        val sameFile = current.path == expected.path &&
-            current.kind == expected.kind &&
-            current.creationMillis == expected.creationMillis &&
-            (current.kind == PathSnapshotKind.DIRECTORY ||
-                (current.lastModifiedMillis == expected.lastModifiedMillis && current.size == expected.size))
-        if (!sameFile) {
+        // 身份校验：与 Cleaner 共用同一份判定（含 fileKey），文件被替换时拒绝删除。
+        // 子项删除会改变父目录 mtime，所以目录放宽这一项。
+        val allowDirectoryMtimeChange = expected.kind == PathSnapshotKind.DIRECTORY
+        if (!sameIdentity(expected, current, allowDirectoryMtimeChange)) {
             errors += "${expected.path.fileName}：文件在扫描后已被修改，已跳过"
             continue
         }

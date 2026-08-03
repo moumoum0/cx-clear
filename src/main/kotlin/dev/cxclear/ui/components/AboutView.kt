@@ -100,7 +100,7 @@ fun AboutView(
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
-                        text = "Cx",
+                        text = "CX",
                         style = MaterialTheme.typography.headlineLarge,
                         fontWeight = FontWeight.Bold,
                         color = AppColors.Primary,

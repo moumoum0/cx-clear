@@ -4,11 +4,9 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.expandHorizontally
-import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkHorizontally
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
@@ -25,6 +23,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
@@ -132,12 +131,17 @@ internal fun ChatsManualPane(
         true
     }
 
-    val visible = filterSessions(allSessions, query)
-    val groups = groupSessions(visible, dimension, sortKey, ascending, nowMillis)
+    // 勾选 / 折叠只改选择态，不能拖着筛选分组一起重算。
+    val visible = remember(allSessions, query) { filterSessions(allSessions, query) }
+    val groups = remember(visible, dimension, sortKey, ascending, nowMillis) {
+        groupSessions(visible, dimension, sortKey, ascending, nowMillis)
+    }
 
     val byKey = remember(visible) { visible.associateBy(::sessionKey) }
-    val selectedSessions = selectedKeys.mapNotNull { byKey[it] }
-    val selectedBytes = selectedSessions.sumOf { it.sizeBytes }
+    val selectedSessions = remember(selectedKeys, byKey) { selectedKeys.mapNotNull { byKey[it] } }
+    val selectedBytes = remember(selectedSessions) { selectedSessions.sumOf { it.sizeBytes } }
+    val showProject = dimension != ChatGroupDimension.PROJECT
+    val groupRadius = AppDimensions.Radius.dp
 
     Column(modifier = modifier.fillMaxSize()) {
         ChatsFilterBar(
@@ -160,44 +164,81 @@ internal fun ChatsManualPane(
         if (groups.isEmpty()) {
             EmptySessionList(hasQuery = query.isNotBlank(), modifier = Modifier.weight(1f))
         } else {
+            // 组头 + 会话行扁平进 LazyColumn，避免整组 forEach 一次性挂载卡住 UI。
             LazyColumn(
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f)
                     .padding(vertical = AppDimensions.SpacingSmall.dp),
-                verticalArrangement = Arrangement.spacedBy(AppDimensions.SpacingSmall.dp),
             ) {
-                items(
-                    count = groups.size,
-                    key = { index -> groups[index].key },
-                ) { index ->
-                    val group = groups[index]
-                    ChatGroupCard(
-                        group = group,
-                        expanded = group.key !in collapsedGroups,
-                        selectedKeys = selectedKeys,
-                        nowMillis = nowMillis,
-                        showProject = dimension != ChatGroupDimension.PROJECT,
-                        onToggleExpand = {
-                            collapsedGroups = if (group.key in collapsedGroups) {
-                                collapsedGroups - group.key
+                groups.forEachIndexed { groupIndex, group ->
+                    if (groupIndex > 0) {
+                        item(key = "gap-${group.key}") {
+                            Spacer(Modifier.height(AppDimensions.SpacingSmall.dp))
+                        }
+                    }
+                    val expanded = group.key !in collapsedGroups
+                    item(key = "header-${group.key}") {
+                        ChatGroupHeader(
+                            group = group,
+                            expanded = expanded,
+                            selectedKeys = selectedKeys,
+                            shape = if (expanded) {
+                                RoundedCornerShape(topStart = groupRadius, topEnd = groupRadius)
                             } else {
-                                collapsedGroups + group.key
-                            }
-                        },
-                        onToggleGroup = { checkAll ->
-                            val keys = group.sessions.map(::sessionKey).toSet()
-                            selectedKeys = if (checkAll) selectedKeys + keys else selectedKeys - keys
-                        },
-                        onToggleSession = { session ->
-                            val key = sessionKey(session)
-                            selectedKeys = if (key in selectedKeys) {
-                                selectedKeys - key
-                            } else {
-                                selectedKeys + key
-                            }
-                        },
-                    )
+                                RoundedCornerShape(groupRadius)
+                            },
+                            onToggleExpand = {
+                                collapsedGroups = if (group.key in collapsedGroups) {
+                                    collapsedGroups - group.key
+                                } else {
+                                    collapsedGroups + group.key
+                                }
+                            },
+                            onToggleGroup = { checkAll ->
+                                val keys = group.sessions.map(::sessionKey).toSet()
+                                selectedKeys = if (checkAll) selectedKeys + keys else selectedKeys - keys
+                            },
+                        )
+                    }
+                    if (expanded) {
+                        itemsIndexed(
+                            items = group.sessions,
+                            key = { _, session -> "${group.key}:${sessionKey(session)}" },
+                        ) { index, session ->
+                            val isLast = index == group.sessions.lastIndex
+                            SessionRow(
+                                session = session,
+                                selected = sessionKey(session) in selectedKeys,
+                                nowMillis = nowMillis,
+                                showProject = showProject,
+                                onToggle = {
+                                    val key = sessionKey(session)
+                                    selectedKeys = if (key in selectedKeys) {
+                                        selectedKeys - key
+                                    } else {
+                                        selectedKeys + key
+                                    }
+                                },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(
+                                        if (isLast) {
+                                            RoundedCornerShape(
+                                                bottomStart = groupRadius,
+                                                bottomEnd = groupRadius,
+                                            )
+                                        } else {
+                                            RoundedCornerShape(0.dp)
+                                        },
+                                    )
+                                    .background(AppColors.Surface1)
+                                    .then(
+                                        if (isLast) Modifier.padding(bottom = 4.dp) else Modifier,
+                                    ),
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -501,19 +542,17 @@ private fun SkeletonBar(width: androidx.compose.ui.unit.Dp, height: androidx.com
 }
 
 // ─────────────────────────────────────────────
-// 分组卡
+// 分组头 + 会话行（扁平进 LazyColumn）
 // ─────────────────────────────────────────────
 
 @Composable
-private fun ChatGroupCard(
+private fun ChatGroupHeader(
     group: ChatGroup,
     expanded: Boolean,
     selectedKeys: Set<String>,
-    nowMillis: Long,
-    showProject: Boolean,
+    shape: RoundedCornerShape,
     onToggleExpand: () -> Unit,
     onToggleGroup: (Boolean) -> Unit,
-    onToggleSession: (ChatSessionSummary) -> Unit,
 ) {
     val selectedInGroup = group.sessions.count { sessionKey(it) in selectedKeys }
     val state = when (selectedInGroup) {
@@ -527,70 +566,46 @@ private fun ChatGroupCard(
         label = "groupChevron",
     )
 
-    Column(
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(AppDimensions.Radius.dp))
-            .background(AppColors.Surface1),
+            .clip(shape)
+            .background(AppColors.Surface1)
+            .clickable(onClick = onToggleExpand)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(
+        TriStateCheckbox(
+            state = state,
+            onClick = { onToggleGroup(state != ToggleableState.On) },
+            colors = CheckboxDefaults.colors(
+                checkedColor = AppColors.Primary,
+                checkmarkColor = AppColors.OnPrimary,
+                uncheckedColor = AppColors.Outline,
+            ),
+        )
+        Spacer(Modifier.width(4.dp))
+        Text(
+            group.label,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Medium,
+            color = AppColors.TextPrimary,
+        )
+        Spacer(Modifier.width(8.dp))
+        Text(
+            "${group.sessions.size} 个 · ${formatBytes(group.totalBytes)}",
+            fontSize = 12.sp,
+            color = AppColors.TextTertiary,
+        )
+        Spacer(Modifier.weight(1f))
+        Icon(
+            imageVector = Icons.Filled.KeyboardArrowDown,
+            contentDescription = if (expanded) "折叠" else "展开",
+            tint = AppColors.TextTertiary,
             modifier = Modifier
-                .fillMaxWidth()
-                .clickable(onClick = onToggleExpand)
-                .padding(horizontal = 12.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            TriStateCheckbox(
-                state = state,
-                onClick = { onToggleGroup(state != ToggleableState.On) },
-                colors = CheckboxDefaults.colors(
-                    checkedColor = AppColors.Primary,
-                    checkmarkColor = AppColors.OnPrimary,
-                    uncheckedColor = AppColors.Outline,
-                ),
-            )
-            Spacer(Modifier.width(4.dp))
-            Text(
-                group.label,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Medium,
-                color = AppColors.TextPrimary,
-            )
-            Spacer(Modifier.width(8.dp))
-            Text(
-                "${group.sessions.size} 个 · ${formatBytes(group.totalBytes)}",
-                fontSize = 12.sp,
-                color = AppColors.TextTertiary,
-            )
-            Spacer(Modifier.weight(1f))
-            Icon(
-                imageVector = Icons.Filled.KeyboardArrowDown,
-                contentDescription = if (expanded) "折叠" else "展开",
-                tint = AppColors.TextTertiary,
-                modifier = Modifier
-                    .size(20.dp)
-                    .rotate(chevron),
-            )
-        }
-
-        AnimatedVisibility(
-            visible = expanded,
-            enter = expandVertically(Motion.normal()) + fadeIn(Motion.normal()),
-            exit = shrinkVertically(Motion.fast()) + fadeOut(Motion.fast()),
-        ) {
-            Column(modifier = Modifier.fillMaxWidth()) {
-                group.sessions.forEach { session ->
-                    SessionRow(
-                        session = session,
-                        selected = sessionKey(session) in selectedKeys,
-                        nowMillis = nowMillis,
-                        showProject = showProject,
-                        onToggle = { onToggleSession(session) },
-                    )
-                }
-                Spacer(Modifier.height(4.dp))
-            }
-        }
+                .size(20.dp)
+                .rotate(chevron),
+        )
     }
 }
 
@@ -601,6 +616,7 @@ private fun SessionRow(
     nowMillis: Long,
     showProject: Boolean,
     onToggle: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val bg by animateColorAsState(
         targetValue = if (selected) AppColors.PrimaryContainer else Color.Transparent,
@@ -608,8 +624,7 @@ private fun SessionRow(
         label = "rowBg",
     )
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
+        modifier = modifier
             .padding(horizontal = 8.dp, vertical = 1.dp)
             .clip(RoundedCornerShape(8.dp))
             .background(bg)
