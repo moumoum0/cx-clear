@@ -121,15 +121,3 @@ private fun deleteEntries(session: ChatSessionSummary): Pair<Long, List<String>>
 
     return freed to errors
 }
-
-/**
- * 删除早于 [beforeMillis] 的所有会话（已扫描列表的子集）。
- * 不重新扫描目录：只对 [sessions] 里 [ChatSessionSummary.updatedMillis] < [beforeMillis] 的条目操作。
- */
-suspend fun deleteSessionsBefore(
-    sessions: List<ChatSessionSummary>,
-    beforeMillis: Long,
-): ChatDeleteResult {
-    val targets = sessions.filter { it.updatedMillis < beforeMillis }
-    return deleteSessions(targets)
-}

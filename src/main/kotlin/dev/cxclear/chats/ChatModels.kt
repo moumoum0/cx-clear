@@ -36,12 +36,6 @@ data class ChatSessionSummary(
     val entries: List<PathSnapshot>,
 )
 
-/** 自动保留策略：开启后删除超过 [days] 天未更新的会话。 */
-data class RetentionPolicy(
-    val enabled: Boolean = false,
-    val days: Int = 30,
-)
-
 /** 一次对话删除的结果。单条失败只记账，不中断其余条目。 */
 data class ChatDeleteResult(
     val deletedSessions: Int,

@@ -1,7 +1,6 @@
 package dev.cxclear.ui.components
 
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.fadeIn
@@ -13,33 +12,24 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
-import androidx.compose.material3.Text
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.AutoDelete
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Checklist
-import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
@@ -51,17 +41,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.cxclear.chats.ChatSessionSummary
 import dev.cxclear.chats.ChatTool
-import dev.cxclear.chats.RetentionPolicy
+import dev.cxclear.chats.RetentionConfig
+import dev.cxclear.chats.RetentionRunner
 import dev.cxclear.chats.RetentionStore
 import dev.cxclear.chats.scanAllChatSessions
+import dev.cxclear.scan.formatBytes
+import dev.cxclear.storage.CleanHistory
 import dev.cxclear.resources.Res
 import dev.cxclear.resources.claude
 import dev.cxclear.resources.codex
@@ -89,6 +78,12 @@ private const val TOOL_FILTER_ALL = "all"
 /** 与扫描页 `SNAPSHOT_INTERVAL_MS` 对齐：进度数字每 0.5s 推一次。 */
 private const val SCAN_SNAPSHOT_INTERVAL_MS = 500L
 
+/** 顶栏筛选值 → 参与展示的工具集合。 */
+private fun resolveTools(filter: String): Set<ChatTool> = when (filter) {
+    TOOL_FILTER_ALL -> ChatTool.entries.toSet()
+    else -> ChatTool.entries.filter { it.id == filter }.toSet()
+}
+
 @Composable
 fun ChatsView(modifier: Modifier = Modifier) {
     val scope = rememberCoroutineScope()
@@ -96,8 +91,7 @@ fun ChatsView(modifier: Modifier = Modifier) {
     var mode by remember { mutableStateOf(ChatsMode.MANUAL) }
     var selectedTool by remember { mutableStateOf(TOOL_FILTER_ALL) }
 
-    var policy by remember { mutableStateOf(RetentionPolicy()) }
-    var policyDirty by remember { mutableStateOf(false) }
+    var config by remember { mutableStateOf(RetentionConfig()) }
 
     var viewState by remember { mutableStateOf(ViewState.IDLE) }
     var allSessions by remember { mutableStateOf<List<ChatSessionSummary>>(emptyList()) }
@@ -105,22 +99,19 @@ fun ChatsView(modifier: Modifier = Modifier) {
     // 删除完成后自增，触发下面的扫描 LaunchedEffect 重跑（清单必须重扫，不能就地改）。
     var rescanToken by remember { mutableIntStateOf(0) }
 
+    // 自动清理每个进程只跑一次；删完用一条提示交代，自动删除不该静默发生。
+    var autoRunDone by remember { mutableStateOf(false) }
+    var autoNotice by remember { mutableStateOf<String?>(null) }
+
     LaunchedEffect(Unit) {
-        policy = withContext(Dispatchers.IO) { RetentionStore.read() }
+        config = withContext(Dispatchers.IO) { RetentionStore.read() }
     }
 
-    fun savePolicy() {
-        if (!policyDirty) return
+    /** 策略改动即时落盘，不设「保存」按钮——开关拨了就该生效。 */
+    fun updateConfig(updated: RetentionConfig) {
+        config = updated
         // rememberCoroutineScope 已绑 Compose 调度器；桌面没有 Dispatchers.Main。
-        scope.launch {
-            withContext(Dispatchers.IO) { RetentionStore.write(policy) }
-            policyDirty = false
-        }
-    }
-
-    fun resolveTools(filter: String): Set<ChatTool> = when (filter) {
-        TOOL_FILTER_ALL -> ChatTool.entries.toSet()
-        else -> ChatTool.entries.filter { it.id == filter }.toSet()
+        scope.launch { withContext(Dispatchers.IO) { RetentionStore.write(updated) } }
     }
 
     // 进入手动模式 / 切换工具筛选时自动扫，不再依赖按钮。
@@ -159,6 +150,27 @@ fun ChatsView(modifier: Modifier = Modifier) {
         if (remainingFlipMs > 0L) delay(remainingFlipMs)
         allSessions = sessions
         viewState = ViewState.SCAN_DONE
+
+        // 首次扫完按已保存的策略执行一次。每进程只跑一次：删完要重扫，
+        // 若不加闸门，重扫又会触发执行，成为循环。
+        // 首次扫描必然发生在筛选为「所有」时（进页面的初始状态），执行器因此看到全量会话；
+        // 别把这段挪到筛选之后，否则筛了工具就只会删那个工具的会话。
+        if (!autoRunDone) {
+            autoRunDone = true
+            val result = RetentionRunner.runIfNeeded(sessions)
+            if (result.freedBytes > 0L) {
+                withContext(Dispatchers.IO) { CleanHistory.append(result.freedBytes) }
+            }
+            autoNotice = when {
+                result.blockedTools.isNotEmpty() ->
+                    "${result.blockedTools.joinToString("、")} 正在运行，自动清理已跳过其会话"
+                result.deletedSessions > 0 ->
+                    "自动清理已删除 ${result.deletedSessions} 个会话 · ${formatBytes(result.freedBytes)}"
+                else -> null
+            }
+            // 删过东西，当前清单已失效，必须重扫而不是就地改。
+            if (result.deletedSessions > 0) rescanToken++
+        }
     }
 
     val now = remember { Instant.now() }
@@ -176,6 +188,10 @@ fun ChatsView(modifier: Modifier = Modifier) {
             mode = mode,
             onModeChange = { mode = it },
         )
+
+        autoNotice?.let { message ->
+            AutoCleanNotice(message = message, onDismiss = { autoNotice = null })
+        }
 
         Box(
             modifier = Modifier
@@ -198,14 +214,10 @@ fun ChatsView(modifier: Modifier = Modifier) {
                         nowMillis = now.toEpochMilli(),
                         onRescan = { rescanToken++ },
                     )
-                    ChatsMode.AUTO -> AutoPane(
-                        policy = policy,
-                        onPolicyChange = { newPolicy ->
-                            policy = newPolicy
-                            policyDirty = true
-                        },
-                        onSave = ::savePolicy,
-                        isDirty = policyDirty,
+                    ChatsMode.AUTO -> ChatsAutoPane(
+                        modifier = Modifier.fillMaxSize(),
+                        config = config,
+                        onConfigChange = ::updateConfig,
                     )
                 }
             }
@@ -350,168 +362,42 @@ private fun ManualPane(
     )
 }
 
+/**
+ * 自动清理的结果提示。
+ *
+ * 自动删除不该静默发生：本次进程删掉了什么、或因工具在运行而跳过了什么，
+ * 都在这里交代一次，用户手动关掉才消失。
+ */
 @Composable
-private fun AutoPane(
-    policy: RetentionPolicy,
-    onPolicyChange: (RetentionPolicy) -> Unit,
-    onSave: () -> Unit,
-    isDirty: Boolean,
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(AppDimensions.SpacingLarge.dp)
-            .verticalScroll(rememberScrollState()),
-    ) {
-        RetentionPolicyCard(
-            policy = policy,
-            onPolicyChange = onPolicyChange,
-            onSave = onSave,
-            isDirty = isDirty,
-        )
-    }
-}
-
-@Composable
-private fun RetentionPolicyCard(
-    policy: RetentionPolicy,
-    onPolicyChange: (RetentionPolicy) -> Unit,
-    onSave: () -> Unit,
-    isDirty: Boolean,
-) {
-    var daysInput by remember(policy.days) { mutableStateOf(policy.days.toString()) }
-
-    Column(
+private fun AutoCleanNotice(message: String, onDismiss: () -> Unit) {
+    Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(AppDimensions.Radius.dp))
-            .background(AppColors.Surface1)
-            .padding(AppDimensions.SpacingLarge.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+            .background(AppColors.PrimaryContainer)
+            .padding(horizontal = AppDimensions.SpacingMedium.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(AppDimensions.SpacingSmall.dp),
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column {
-                Text(
-                    "自动清理策略",
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = AppColors.TextPrimary,
-                )
-                Spacer(modifier = Modifier.height(3.dp))
-                Text(
-                    if (policy.enabled) "已启用 · 将自动删除超期会话" else "已停用",
-                    fontSize = 12.sp,
-                    color = if (policy.enabled) AppColors.Primary else AppColors.TextTertiary,
-                )
-            }
-
-            Switch(
-                checked = policy.enabled,
-                onCheckedChange = { onPolicyChange(policy.copy(enabled = it)) },
-                colors = SwitchDefaults.colors(
-                    checkedThumbColor = AppColors.OnPrimary,
-                    checkedTrackColor = AppColors.Primary,
-                ),
-            )
-        }
-
-        AnimatedVisibility(
-            visible = policy.enabled,
-            enter = fadeIn(Motion.normal()),
-            exit = fadeOut(Motion.fast()),
-        ) {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Box(
-                    Modifier
-                        .fillMaxWidth()
-                        .height(1.dp)
-                        .background(AppColors.OutlineVariant.copy(alpha = 0.4f)),
-                )
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    Text("保留最近", fontSize = 14.sp, color = AppColors.TextSecondary)
-                    BasicTextField(
-                        value = daysInput,
-                        onValueChange = { input ->
-                            if (input.all { it.isDigit() } && input.length <= 4) {
-                                daysInput = input
-                                input.toIntOrNull()?.coerceIn(1, 3650)?.let { days ->
-                                    onPolicyChange(policy.copy(days = days))
-                                }
-                            }
-                        },
-                        modifier = Modifier
-                            .width(60.dp)
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(AppColors.Surface3)
-                            .padding(horizontal = 10.dp, vertical = 8.dp),
-                        textStyle = TextStyle(
-                            fontSize = 14.sp,
-                            color = AppColors.TextPrimary,
-                            fontWeight = FontWeight.Medium,
-                        ),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        singleLine = true,
-                        cursorBrush = SolidColor(AppColors.Primary),
-                    )
-                    Text("天内的会话", fontSize = 14.sp, color = AppColors.TextSecondary)
-                }
-
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(AppColors.Optional.copy(alpha = 0.08f))
-                        .padding(12.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Warning,
-                        contentDescription = null,
-                        tint = AppColors.Optional,
-                        modifier = Modifier.size(16.dp),
-                    )
-                    Text(
-                        "超过 ${policy.days} 天未更新的会话将在下次启动时自动删除，无法恢复",
-                        fontSize = 12.sp,
-                        color = AppColors.TextSecondary,
-                        lineHeight = 16.sp,
-                    )
-                }
-
-                if (isDirty) {
-                    Button(
-                        onClick = onSave,
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = AppColors.Primary,
-                            contentColor = AppColors.OnPrimary,
-                        ),
-                        shape = RoundedCornerShape(AppDimensions.RadiusFull.dp),
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Check,
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp),
-                            )
-                            Text("保存策略", fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                        }
-                    }
-                }
-            }
-        }
+        Icon(
+            imageVector = Icons.Filled.Info,
+            contentDescription = null,
+            tint = AppColors.Primary,
+            modifier = Modifier.size(16.dp),
+        )
+        Text(
+            message,
+            fontSize = 12.sp,
+            color = AppColors.TextPrimary,
+            modifier = Modifier.weight(1f),
+        )
+        Icon(
+            imageVector = Icons.Filled.Close,
+            contentDescription = "关闭",
+            tint = AppColors.TextSecondary,
+            modifier = Modifier
+                .size(16.dp)
+                .clickable(onClick = onDismiss),
+        )
     }
 }
-
