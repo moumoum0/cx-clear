@@ -23,7 +23,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -34,6 +33,8 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
@@ -49,14 +50,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.Dp
@@ -74,6 +73,7 @@ import dev.cxclear.ui.LocalOverlayHost
 import dev.cxclear.ui.theme.AppColors
 import dev.cxclear.ui.theme.AppDimensions
 import dev.cxclear.ui.theme.Motion
+import dev.cxclear.ui.theme.appOutlinedTextFieldColors
 import kotlin.math.max
 import kotlin.math.roundToInt
 
@@ -132,9 +132,6 @@ internal fun ChatsAutoPane(
 
 /**
  * 新建策略第一步：起名。名称是列表里唯一的可读标识，必填——空白时确认不可点。
- *
- * 沿用项目既有的 M3 [AlertDialog] 壳与 [BasicTextField] 输入（不引入 M3 TextField），
- * 输入框样式对齐向导里的 [CustomTextCell]。
  */
 @Composable
 private fun NameRuleDialog(
@@ -144,7 +141,6 @@ private fun NameRuleDialog(
     var input by remember { mutableStateOf("") }
     val trimmed = input.trim()
     val enabled = trimmed.isNotEmpty()
-    val shape = RoundedCornerShape(AppDimensions.Radius.dp)
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = AppColors.Surface1,
@@ -157,33 +153,15 @@ private fun NameRuleDialog(
             )
         },
         text = {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(shape)
-                    .border(BorderStroke(1.dp, AppColors.OutlineVariant), shape)
-                    .background(AppColors.Surface3)
-                    .padding(start = 14.dp, end = 10.dp, top = 11.dp, bottom = 11.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Box(modifier = Modifier.weight(1f)) {
-                    if (input.isEmpty()) {
-                        Text("策略名称", fontSize = 13.sp, color = AppColors.TextTertiary)
-                    }
-                    BasicTextField(
-                        value = input,
-                        onValueChange = { input = it.take(30) },
-                        textStyle = TextStyle(
-                            fontSize = 13.sp,
-                            color = AppColors.Primary,
-                            fontWeight = FontWeight.Medium,
-                        ),
-                        singleLine = true,
-                        cursorBrush = SolidColor(AppColors.Primary),
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-            }
+            OutlinedTextField(
+                value = input,
+                onValueChange = { input = it.take(30) },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                label = { Text("策略名称") },
+                shape = RoundedCornerShape(AppDimensions.Radius.dp),
+                colors = appOutlinedTextFieldColors(),
+            )
         },
         confirmButton = {
             Button(
@@ -1072,52 +1050,42 @@ private fun CustomNumberCell(
     var input by remember { mutableStateOf("") }
     val n = input.toIntOrNull() ?: 0
     val enabled = n >= 1
-    val shape = RoundedCornerShape(AppDimensions.Radius.dp)
-    Row(
+    val confirmTint = if (enabled) AppColors.Primary else AppColors.TextTertiary
+    OutlinedTextField(
+        value = input,
+        onValueChange = { raw ->
+            if (raw.all { it.isDigit() } && raw.length <= 5) input = raw
+        },
         modifier = Modifier
             .fillMaxWidth()
             .onGloballyPositioned { coords ->
                 if (reportCoords) onCoords?.invoke(coords)
+            },
+        placeholder = { Text("自选输入") },
+        suffix = if (input.isNotEmpty()) {
+            { Text(unit) }
+        } else {
+            null
+        },
+        trailingIcon = {
+            IconButton(
+                onClick = { onConfirm(n.coerceIn(1, 99999)) },
+                enabled = enabled,
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Check,
+                    contentDescription = "确认",
+                )
             }
-            .clip(shape)
-            .border(BorderStroke(1.dp, AppColors.OutlineVariant), shape)
-            .background(AppColors.Surface3)
-            .padding(start = 14.dp, end = 10.dp, top = 11.dp, bottom = 11.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        Box(modifier = Modifier.weight(1f)) {
-            if (input.isEmpty()) {
-                Text("自选输入", fontSize = 13.sp, color = AppColors.TextTertiary)
-            }
-            BasicTextField(
-                value = input,
-                onValueChange = { raw ->
-                    if (raw.all { it.isDigit() } && raw.length <= 5) input = raw
-                },
-                textStyle = TextStyle(
-                    fontSize = 13.sp,
-                    color = AppColors.Primary,
-                    fontWeight = FontWeight.Medium,
-                ),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                singleLine = true,
-                cursorBrush = SolidColor(AppColors.Primary),
-                modifier = Modifier.fillMaxWidth(),
-            )
-        }
-        if (input.isNotEmpty()) {
-            Text(unit, fontSize = 13.sp, color = AppColors.TextSecondary)
-        }
-        Icon(
-            imageVector = Icons.Filled.Check,
-            contentDescription = "确认",
-            tint = if (enabled) AppColors.Primary else AppColors.TextTertiary,
-            modifier = Modifier
-                .size(17.dp)
-                .clickable(enabled = enabled) { onConfirm(n.coerceIn(1, 99999)) },
-        )
-    }
+        },
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+        singleLine = true,
+        shape = RoundedCornerShape(AppDimensions.Radius.dp),
+        colors = appOutlinedTextFieldColors(
+            focusedTrailingIconColor = confirmTint,
+            unfocusedTrailingIconColor = confirmTint,
+        ),
+    )
 }
 
 /** 自选输入（文本）：输入框 + 确认；空白不提交。 */
@@ -1129,47 +1097,36 @@ private fun CustomTextCell(
 ) {
     var input by remember { mutableStateOf("") }
     val enabled = input.isNotBlank()
-    val shape = RoundedCornerShape(AppDimensions.Radius.dp)
-    Row(
+    val confirmTint = if (enabled) AppColors.Primary else AppColors.TextTertiary
+    OutlinedTextField(
+        value = input,
+        onValueChange = { input = it.take(60) },
         modifier = Modifier
             .fillMaxWidth()
             .onGloballyPositioned { coords ->
                 if (reportCoords) onCoords?.invoke(coords)
+            },
+        placeholder = { Text("关键词") },
+        trailingIcon = {
+            IconButton(
+                onClick = { onConfirm(input.trim()) },
+                enabled = enabled,
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Check,
+                    contentDescription = "确认",
+                )
             }
-            .clip(shape)
-            .border(BorderStroke(1.dp, AppColors.OutlineVariant), shape)
-            .background(AppColors.Surface3)
-            .padding(start = 14.dp, end = 10.dp, top = 11.dp, bottom = 11.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        Box(modifier = Modifier.weight(1f)) {
-            if (input.isEmpty()) {
-                Text("关键词", fontSize = 13.sp, color = AppColors.TextTertiary)
-            }
-            BasicTextField(
-                value = input,
-                onValueChange = { input = it.take(60) },
-                textStyle = TextStyle(
-                    fontSize = 13.sp,
-                    color = AppColors.Primary,
-                    fontWeight = FontWeight.Medium,
-                ),
-                singleLine = true,
-                cursorBrush = SolidColor(AppColors.Primary),
-                modifier = Modifier.fillMaxWidth(),
-            )
-        }
-        Icon(
-            imageVector = Icons.Filled.Check,
-            contentDescription = "确认",
-            tint = if (enabled) AppColors.Primary else AppColors.TextTertiary,
-            modifier = Modifier
-                .size(17.dp)
-                .clickable(enabled = enabled) { onConfirm(input.trim()) },
-        )
-    }
+        },
+        singleLine = true,
+        shape = RoundedCornerShape(AppDimensions.Radius.dp),
+        colors = appOutlinedTextFieldColors(
+            focusedTrailingIconColor = confirmTint,
+            unfocusedTrailingIconColor = confirmTint,
+        ),
+    )
 }
+
 
 // ─────────────────────────────────────────────
 // 空态 + 新建入口

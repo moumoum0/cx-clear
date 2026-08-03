@@ -1,6 +1,8 @@
 package dev.cxclear.ui.theme
 
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.TextFieldColors
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
@@ -167,3 +169,32 @@ private val AppColorScheme = lightColorScheme(
 fun AppTheme(content: @Composable () -> Unit) {
     MaterialTheme(colorScheme = AppColorScheme, content = content)
 }
+
+/** OutlinedTextField 统一取 [AppColors]，避免各输入框各自拼一套颜色。 */
+@Composable
+fun appOutlinedTextFieldColors(
+    focusedTrailingIconColor: Color = AppColors.TextTertiary,
+    unfocusedTrailingIconColor: Color = AppColors.TextTertiary,
+    focusedLeadingIconColor: Color = AppColors.TextTertiary,
+    unfocusedLeadingIconColor: Color = AppColors.TextTertiary,
+): TextFieldColors = OutlinedTextFieldDefaults.colors(
+    focusedTextColor = AppColors.TextPrimary,
+    unfocusedTextColor = AppColors.TextPrimary,
+    cursorColor = AppColors.Primary,
+    focusedBorderColor = AppColors.Primary,
+    unfocusedBorderColor = AppColors.OutlineVariant,
+    focusedContainerColor = AppColors.Surface3,
+    unfocusedContainerColor = AppColors.Surface3,
+    focusedLabelColor = AppColors.Primary,
+    unfocusedLabelColor = AppColors.TextTertiary,
+    focusedPlaceholderColor = AppColors.TextTertiary,
+    unfocusedPlaceholderColor = AppColors.TextTertiary,
+    focusedTrailingIconColor = focusedTrailingIconColor,
+    unfocusedTrailingIconColor = unfocusedTrailingIconColor,
+    disabledTrailingIconColor = AppColors.TextTertiary,
+    focusedLeadingIconColor = focusedLeadingIconColor,
+    unfocusedLeadingIconColor = unfocusedLeadingIconColor,
+    disabledLeadingIconColor = AppColors.TextTertiary,
+    focusedSuffixColor = AppColors.TextSecondary,
+    unfocusedSuffixColor = AppColors.TextSecondary,
+)
