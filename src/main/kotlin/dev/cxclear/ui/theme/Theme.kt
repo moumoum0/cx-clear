@@ -83,6 +83,12 @@ object AppColors {
     val Outline = M3Light.outline
     val OutlineVariant = M3Light.outlineVariant
 
+    /** scrim 变暗层之上的浮动文字：底是压暗的画布，用反色（近白）保证可读。 */
+    val TextOnScrim = M3Light.inverseOnSurface
+
+    /** 浮层遮罩底色（纯黑），实际用时叠半透明，把身后整窗压暗。 */
+    val Scrim = M3Light.scrim
+
     /**
      * 存储分类色：可清理的三类走同一蓝色系明度阶梯，自浅到深；
      * 不可清理的保留数据用深灰跳出色系，与「可清理」形成类别区分而非程度区分。

@@ -39,7 +39,7 @@ class RetentionMatchTest {
         vararg conditions: ChatCondition,
         join: ConditionJoin = ConditionJoin.AND,
         enabled: Boolean = true,
-    ) = RetentionRule("rule-1", enabled, join, conditions.toList())
+    ) = RetentionRule("rule-1", enabled = enabled, join = join, conditions = conditions.toList())
 
     // ─────────────────────────────────────────
     // 安全兜底：不该命中的中间态

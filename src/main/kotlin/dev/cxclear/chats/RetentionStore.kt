@@ -89,6 +89,7 @@ object RetentionStore {
         val prefix = "rule.$id."
         // count 缺失说明这条规则没写全，跳过。
         val count = props["${prefix}count"]?.toIntOrNull()?.coerceIn(0, MAX_CONDITIONS) ?: return null
+        val name = props["${prefix}name"] ?: ""
         val enabled = props["${prefix}enabled"]?.toBooleanStrictOrNull() ?: false
         val join = ConditionJoin.fromId(props["${prefix}join"] ?: "")
 
@@ -102,7 +103,7 @@ object RetentionStore {
             )
         }
 
-        return RetentionRule(id = id, enabled = enabled, join = join, conditions = conditions)
+        return RetentionRule(id = id, name = name, enabled = enabled, join = join, conditions = conditions)
     }
 
     /** v1 的 `enabled` / `days` 等价于一条「未更新超过 N 天」的规则。 */
@@ -113,6 +114,7 @@ object RetentionStore {
             listOf(
                 RetentionRule(
                     id = "rule-1",
+                    name = "未更新超过 $days 天",
                     enabled = enabled,
                     join = ConditionJoin.AND,
                     conditions = listOf(
@@ -137,6 +139,7 @@ object RetentionStore {
         for (rule in rules) {
             val prefix = "rule.${rule.id}."
             val conditions = rule.conditions.take(MAX_CONDITIONS)
+            lines += "${prefix}name=${encode(rule.name)}"
             lines += "${prefix}enabled=${rule.enabled}"
             lines += "${prefix}join=${rule.join.id}"
             lines += "${prefix}count=${conditions.size}"

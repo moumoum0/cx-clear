@@ -78,11 +78,12 @@ enum class ConditionJoin(val id: String, val label: String) {
 /**
  * 一条策略。[enabled] 由用户单独开关；新建时默认关闭，避免建好就开始删。
  *
- * 没有名称字段：条件本身就是最准确的标识，再加一个名字既要用户起名、
- * 又要在卡片上占一行，对「一眼看清这条会删什么」没有帮助。
+ * [name] 是列表里的唯一可读标识（列表行只显示名称、不再展示条件主句），因此建策略时必填；
+ * 旧配置或迁移出来的规则可能为空，读回后由 UI 用条件句子兜底显示。
  */
 data class RetentionRule(
     val id: String,
+    val name: String = "",
     val enabled: Boolean = false,
     val join: ConditionJoin = ConditionJoin.AND,
     val conditions: List<ChatCondition> = emptyList(),

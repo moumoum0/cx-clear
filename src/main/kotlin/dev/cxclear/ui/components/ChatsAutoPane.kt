@@ -1,10 +1,12 @@
 package dev.cxclear.ui.components
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -28,12 +30,18 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -42,6 +50,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.LayoutCoordinates
@@ -61,6 +70,7 @@ import dev.cxclear.chats.ConditionValueKind
 import dev.cxclear.chats.RetentionConfig
 import dev.cxclear.chats.RetentionRule
 import dev.cxclear.chats.newRuleId
+import dev.cxclear.ui.LocalOverlayHost
 import dev.cxclear.ui.theme.AppColors
 import dev.cxclear.ui.theme.AppDimensions
 import dev.cxclear.ui.theme.Motion
@@ -80,34 +90,168 @@ internal fun ChatsAutoPane(
     onConfigChange: (RetentionConfig) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    // null = 列表态；非空 = 正在向导里建一条新策略。
-    var draft by remember { mutableStateOf<Draft?>(null) }
+    val overlayHost = LocalOverlayHost.current
+    // 新建第一步：先给策略起名。填完名再把向导推进全窗浮层。
+    var namingForNew by remember { mutableStateOf(false) }
 
     Box(modifier = modifier.fillMaxSize()) {
-        val current = draft
-        if (current == null) {
-            RuleListView(
-                config = config,
-                onConfigChange = onConfigChange,
-                onNewRule = { draft = Draft() },
-            )
-        } else {
-            WizardView(
-                draft = current,
-                onDraftChange = { draft = it },
-                onCancel = { draft = null },
-                onSave = { conditions, join ->
-                    val rule = RetentionRule(
-                        id = newRuleId(config.rules.map { it.id }),
-                        enabled = false,
-                        join = join,
-                        conditions = conditions,
+        RuleListView(
+            config = config,
+            onConfigChange = onConfigChange,
+            onNewRule = { namingForNew = true },
+        )
+    }
+
+    if (namingForNew) {
+        NameRuleDialog(
+            onDismiss = { namingForNew = false },
+            onConfirm = { name ->
+                namingForNew = false
+                // 浮层内容挂到根部渲染，scrim 已挡住列表，这里对 config 的快照在浮层存续期间不会变。
+                overlayHost.show {
+                    WizardOverlay(
+                        ruleName = name,
+                        onDismiss = { overlayHost.hide() },
+                        onSave = { conditions, join ->
+                            val rule = RetentionRule(
+                                id = newRuleId(config.rules.map { it.id }),
+                                name = name,
+                                enabled = false,
+                                join = join,
+                                conditions = conditions,
+                            )
+                            onConfigChange(config.copy(rules = config.rules + rule))
+                            overlayHost.hide()
+                        },
                     )
-                    onConfigChange(config.copy(rules = config.rules + rule))
-                    draft = null
-                },
+                }
+            },
+        )
+    }
+}
+
+/**
+ * 新建策略第一步：起名。名称是列表里唯一的可读标识，必填——空白时确认不可点。
+ *
+ * 沿用项目既有的 M3 [AlertDialog] 壳与 [BasicTextField] 输入（不引入 M3 TextField），
+ * 输入框样式对齐向导里的 [CustomTextCell]。
+ */
+@Composable
+private fun NameRuleDialog(
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit,
+) {
+    var input by remember { mutableStateOf("") }
+    val trimmed = input.trim()
+    val enabled = trimmed.isNotEmpty()
+    val shape = RoundedCornerShape(AppDimensions.Radius.dp)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = AppColors.Surface1,
+        title = {
+            Text(
+                "给这条策略起个名字",
+                fontSize = 16.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = AppColors.TextPrimary,
+            )
+        },
+        text = {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(shape)
+                    .border(BorderStroke(1.dp, AppColors.OutlineVariant), shape)
+                    .background(AppColors.Surface3)
+                    .padding(start = 14.dp, end = 10.dp, top = 11.dp, bottom = 11.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(modifier = Modifier.weight(1f)) {
+                    if (input.isEmpty()) {
+                        Text("策略名称", fontSize = 13.sp, color = AppColors.TextTertiary)
+                    }
+                    BasicTextField(
+                        value = input,
+                        onValueChange = { input = it.take(30) },
+                        textStyle = TextStyle(
+                            fontSize = 13.sp,
+                            color = AppColors.Primary,
+                            fontWeight = FontWeight.Medium,
+                        ),
+                        singleLine = true,
+                        cursorBrush = SolidColor(AppColors.Primary),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { if (enabled) onConfirm(trimmed) },
+                enabled = enabled,
+                shape = RoundedCornerShape(AppDimensions.RadiusFull.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = AppColors.Primary,
+                    contentColor = AppColors.OnPrimary,
+                ),
+            ) {
+                Text("下一步")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("取消", color = AppColors.TextSecondary)
+            }
+        },
+    )
+}
+
+/**
+ * 全窗浮层里的向导：scrim 与模糊已由 [dev.cxclear.ui.App] 铺在整窗底下，向导直接落在这块变暗的
+ * 灰色画布上，不再套一层白底面板。草稿状态自持在浮层里，跟着点选即时重组。
+ *
+ * 编辑区限回原来那块内容区（避开左侧栏与顶部标题栏），跟没进浮层时向导所在的位置一致；
+ * 编辑区吞掉点击，避免工作区里的误点落到 scrim 触发取消，其余裸 scrim 区点了 = 取消（[onDismiss]）。
+ * 策略名放到整窗右下角、放大、用反色（近白），压在暗画布上仍清晰。
+ */
+@Composable
+private fun WizardOverlay(
+    ruleName: String,
+    onDismiss: () -> Unit,
+    onSave: (List<ChatCondition>, ConditionJoin) -> Unit,
+) {
+    var draft by remember { mutableStateOf(Draft()) }
+    Box(modifier = Modifier.fillMaxSize()) {
+        // 编辑区收回原内容区：左让开侧栏、上让开标题栏，内侧再留一圈与原来一致的边距。
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(start = AppDimensions.SidebarWidth.dp, top = AppDimensions.TitleBarHeight.dp)
+                .padding(AppDimensions.SpacingLarge.dp)
+                // 编辑区吞点击，避免落到底下的 scrim 触发取消。
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = {},
+                ),
+        ) {
+            WizardView(
+                draft = draft,
+                onDraftChange = { draft = it },
+                onCancel = onDismiss,
+                onSave = onSave,
             )
         }
+        // 策略名钉在整窗右下角，放大 + 反色，作为「正在建哪条」的落款。
+        Text(
+            ruleName,
+            fontSize = 22.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = AppColors.TextOnScrim,
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(AppDimensions.SpacingLarge.dp),
+        )
     }
 }
 
@@ -240,8 +384,9 @@ private fun RuleRow(
             ),
         )
         Spacer(Modifier.width(12.dp))
+        // 名称是唯一可读标识；旧配置/迁移出来的空名规则用条件句子兜底，避免出现空行。
         Text(
-            ruleSentence(rule),
+            rule.name.ifBlank { ruleSentence(rule) },
             fontSize = 13.sp,
             color = AppColors.TextPrimary,
             modifier = Modifier.weight(1f),
@@ -301,6 +446,26 @@ private fun pathOf(condition: ChatCondition): Pair<AttrSpec, Boolean?> {
     return attr to if (attr.isNumeric) condition.type == attr.larger else null
 }
 
+/**
+ * 当前最右列深度（0 = 属性列）。
+ *
+ * 数值路径：属性 → 比较符 → 取值 → 组合；非数值：属性 → 取值 → 组合。
+ * 前一列仍可改选；再往前锁定，只能靠「返回」一步步退。
+ */
+private fun Draft.rightmostDepth(): Int {
+    val a = attr ?: return 0
+    return when {
+        showCombine -> if (a.isNumeric) 3 else 2
+        a.isNumeric && larger == null -> 1
+        a.isNumeric -> 2
+        else -> 1
+    }
+}
+
+/** 列下标是否可点选：当前列与前一列可以，前前列及更早锁定。 */
+private fun Draft.isColumnEditable(columnIndex: Int): Boolean =
+    columnIndex >= rightmostDepth() - 1
+
 private val ColumnWidth = 150.dp
 
 private fun segmentedItemCenterY(index: Int, segH: Float, divH: Float): Float =
@@ -327,6 +492,7 @@ private fun cascadedItemCenterY(
  * 属性列 → （数值属性才有的）比较符列 → 取值列 → 且 / 或 / 保存 列。
  * 选过的项高亮留在原位，整条路径一直看得见；只有当前最右一列末尾留「返回」，
  * 右边一旦展开下一列，左边那列的「返回」就撤掉。
+ * 可改选范围：当前列 + 前一列；前前列及更早锁定（仍显示路径，点不动）。
  * 下一列选项区（不含「返回」）相对上一列选中项中线垂直居中；顶边若会越过行顶则贴顶。
  * 锚点用选中下标同步计算，Layout 同帧落位，项数变化不跳。
  */
@@ -347,9 +513,19 @@ private fun WizardView(
     var valueSelectedCenterY by remember { mutableFloatStateOf(Float.NaN) }
     var rowTopInWindow by remember { mutableFloatStateOf(Float.NaN) }
 
+    // 属性列右边那一列（数值属性→比较符列，工具/文本属性→取值列）是两个 call-site，
+    // 但视觉上占同一位置。共享一份动画状态，换属性时它能平滑滑过去而不是重播入场。
+    // 整列撤走（attr 清空）时复位，下次再出现重新走入场。
+    val col1Anim = remember { ColumnAnim() }
+    LaunchedEffect(draft.attr == null) {
+        if (draft.attr == null) col1Anim.reset()
+    }
+
     val attrOptions = ATTRS.filter { spec -> spec.types.any { it !in draft.usedTypes } }
     val attrIndex = attrOptions.indexOfFirst { it == draft.attr }
     val attrCenterY = if (attrIndex >= 0) segmentedItemCenterY(attrIndex, segH, divH) else null
+    val attrEditable = draft.isColumnEditable(0)
+    val col1Editable = draft.isColumnEditable(1)
 
     Column(modifier = Modifier.fillMaxSize()) {
         WizardHeader(draft)
@@ -364,6 +540,7 @@ private fun WizardView(
             AttrColumn(
                 draft = draft,
                 options = attrOptions,
+                editable = attrEditable,
                 onDraftChange = onDraftChange,
                 onCancel = onCancel,
                 onSegmentHeight = onSegHeight,
@@ -377,10 +554,12 @@ private fun WizardView(
                     val compIndex = compOptions.indexOf(draft.larger)
                     AlignedColumn(
                         anchorCenterY = attrCenterY,
+                        sharedAnim = col1Anim,
                         body = {
                             ComparatorColumn(
                                 draft = draft,
                                 attr = attr,
+                                editable = col1Editable,
                                 onDraftChange = onDraftChange,
                                 onSegmentHeight = onSegHeight,
                             )
@@ -429,6 +608,7 @@ private fun WizardView(
                 } else {
                     AlignedColumn(
                         anchorCenterY = attrCenterY,
+                        sharedAnim = col1Anim,
                         body = {
                             ValueColumn(
                                 draft = draft,
@@ -470,19 +650,78 @@ private fun WizardView(
 }
 
 /**
+ * 一列的动画状态：入场进度 [enter] 与竖向锚点 [anchor]。
+ *
+ * 拆出来单独 hold，是为了让它能被「同一视觉位置、但内容会换的列」共享——
+ * 比如属性列右边那一列，选数值属性时是比较符列、选工具/文本属性时是取值列，
+ * 二者是不同的 composable（不同 call-site），各自 `remember` 会让状态在切换时丢失、
+ * 于是每次换属性都重播入场。把状态 hoist 到 [WizardView] 按位置共享，切内容也不丢，
+ * 就能「已经在场 → 换上一列选项 → 平滑滑过去」而不是重新淡入。
+ */
+private class ColumnAnim {
+    val enter = Animatable(0f)
+    val anchor = Animatable(0f)
+    /** 已播过入场：之后只做位移，不再淡入。 */
+    var appeared = false
+    /** 锚点已首次落位：之后锚点变化走动画。 */
+    var anchorInit = false
+
+    /** 列整个撤走时复位，下次再出现重新走入场（而非从旧位置突兀滑入）。 */
+    fun reset() {
+        appeared = false
+        anchorInit = false
+    }
+}
+
+/**
  * 相对锚点（上一列选中项中线）垂直居中 [body]；[footer]（返回）不参与居中。
- * Layout 同帧测量并落位，无位移动画。
+ *
+ * 两段动画各管一件事：
+ * - **入场**：这一列首次出现时播一次淡入 + 自左滑入（「选了上一列某项、这一列弹出来」的那一下）。
+ * - **移动**：列已经在场时，若上一列换了选项、锚点随之改变，整列平滑滑到新位置，而不是重新淡入。
+ *   不同选项弹出的选项数可能不同（高度不同），高度按新内容即时取，竖向中线走动画。
+ *
+ * [sharedAnim] 非空时用它（跨内容切换保留状态，见 [ColumnAnim]）；为空则本列自持一份，
+ * 每次首次出现都走入场——适合「选了上一列才冒出来」的真·新列。
  */
 @Composable
 private fun AlignedColumn(
     anchorCenterY: Float?,
+    sharedAnim: ColumnAnim? = null,
     body: @Composable () -> Unit,
     footer: (@Composable () -> Unit)? = null,
 ) {
-    // 同帧测量 body 并落位，不做位移动画；项数变化时高度与偏移一次算清。
+    val density = LocalDensity.current
+    val slideFrom = with(density) { 20.dp.toPx() }
+    val anim = sharedAnim ?: remember { ColumnAnim() }
+    // 入场：首次出现从 0 淡入 + 自左滑入；已 appeared 则直接坐实到 1，不再重播。
+    LaunchedEffect(anim) {
+        if (anim.appeared) {
+            anim.enter.snapTo(1f)
+        } else {
+            anim.enter.snapTo(0f)
+            anim.enter.animateTo(1f, animationSpec = Motion.grow())
+            anim.appeared = true
+        }
+    }
+    // 竖向锚点：首次直接落位；在场时上一列换选项导致锚点变化，就平滑滑过去。
+    LaunchedEffect(anim, anchorCenterY) {
+        val target = anchorCenterY ?: return@LaunchedEffect
+        if (anim.anchorInit) {
+            anim.anchor.animateTo(target, animationSpec = Motion.medium())
+        } else {
+            anim.anchor.snapTo(target)
+            anim.anchorInit = true
+        }
+    }
     val spacing = 6.dp
     Layout(
-        modifier = Modifier.width(ColumnWidth),
+        modifier = Modifier
+            .width(ColumnWidth)
+            .graphicsLayer {
+                alpha = anim.enter.value
+                translationX = (anim.enter.value - 1f) * slideFrom
+            },
         content = {
             Box(modifier = Modifier.fillMaxWidth()) { body() }
             if (footer != null) {
@@ -496,8 +735,9 @@ private fun AlignedColumn(
         val width = max(bodyPlaceable.width, footerPlaceable?.width ?: 0)
             .coerceIn(constraints.minWidth, constraints.maxWidth)
         val contentH = bodyPlaceable.height + gap + (footerPlaceable?.height ?: 0)
+        // 读 anim.anchor.value（在 layout 阶段）→ 动画每帧驱动重新落位。
         val yOff = if (anchorCenterY != null) {
-            (anchorCenterY - bodyPlaceable.height / 2f).roundToInt().coerceAtLeast(0)
+            (anim.anchor.value - bodyPlaceable.height / 2f).roundToInt().coerceAtLeast(0)
         } else {
             0
         }
@@ -520,15 +760,17 @@ private fun WizardHeader(draft: Draft) {
         sentence,
         fontSize = 14.sp,
         fontWeight = FontWeight.Medium,
-        color = AppColors.TextPrimary,
+        // 直接浮在暗画布上（不在卡片内），用反色（近白）保证可读。
+        color = AppColors.TextOnScrim,
     )
 }
 
-/** 第一列：属性。类型已被用光的属性不再列出。 */
+/** 第一列：属性。类型已被用光的属性不再列出。[editable] 为假时只展示路径、不可改选。 */
 @Composable
 private fun AttrColumn(
     draft: Draft,
     options: List<AttrSpec>,
+    editable: Boolean,
     onDraftChange: (Draft) -> Unit,
     onCancel: () -> Unit,
     onSegmentHeight: (Float) -> Unit,
@@ -536,7 +778,7 @@ private fun AttrColumn(
     WizColumn {
         WizSegmented(
             options = options.map { attr ->
-                WizOption(attr.label, selected = draft.attr == attr) {
+                WizOption(attr.label, selected = draft.attr == attr, enabled = editable) {
                     // 换属性要清掉右边选过的比较符，否则会带着上一属性的选择往下走。
                     onDraftChange(draft.copy(attr = attr, larger = null, showCombine = false))
                 }
@@ -563,6 +805,7 @@ private fun AttrColumn(
 private fun ComparatorColumn(
     draft: Draft,
     attr: AttrSpec,
+    editable: Boolean,
     onDraftChange: (Draft) -> Unit,
     onSegmentHeight: (Float) -> Unit,
 ) {
@@ -570,12 +813,12 @@ private fun ComparatorColumn(
     WizSegmented(
         options = buildList {
             if (attr.larger !in draft.usedTypes) {
-                add(WizOption("超过", selected = draft.larger == true) {
+                add(WizOption("超过", selected = draft.larger == true, enabled = editable) {
                     onDraftChange(draft.copy(larger = true, showCombine = false))
                 })
             }
             if (attr.smaller !in draft.usedTypes) {
-                add(WizOption("少于", selected = draft.larger == false) {
+                add(WizOption("少于", selected = draft.larger == false, enabled = editable) {
                     onDraftChange(draft.copy(larger = false, showCombine = false))
                 })
             }
@@ -674,22 +917,18 @@ private fun CombineColumn(
     // 这里按 allTypes 算：刚定好的这一条确实占了一个类型。
     val canAddMore = ATTRS.any { spec -> spec.types.any { it !in draft.allTypes } }
 
-    // 只渲染且/或/保存；「返回」由 AlignedColumn.footer 挂在外面，不进对齐高度。
+    // 规则内条件恒为「且」：不给连接词选项，「且」就是「再加一个条件」的动作，不是持久选中态。
+    // 只渲染且/保存；「返回」由 AlignedColumn.footer 挂在外面，不进对齐高度。
     WizSegmented(
         options = buildList {
             if (canAddMore) {
-                add(WizOption("且", selected = draft.join == ConditionJoin.AND && draft.committed.size > 1) {
+                add(WizOption("且") {
                     onDraftChange(
                         draft.copy(join = ConditionJoin.AND, attr = null, larger = null, showCombine = false)
                     )
                 })
-                add(WizOption("或", selected = draft.join == ConditionJoin.OR && draft.committed.size > 1) {
-                    onDraftChange(
-                        draft.copy(join = ConditionJoin.OR, attr = null, larger = null, showCombine = false)
-                    )
-                })
             }
-            add(WizOption("保存", emphasize = true) { onSave(draft.committed, draft.join) })
+            add(WizOption("保存") { onSave(draft.committed, draft.join) })
         },
         onSegmentHeight = onSegmentHeight,
     )
@@ -709,11 +948,11 @@ private fun WizColumn(content: @Composable ColumnScope.() -> Unit) {
     )
 }
 
-/** 分段选项：文字 + 选中态。整列拼成一块连体控件，不再各自成卡。 */
+/** 分段选项：文字 + 选中态。整列拼成一块连体控件，不再各自成卡。[enabled] 为假时锁定不可点。 */
 private data class WizOption(
     val label: String,
     val selected: Boolean = false,
-    val emphasize: Boolean = false,
+    val enabled: Boolean = true,
     val onClick: () -> Unit,
 )
 
@@ -737,19 +976,23 @@ private fun WizSegmented(
             .background(AppColors.Surface3),
     ) {
         options.forEachIndexed { index, option ->
-            if (index > 0) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(1.dp)
-                        .background(AppColors.OutlineVariant),
+            // 按选项本身 key，别按下标：轮次之间选项增删会换位，
+            // 无 key 时新选项会落进上一个下标残留的颜色动画里，看起来「没选却高亮」。
+            key(option.label) {
+                if (index > 0) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(1.dp)
+                            .background(AppColors.OutlineVariant),
+                    )
+                }
+                WizSegment(
+                    option = option,
+                    onSegmentHeight = if (index == 0) onSegmentHeight else null,
+                    onSelectedCoords = onSelectedCoords,
                 )
             }
-            WizSegment(
-                option = option,
-                onSegmentHeight = if (index == 0) onSegmentHeight else null,
-                onSelectedCoords = onSelectedCoords,
-            )
         }
     }
 }
@@ -760,14 +1003,18 @@ private fun WizSegment(
     onSegmentHeight: ((Float) -> Unit)? = null,
     onSelectedCoords: ((LayoutCoordinates) -> Unit)? = null,
 ) {
-    val active = option.emphasize || option.selected
+    val active = option.selected
     val bg by animateColorAsState(
         targetValue = if (active) AppColors.Primary else AppColors.Surface3,
         animationSpec = Motion.normal(),
         label = "wizSegBg",
     )
     val fg by animateColorAsState(
-        targetValue = if (active) AppColors.OnPrimary else AppColors.TextSecondary,
+        targetValue = when {
+            active -> AppColors.OnPrimary
+            !option.enabled -> AppColors.TextTertiary
+            else -> AppColors.TextSecondary
+        },
         animationSpec = Motion.normal(),
         label = "wizSegFg",
     )
@@ -779,7 +1026,7 @@ private fun WizSegment(
                 if (option.selected) onSelectedCoords?.invoke(coords)
             }
             .background(bg)
-            .clickable(onClick = option.onClick)
+            .clickable(enabled = option.enabled, onClick = option.onClick)
             .padding(horizontal = 14.dp, vertical = 13.dp),
     ) {
         Text(
@@ -803,13 +1050,14 @@ private fun BackCell(onClick: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
+        // 「返回」无底色，直接压在暗画布上，用反色近白保证可读。
         Icon(
             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
             contentDescription = null,
-            tint = AppColors.TextSecondary,
+            tint = AppColors.TextOnScrim,
             modifier = Modifier.size(15.dp),
         )
-        Text("返回", fontSize = 13.sp, color = AppColors.TextSecondary)
+        Text("返回", fontSize = 13.sp, color = AppColors.TextOnScrim)
     }
 }
 
