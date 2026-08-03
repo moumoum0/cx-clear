@@ -6,6 +6,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -30,6 +31,8 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
@@ -60,8 +63,8 @@ import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.cxclear.chats.ChatCondition
@@ -81,11 +84,11 @@ import kotlin.math.max
 import kotlin.math.roundToInt
 
 /**
- * 自动清理：策略列表 + 点击式创建向导。
+ * 自动清理：策略列表 + 点击式创建 / 编辑向导。
  *
- * 列表里每条策略是一句只读的话（开关 + 句子 + 删除）；改动即时落盘（[onConfigChange]），
- * 没有「保存」按钮。新建走全屏分步向导——每步只列几个可点选项，当前最右列末尾一个「返回」上一层，
- * 一路点到「保存」才把这条策略落进列表，中途「返回」不改动已有策略。
+ * 列表里每条策略是一张卡片（标题 + 条件句子 + 编辑 + 开关）；长按卡片弹出删除。
+ * 改动即时落盘（[onConfigChange]）。新建 / 编辑都走全屏分步向导——每步只列几个可点选项，
+ * 当前最右列末尾一个「返回」上一层，一路点到「保存」才落盘，中途「返回」不改动已有策略。
  */
 @Composable
 internal fun ChatsAutoPane(
@@ -97,11 +100,40 @@ internal fun ChatsAutoPane(
     // 新建第一步：先给策略起名。填完名再把向导推进全窗浮层。
     var namingForNew by remember { mutableStateOf(false) }
 
+    fun openWizard(
+        ruleName: String,
+        initial: RetentionRule? = null,
+        onSave: (List<ChatCondition>, ConditionJoin) -> Unit,
+    ) {
+        // 浮层内容挂到根部渲染，scrim 已挡住列表，这里对 config 的快照在浮层存续期间不会变。
+        overlayHost.show {
+            WizardOverlay(
+                ruleName = ruleName,
+                initialConditions = initial?.conditions.orEmpty(),
+                initialJoin = initial?.join ?: ConditionJoin.AND,
+                onDismiss = { overlayHost.hide() },
+                onSave = onSave,
+            )
+        }
+    }
+
     Box(modifier = modifier.fillMaxSize()) {
         RuleListView(
             config = config,
             onConfigChange = onConfigChange,
             onNewRule = { namingForNew = true },
+            onEditRule = { rule ->
+                openWizard(ruleName = rule.name.ifBlank { "未命名策略" }, initial = rule) { conditions, join ->
+                    onConfigChange(
+                        config.copy(
+                            rules = config.rules.map {
+                                if (it.id == rule.id) it.copy(conditions = conditions, join = join) else it
+                            },
+                        ),
+                    )
+                    overlayHost.hide()
+                }
+            },
         )
     }
 
@@ -110,23 +142,16 @@ internal fun ChatsAutoPane(
             onDismiss = { namingForNew = false },
             onConfirm = { name ->
                 namingForNew = false
-                // 浮层内容挂到根部渲染，scrim 已挡住列表，这里对 config 的快照在浮层存续期间不会变。
-                overlayHost.show {
-                    WizardOverlay(
-                        ruleName = name,
-                        onDismiss = { overlayHost.hide() },
-                        onSave = { conditions, join ->
-                            val rule = RetentionRule(
-                                id = newRuleId(config.rules.map { it.id }),
-                                name = name,
-                                enabled = false,
-                                join = join,
-                                conditions = conditions,
-                            )
-                            onConfigChange(config.copy(rules = config.rules + rule))
-                            overlayHost.hide()
-                        },
+                openWizard(ruleName = name) { conditions, join ->
+                    val rule = RetentionRule(
+                        id = newRuleId(config.rules.map { it.id }),
+                        name = name,
+                        enabled = false,
+                        join = join,
+                        conditions = conditions,
                     )
+                    onConfigChange(config.copy(rules = config.rules + rule))
+                    overlayHost.hide()
                 }
             },
         )
@@ -198,10 +223,14 @@ private fun NameRuleDialog(
 @Composable
 private fun WizardOverlay(
     ruleName: String,
+    initialConditions: List<ChatCondition> = emptyList(),
+    initialJoin: ConditionJoin = ConditionJoin.AND,
     onDismiss: () -> Unit,
     onSave: (List<ChatCondition>, ConditionJoin) -> Unit,
 ) {
-    var draft by remember { mutableStateOf(Draft()) }
+    var draft by remember {
+        mutableStateOf(draftFromExisting(initialConditions, initialJoin))
+    }
     Box(modifier = Modifier.fillMaxSize()) {
         // 编辑区收回原内容区：左让开侧栏、上让开标题栏，内侧再留一圈与原来一致的边距。
         Box(
@@ -278,11 +307,15 @@ private fun presetsFor(kind: ConditionValueKind): List<Int> = when (kind) {
 // 只读句子
 // ─────────────────────────────────────────────
 
-/** 一条已建好的策略读成一句话：「删除 未更新超过 30 天 且 大小超过 10 MB」。 */
+/**
+ * 一条已建好的策略读成一句话：「未更新超过 30 天 且 大小超过 10 MB」。
+ *
+ * 不带「删除」前缀——列表里每条都顶着同一个词，零信息量还挤掉真正要看的条件。
+ */
 private fun ruleSentence(rule: RetentionRule): String {
-    if (rule.conditions.isEmpty()) return "删除（无条件）"
+    if (rule.conditions.isEmpty()) return "无条件"
     val parts = rule.conditions.map { readableCondition(it) }
-    return "删除 " + parts.joinToString(" ${rule.join.label} ")
+    return parts.joinToString(" ${rule.join.label} ")
 }
 
 private fun readableCondition(c: ChatCondition): String = when (c.type.kind) {
@@ -347,6 +380,7 @@ private fun RuleListView(
     config: RetentionConfig,
     onConfigChange: (RetentionConfig) -> Unit,
     onNewRule: () -> Unit,
+    onEditRule: (RetentionRule) -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
         if (config.rules.isEmpty()) {
@@ -355,7 +389,8 @@ private fun RuleListView(
             LazyColumn(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .weight(1f),
+                    .weight(1f)
+                    .padding(vertical = AppDimensions.SpacingSmall.dp),
                 verticalArrangement = Arrangement.spacedBy(AppDimensions.SpacingSmall.dp),
             ) {
                 items(
@@ -363,7 +398,7 @@ private fun RuleListView(
                     key = { index -> config.rules[index].id },
                 ) { index ->
                     val rule = config.rules[index]
-                    RuleRow(
+                    RuleCard(
                         rule = rule,
                         onToggle = { on ->
                             onConfigChange(
@@ -374,6 +409,7 @@ private fun RuleListView(
                                 )
                             )
                         },
+                        onEdit = { onEditRule(rule) },
                         onDelete = {
                             onConfigChange(
                                 config.copy(rules = config.rules.filterNot { it.id == rule.id })
@@ -387,46 +423,93 @@ private fun RuleListView(
     }
 }
 
-/** 一条只读策略：左开关，中间一句话，右删除。改条件要删了重建（向导里点更快）。 */
+/**
+ * 一条策略卡片：标题 + 条件详情，右侧「编辑」与开关；长按弹出删除。
+ * 卡片外形对齐手动管理里的分组卡（圆角 Surface 容器）。
+ */
 @Composable
-private fun RuleRow(
+private fun RuleCard(
     rule: RetentionRule,
     onToggle: (Boolean) -> Unit,
+    onEdit: () -> Unit,
     onDelete: () -> Unit,
 ) {
-    Row(
+    var menuExpanded by remember { mutableStateOf(false) }
+    // 名称是列表主标识；旧配置/迁移出来的空名用「未命名策略」，详情仍走条件句子。
+    val title = rule.name.ifBlank { "未命名策略" }
+    val detail = ruleSentence(rule)
+
+    Box(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(AppDimensions.Radius.dp))
             .background(AppColors.Surface2)
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Switch(
-            checked = rule.enabled,
-            onCheckedChange = onToggle,
-            colors = SwitchDefaults.colors(
-                checkedThumbColor = AppColors.OnPrimary,
-                checkedTrackColor = AppColors.Primary,
+            .combinedClickable(
+                onClick = {},
+                onLongClick = { menuExpanded = true },
             ),
-        )
-        Spacer(Modifier.width(12.dp))
-        // 名称是唯一可读标识；旧配置/迁移出来的空名规则用条件句子兜底，避免出现空行。
-        Text(
-            rule.name.ifBlank { ruleSentence(rule) },
-            fontSize = 13.sp,
-            color = AppColors.TextPrimary,
-            modifier = Modifier.weight(1f),
-        )
-        Spacer(Modifier.width(8.dp))
-        Icon(
-            imageVector = Icons.Filled.Delete,
-            contentDescription = "删除策略",
-            tint = AppColors.TextTertiary,
+    ) {
+        Row(
             modifier = Modifier
-                .size(16.dp)
-                .clickable(onClick = onDelete),
-        )
+                .fillMaxWidth()
+                .padding(start = 12.dp, end = 8.dp, top = 10.dp, bottom = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            // 标题与条件句竖排：条件句是这条策略真正要看的东西，不跟名字抢同一行宽度。
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    title,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = AppColors.TextPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(Modifier.height(3.dp))
+                Text(
+                    detail,
+                    fontSize = 12.sp,
+                    color = AppColors.TextSecondary,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Spacer(Modifier.width(8.dp))
+            TextButton(onClick = onEdit) {
+                Text("编辑", fontSize = 13.sp, color = AppColors.TextSecondary)
+            }
+            Switch(
+                checked = rule.enabled,
+                onCheckedChange = onToggle,
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = AppColors.OnPrimary,
+                    checkedTrackColor = AppColors.Primary,
+                ),
+            )
+        }
+        DropdownMenu(
+            expanded = menuExpanded,
+            onDismissRequest = { menuExpanded = false },
+            containerColor = AppColors.Surface1,
+        ) {
+            DropdownMenuItem(
+                text = {
+                    Text("删除", fontSize = 13.sp, color = AppColors.Error)
+                },
+                onClick = {
+                    menuExpanded = false
+                    onDelete()
+                },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Filled.Delete,
+                        contentDescription = null,
+                        tint = AppColors.Error,
+                        modifier = Modifier.size(16.dp),
+                    )
+                },
+            )
+        }
     }
 }
 
@@ -471,6 +554,20 @@ private fun AttrSpec.typeFor(larger: Boolean?): ChatConditionType =
 private fun pathOf(condition: ChatCondition): Pair<AttrSpec, Boolean?> {
     val attr = attrFor(condition.type)
     return attr to if (attr.isNumeric) condition.type == attr.larger else null
+}
+
+/** 把已有策略条件还原成向导草稿，落在「且 / 或 / 保存」列，便于接着改或直接保存。 */
+private fun draftFromExisting(conditions: List<ChatCondition>, join: ConditionJoin): Draft {
+    if (conditions.isEmpty()) return Draft(join = join)
+    val last = conditions.last()
+    val (attr, larger) = pathOf(last)
+    return Draft(
+        committed = conditions,
+        join = join,
+        attr = attr,
+        larger = larger,
+        showCombine = true,
+    )
 }
 
 /**
@@ -556,9 +653,19 @@ private fun WizardView(
     }
 
     // 每一轮有稳定 id：点「且」后旧轮只把 locked 打开，不换 composable / key，才不会闪一下。
-    val committedRoundIds = remember { mutableStateListOf<Int>() }
-    var buildingRoundId by remember { mutableIntStateOf(0) }
-    var nextRoundId by remember { mutableIntStateOf(1) }
+    // 编辑已有策略时草稿可能已带条件，按当前草稿预置 id，避免 building 与 frozen 撞 key。
+    val initialFrozenCount = if (draft.showCombine) {
+        (draft.committed.size - 1).coerceAtLeast(0)
+    } else {
+        draft.committed.size
+    }
+    val committedRoundIds = remember {
+        mutableStateListOf<Int>().also { list ->
+            repeat(initialFrozenCount) { list.add(it) }
+        }
+    }
+    var buildingRoundId by remember { mutableIntStateOf(initialFrozenCount) }
+    var nextRoundId by remember { mutableIntStateOf(initialFrozenCount + 1) }
 
     fun applyDraft(newDraft: Draft) {
         val oldSize = draft.committed.size
@@ -919,6 +1026,9 @@ private fun RoundSlot(
     fun colEditable(columnIndex: Int): Boolean =
         !locked && columnIndex >= depth - 1
 
+    // 已定稿的轮整体降一档重量，焦点留给当前轮。
+    val roundWeight = if (locked) WizWeight.DIMMED else WizWeight.ACTIVE
+
     // 一轮收成一个 Row：外层只挂一个带 key 的节点，锁定时不拆成多列兄弟重排。
     Row(horizontalArrangement = Arrangement.spacedBy(AppDimensions.SpacingMedium.dp)) {
         WizColumn {
@@ -932,6 +1042,7 @@ private fun RoundSlot(
                         onDraftChange(draft.copy(attr = spec, larger = null, showCombine = false))
                     }
                 },
+                weight = roundWeight,
                 onSegmentHeight = onSegmentHeight,
             )
             if (!locked && attr == null) {
@@ -967,6 +1078,7 @@ private fun RoundSlot(
                                 onDraftChange(draft.copy(larger = isLarger, showCombine = false))
                             }
                         },
+                        weight = roundWeight,
                         onSegmentHeight = onSegmentHeight,
                     )
                 },
@@ -1073,6 +1185,8 @@ private fun RoundValueColumn(
     rowTopInWindow: Float,
 ) {
     val type = attr.typeFor(larger)
+    // 锁定 = 这一轮已定稿，选中段走淡填充，把焦点让给当前轮。
+    val weight = if (locked) WizWeight.DIMMED else WizWeight.ACTIVE
 
     fun commit(next: ChatCondition) {
         if (locked) return
@@ -1108,6 +1222,7 @@ private fun RoundValueColumn(
                             commit(ChatCondition(type = type, number = n))
                         }
                     },
+                    weight = weight,
                     onSegmentHeight = onSegmentHeight,
                     onSelectedCoords = { reportCenter(it) },
                 )
@@ -1134,6 +1249,7 @@ private fun RoundValueColumn(
                         commit(ChatCondition(type = type, text = tool.id))
                     }
                 },
+                weight = weight,
                 onSegmentHeight = onSegmentHeight,
                 onSelectedCoords = { reportCenter(it) },
             )
@@ -1144,6 +1260,7 @@ private fun RoundValueColumn(
                         options = listOf(
                             WizOption("「${chosen.text}」", selected = true, enabled = false) {},
                         ),
+                        weight = weight,
                     )
                 } else {
                     key(type) {
@@ -1184,12 +1301,22 @@ private data class WizOption(
 )
 
 /**
+ * 一列的视觉重量。
+ *
+ * [ACTIVE] 是正在点的那一轮：选中段主色实心，抢眼。
+ * [DIMMED] 是已定稿、锁住的轮：选中段改成 primaryContainer 淡填充，
+ * 路径仍看得见，但焦点让给当前轮——否则定稿的和在编辑的一样亮，看不出正在改哪条。
+ */
+private enum class WizWeight { ACTIVE, DIMMED }
+
+/**
  * 竖向连体分段，视觉对齐顶栏手动/自动切换：
  * 共享一圈描边、未选段浅底、选中段主色填充、段间分隔线；仍是文字、仍是竖排。
  */
 @Composable
 private fun WizSegmented(
     options: List<WizOption>,
+    weight: WizWeight = WizWeight.ACTIVE,
     onSegmentHeight: ((Float) -> Unit)? = null,
     onSelectedCoords: ((LayoutCoordinates) -> Unit)? = null,
 ) {
@@ -1216,6 +1343,7 @@ private fun WizSegmented(
                 }
                 WizSegment(
                     option = option,
+                    weight = weight,
                     onSegmentHeight = if (index == 0) onSegmentHeight else null,
                     onSelectedCoords = onSelectedCoords,
                 )
@@ -1227,17 +1355,24 @@ private fun WizSegmented(
 @Composable
 private fun WizSegment(
     option: WizOption,
+    weight: WizWeight = WizWeight.ACTIVE,
     onSegmentHeight: ((Float) -> Unit)? = null,
     onSelectedCoords: ((LayoutCoordinates) -> Unit)? = null,
 ) {
     val active = option.selected
+    val dimmed = weight == WizWeight.DIMMED
     val bg by animateColorAsState(
-        targetValue = if (active) AppColors.Primary else AppColors.Surface3,
+        targetValue = when {
+            active && dimmed -> AppColors.PrimaryContainer
+            active -> AppColors.Primary
+            else -> AppColors.Surface3
+        },
         animationSpec = Motion.normal(),
         label = "wizSegBg",
     )
     val fg by animateColorAsState(
         targetValue = when {
+            active && dimmed -> AppColors.TextSecondary
             active -> AppColors.OnPrimary
             !option.enabled -> AppColors.TextTertiary
             else -> AppColors.TextSecondary
@@ -1392,39 +1527,32 @@ private fun CustomTextCell(
 // 空态 + 新建入口
 // ─────────────────────────────────────────────
 
+/**
+ * 空态：一条策略都没有。
+ *
+ * 不用灰底骨架——这里不是加载中，摆两条假卡片只会让人以为已经有策略了。
+ * 直说没有，并交代策略是干什么的，下面就是「新建策略」入口。
+ */
 @Composable
 private fun EmptyRuleList(modifier: Modifier = Modifier) {
     Column(
         modifier = modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(AppDimensions.SpacingSmall.dp),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        // 骨架与真实策略行同形：开关 + 一行句子，数据到位时原地填充。
-        repeat(2) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(AppDimensions.Radius.dp))
-                    .background(AppColors.Surface2)
-                    .padding(horizontal = 12.dp, vertical = 14.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                SkeletonBox(width = 34.dp, height = 18.dp)
-                Spacer(Modifier.width(12.dp))
-                SkeletonBox(width = 180.dp, height = 18.dp)
-            }
-        }
+        Text(
+            "还没有自动清理策略",
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Medium,
+            color = AppColors.TextSecondary,
+        )
+        Spacer(Modifier.height(6.dp))
+        Text(
+            "策略按条件自动删除对话记录，例如「未更新超过 30 天」",
+            fontSize = 12.sp,
+            color = AppColors.TextTertiary,
+        )
     }
-}
-
-@Composable
-private fun SkeletonBox(width: Dp, height: Dp) {
-    Box(
-        Modifier
-            .width(width)
-            .height(height)
-            .clip(RoundedCornerShape(AppDimensions.RadiusFull.dp))
-            .background(AppColors.Surface3),
-    )
 }
 
 @Composable

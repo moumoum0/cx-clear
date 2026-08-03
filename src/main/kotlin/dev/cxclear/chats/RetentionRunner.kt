@@ -1,14 +1,14 @@
 package dev.cxclear.chats
 
+import dev.cxclear.storage.AppPreferences
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /**
- * 自动保留执行器：应用启动与进入对话页时各跑一次。
+ * 自动保留执行器：对话页拿到全量会话后跑一次（闸门在 [ChatScanCache.autoRunDone]）。
  * 只在有生效规则时运行；不后台驻留，不定时触发。
  *
- * 需要传入当前已扫描的会话列表：如果页面还没扫描，传空列表则什么都不做，
- * 等用户刷新后再根据新列表执行。
+ * 需要传入当前已扫描的会话列表：如果页面还没扫描，传空列表则什么都不做。
  */
 object RetentionRunner {
     /**
@@ -22,8 +22,10 @@ object RetentionRunner {
         sessions: List<ChatSessionSummary>,
         nowMillis: Long = System.currentTimeMillis(),
     ): ChatDeleteResult {
-        val config = withContext(Dispatchers.IO) { RetentionStore.read() }
-        if (!config.isActive() || sessions.isEmpty()) {
+        val (config, prefs) = withContext(Dispatchers.IO) {
+            RetentionStore.read() to AppPreferences.read()
+        }
+        if (!prefs.autoCleanEnabled || !config.isActive() || sessions.isEmpty()) {
             return ChatDeleteResult(deletedSessions = 0, freedBytes = 0L)
         }
         val targets = config.match(sessions, nowMillis)

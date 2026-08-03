@@ -108,6 +108,8 @@ fun FlipBytesText(
 
 /**
  * 整数个数的翻转显示，节奏与 [FlipBytesText] 相同。
+ *
+ * [onSettled] 在显示值追上目标并完成本轮翻牌后回调，供加载态等「播完再切」使用。
  */
 @Composable
 fun FlipCountText(
@@ -116,9 +118,11 @@ fun FlipCountText(
     color: Color,
     fontWeight: FontWeight = FontWeight.Normal,
     modifier: Modifier = Modifier,
+    onSettled: ((settled: Int) -> Unit)? = null,
 ) {
     var displayed by remember { mutableIntStateOf(count) }
     val latestCount by rememberUpdatedState(count)
+    val onSettledState by rememberUpdatedState(onSettled)
 
     LaunchedEffect(Unit) {
         while (true) {
@@ -126,6 +130,7 @@ fun FlipCountText(
                 displayed = latestCount
                 delay(Motion.FlipMs.toLong())
             } else {
+                onSettledState?.invoke(displayed)
                 snapshotFlow { latestCount }.first { it != displayed }
             }
         }

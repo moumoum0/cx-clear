@@ -62,6 +62,7 @@ import org.jetbrains.compose.resources.DrawableResource
 import org.jetbrains.compose.resources.painterResource
 import dev.cxclear.model.TargetKey
 import dev.cxclear.profiles.ALL_PROFILES
+import dev.cxclear.storage.AppPreferences
 import dev.cxclear.storage.CleanHistory
 import dev.cxclear.storage.DailyClean
 import dev.cxclear.storage.DiskUsage
@@ -105,7 +106,10 @@ fun MainContent(
     currentScreen: Screen,
     modifier: Modifier = Modifier,
 ) {
-    var selectedTools by remember { mutableStateOf(setOf("codex")) }
+    val initialPrefs = remember { AppPreferences.read() }
+    var selectedTools by remember {
+        mutableStateOf(initialPrefs.defaultTools.ifEmpty { setOf("codex") })
+    }
     var scanPhase by remember { mutableStateOf(ScanPhase.IDLE) }
     var scanCategories by remember { mutableStateOf(emptyList<ScanCategory>()) }
     var selectedTargets by remember { mutableStateOf(emptySet<TargetKey>()) }
@@ -201,22 +205,13 @@ fun MainContent(
         .filter { it.key in selectedTargets }
         .sumOf { it.bytes }
 
-    // CHATS 自带与扫描页同构的 TopBar + 内容卡外壳；SETTINGS 仍是占位全屏卡。
+    // CHATS / SETTINGS 自带与扫描页同构的 TopBar + 内容卡外壳。
     if (currentScreen == Screen.CHATS) {
         ChatsView(modifier = modifier)
         return
     }
     if (currentScreen == Screen.SETTINGS) {
-        Box(
-            modifier = modifier
-                .fillMaxSize()
-                .background(AppColors.Surface1)
-                .clip(RoundedCornerShape(AppDimensions.Radius.dp))
-                .background(AppColors.Surface2, RoundedCornerShape(AppDimensions.Radius.dp)),
-            contentAlignment = Alignment.Center,
-        ) {
-            SettingsView()
-        }
+        SettingsView(modifier = modifier)
         return
     }
 
@@ -1038,15 +1033,6 @@ private fun StorageCylinder(
             topLeft = Offset(left, 0f),
             size = Size(cylinderWidth, capHeight),
         )
-    }
-}
-
-@Composable
-private fun SettingsView() {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text("设置", fontSize = 18.sp, color = AppColors.TextSecondary, fontWeight = FontWeight.Medium)
-        Spacer(modifier = Modifier.height(8.dp))
-        Text("即将推出", fontSize = 14.sp, color = AppColors.TextTertiary)
     }
 }
 

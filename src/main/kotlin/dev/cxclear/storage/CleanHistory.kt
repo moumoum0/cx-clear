@@ -1,6 +1,5 @@
 package dev.cxclear.storage
 
-import dev.cxclear.profiles.homeDir
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption
@@ -25,10 +24,7 @@ data class DailyClean(val date: LocalDate, val bytes: Long)
 object CleanHistory {
     private const val FILE_NAME = "clean-history.csv"
 
-    private fun file(): Path? {
-        val home = homeDir() ?: return null
-        return home.resolve(".cxclear").resolve(FILE_NAME)
-    }
+    private fun file(): Path? = AppDir.dir()?.resolve(FILE_NAME)
 
     /** 追加一条记录。freedBytes <= 0 不记（没删掉东西不算一次有效清理）。 */
     fun append(freedBytes: Long, epochMillis: Long = System.currentTimeMillis()) {
@@ -60,6 +56,12 @@ object CleanHistory {
     }
 
     fun totalBytes(): Long = readAll().sumOf { it.freedBytes }
+
+    /** 清空累计历史。文件不存在也视为成功。 */
+    fun clear() {
+        val path = file() ?: return
+        runCatching { Files.deleteIfExists(path) }
+    }
 
     /**
      * 按天聚合，只返回有清理记录的天，按日期升序（最新在末尾，柱状图从左到右即时间顺序）。

@@ -1,6 +1,6 @@
 package dev.cxclear.chats
 
-import dev.cxclear.profiles.homeDir
+import dev.cxclear.storage.AppDir
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption
@@ -24,8 +24,7 @@ object RetentionStore {
     private const val MAX_RULES = 50
     private const val MAX_CONDITIONS = 20
 
-    private fun file(): Path? =
-        homeDir()?.resolve(".cxclear")?.resolve(FILE_NAME)
+    private fun file(): Path? = AppDir.dir()?.resolve(FILE_NAME)
 
     // ─────────────────────────────────────────
     // 转义

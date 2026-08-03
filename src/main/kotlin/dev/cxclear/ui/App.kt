@@ -20,6 +20,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
@@ -28,6 +29,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.WindowPlacement
 import androidx.compose.ui.window.WindowScope
 import androidx.compose.ui.window.WindowState
+import dev.cxclear.storage.AppPreferences
 import dev.cxclear.ui.components.AppTitleBar
 import dev.cxclear.ui.components.MainContent
 import dev.cxclear.ui.components.Sidebar
@@ -35,9 +37,24 @@ import dev.cxclear.ui.theme.AppColors
 import dev.cxclear.ui.theme.AppDimensions
 import dev.cxclear.ui.theme.AppTheme
 import dev.cxclear.ui.theme.Motion
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 enum class Screen {
     SCAN, CHATS, SETTINGS
+}
+
+fun Screen.toPrefId(): String = when (this) {
+    Screen.SCAN -> "scan"
+    Screen.CHATS -> "chats"
+    Screen.SETTINGS -> "settings"
+}
+
+fun screenFromPrefId(id: String): Screen = when (id) {
+    "chats" -> Screen.CHATS
+    "settings" -> Screen.SETTINGS
+    else -> Screen.SCAN
 }
 
 @Composable
@@ -45,7 +62,23 @@ fun WindowScope.App(
     windowState: WindowState,
     onCloseRequest: () -> Unit,
 ) {
-    var currentScreen by remember { mutableStateOf(Screen.SCAN) }
+    val scope = rememberCoroutineScope()
+    val initialPrefs = remember { AppPreferences.read() }
+    var currentScreen by remember {
+        mutableStateOf(
+            if (initialPrefs.rememberLastScreen) screenFromPrefId(initialPrefs.lastScreenId)
+            else Screen.SCAN
+        )
+    }
+
+    fun navigateTo(screen: Screen) {
+        currentScreen = screen
+        scope.launch {
+            withContext(Dispatchers.IO) {
+                AppPreferences.update { it.copy(lastScreenId = screen.toPrefId()) }
+            }
+        }
+    }
     val isMaximized = windowState.placement == WindowPlacement.Maximized
     val windowShape = if (isMaximized) {
         RoundedCornerShape(0.dp)
@@ -100,7 +133,7 @@ fun WindowScope.App(
             ) {
                 Sidebar(
                     currentScreen = currentScreen,
-                    onScreenChange = { currentScreen = it },
+                    onScreenChange = ::navigateTo,
                 )
 
                 MainContent(

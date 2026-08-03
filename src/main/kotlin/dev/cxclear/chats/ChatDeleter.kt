@@ -17,9 +17,13 @@ import java.nio.file.Files
 private fun profileForTool(tool: ChatTool): ToolProfile? =
     ALL_PROFILES.firstOrNull { it.id == tool.id }
 
-private fun isToolRunning(tool: ChatTool): Boolean {
-    val profile = profileForTool(tool) ?: return false
-    return isToolProcessRunning(profile)
+/**
+ * 默认的运行检测：查得到 profile 才检测，查不到一律当作未运行
+ * （对话页只支持 Codex / Claude，两者都有 profile）。
+ */
+internal val defaultChatToolIsRunning: (ChatTool) -> Boolean = { tool ->
+    val profile = profileForTool(tool)
+    if (profile == null) false else isToolProcessRunning(profile)
 }
 
 // ─────────────────────────────────────────────
@@ -36,30 +40,24 @@ private fun isToolRunning(tool: ChatTool): Boolean {
  *
  * 返回实际释放字节数（只计已删文件）。
  */
-suspend fun deleteSession(session: ChatSessionSummary): ChatDeleteResult = withContext(Dispatchers.IO) {
-    if (isToolRunning(session.tool)) {
-        return@withContext ChatDeleteResult(
-            deletedSessions = 0,
-            freedBytes = 0L,
-            blockedTools = listOf(session.tool.displayName),
-        )
-    }
-    deleteSessions(listOf(session))
-}
+suspend fun deleteSession(
+    session: ChatSessionSummary,
+    toolIsRunning: (ChatTool) -> Boolean = defaultChatToolIsRunning,
+): ChatDeleteResult = deleteSessions(listOf(session), toolIsRunning)
 
 /**
  * 批量删除。先对每个工具做进程检测，命中的工具整批跳过。
  * 工具未运行的会话继续逐条删除。
  */
-suspend fun deleteSessions(sessions: List<ChatSessionSummary>): ChatDeleteResult = withContext(Dispatchers.IO) {
-    val blockedTools = sessions.map { it.tool }.distinct()
-        .filter { isToolRunning(it) }
-        .map { it.displayName }
-
-    val blockedToolIds = sessions.map { it.tool }.distinct()
-        .filter { isToolRunning(it) }
-        .map { it.id }
-        .toSet()
+suspend fun deleteSessions(
+    sessions: List<ChatSessionSummary>,
+    toolIsRunning: (ChatTool) -> Boolean = defaultChatToolIsRunning,
+): ChatDeleteResult = withContext(Dispatchers.IO) {
+    // 每个工具只检测一次：进程枚举有成本，且两次检测结果可能不一致，
+    // 那会让「报告为阻断」与「实际跳过」对不上。
+    val blocked = sessions.map { it.tool }.distinct().filter(toolIsRunning)
+    val blockedTools = blocked.map { it.displayName }
+    val blockedToolIds = blocked.map { it.id }.toSet()
 
     val toDelete = sessions.filter { it.tool.id !in blockedToolIds }
 

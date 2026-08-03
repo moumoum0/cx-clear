@@ -43,6 +43,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.cxclear.chats.ChatScanCache
 import dev.cxclear.chats.ChatSessionSummary
 import dev.cxclear.chats.ChatTool
 import dev.cxclear.chats.RetentionConfig
@@ -50,6 +51,7 @@ import dev.cxclear.chats.RetentionRunner
 import dev.cxclear.chats.RetentionStore
 import dev.cxclear.chats.scanAllChatSessions
 import dev.cxclear.scan.formatBytes
+import dev.cxclear.storage.AppPreferences
 import dev.cxclear.storage.CleanHistory
 import dev.cxclear.resources.Res
 import dev.cxclear.resources.claude
@@ -61,7 +63,6 @@ import dev.cxclear.ui.theme.Motion
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
@@ -84,23 +85,44 @@ private fun resolveTools(filter: String): Set<ChatTool> = when (filter) {
     else -> ChatTool.entries.filter { it.id == filter }.toSet()
 }
 
+/** 从全量缓存裁出当前筛选要展示的会话。 */
+private fun filterCachedSessions(
+    sessions: List<ChatSessionSummary>,
+    filter: String,
+): List<ChatSessionSummary> {
+    val tools = resolveTools(filter)
+    if (tools.size == ChatTool.entries.size) return sessions
+    return sessions.filter { it.tool in tools }
+}
+
 @Composable
 fun ChatsView(modifier: Modifier = Modifier) {
     val scope = rememberCoroutineScope()
+    val initialPrefs = remember { AppPreferences.read() }
 
-    var mode by remember { mutableStateOf(ChatsMode.MANUAL) }
+    var mode by remember {
+        mutableStateOf(
+            if (initialPrefs.defaultChatsMode == "auto") ChatsMode.AUTO else ChatsMode.MANUAL
+        )
+    }
     var selectedTool by remember { mutableStateOf(TOOL_FILTER_ALL) }
 
     var config by remember { mutableStateOf(RetentionConfig()) }
 
-    var viewState by remember { mutableStateOf(ViewState.IDLE) }
-    var allSessions by remember { mutableStateOf<List<ChatSessionSummary>>(emptyList()) }
-    var foundCount by remember { mutableIntStateOf(0) }
-    // 删除完成后自增，触发下面的扫描 LaunchedEffect 重跑（清单必须重扫，不能就地改）。
+    // 有进程缓存时直接进结果态，避免切页回来再闪一遍扫描。
+    val cachedOnEnter = remember { ChatScanCache.snapshot() }
+    var viewState by remember {
+        mutableStateOf(if (cachedOnEnter != null) ViewState.SCAN_DONE else ViewState.IDLE)
+    }
+    var allSessions by remember {
+        mutableStateOf(cachedOnEnter ?: emptyList())
+    }
+    var foundCount by remember { mutableIntStateOf(cachedOnEnter?.size ?: 0) }
+    // 删除完成后 invalidate 缓存并自增，触发下面的扫描 LaunchedEffect 重跑
+    //（清单必须重扫，不能就地改）。
     var rescanToken by remember { mutableIntStateOf(0) }
 
-    // 自动清理每个进程只跑一次；删完用一条提示交代，自动删除不该静默发生。
-    var autoRunDone by remember { mutableStateOf(false) }
+    // 自动清理提示；闸门在 ChatScanCache.autoRunDone，不因导航重置。
     var autoNotice by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) {
@@ -114,54 +136,58 @@ fun ChatsView(modifier: Modifier = Modifier) {
         scope.launch { withContext(Dispatchers.IO) { RetentionStore.write(updated) } }
     }
 
-    // 进入手动模式 / 切换工具筛选时自动扫，不再依赖按钮。
-    LaunchedEffect(selectedTool, mode, rescanToken) {
-        if (mode != ChatsMode.MANUAL) return@LaunchedEffect
-        val tools = resolveTools(selectedTool)
-        if (tools.isEmpty()) return@LaunchedEffect
-        viewState = ViewState.SCANNING
-        foundCount = 0
-        // worker 边扫边累加；UI 按固定节拍读快照，扫完立刻再推一次收尾。
-        val latestCount = AtomicInteger(0)
-        var firstPublishAtNanos = -1L
-        val sessions = coroutineScope {
-            val job = async(Dispatchers.IO) {
-                scanAllChatSessions(tools) { count, _ -> latestCount.set(count) }
-            }
-            while (true) {
-                val finished = withTimeoutOrNull(SCAN_SNAPSHOT_INTERVAL_MS) {
-                    job.join()
-                    true
-                } == true
-                foundCount = latestCount.get()
-                if (firstPublishAtNanos < 0L) firstPublishAtNanos = System.nanoTime()
-                if (finished) break
-            }
-            job.await()
-        }
-        // 最短撑到首次推数后的翻牌播完，避免扫太快时加载态被结果页掐断。
-        val flipMs = Motion.FlipMs.toLong()
-        val remainingFlipMs = if (firstPublishAtNanos < 0L) {
-            flipMs
-        } else {
-            val elapsedMs = (System.nanoTime() - firstPublishAtNanos) / 1_000_000L
-            (flipMs - elapsedMs).coerceAtLeast(0L)
-        }
-        if (remainingFlipMs > 0L) delay(remainingFlipMs)
-        allSessions = sessions
-        viewState = ViewState.SCAN_DONE
+    // 进入手动模式时：有缓存直接用；无缓存或删除失效后才扫全量。
+    // 切工具筛选不重扫——展示层从全量缓存裁剪（与首页扫描页「换工具不抹结果」同哲学）。
+    // 默认落在自动页时也要跑完进程级扫描+自动清理，否则总开关永远摸不到会话。
+    LaunchedEffect(mode, rescanToken) {
+        if (mode != ChatsMode.MANUAL && ChatScanCache.autoRunDone) return@LaunchedEffect
 
+        val cached = ChatScanCache.snapshot()
+        if (cached != null) {
+            allSessions = cached
+            foundCount = cached.size
+            viewState = ViewState.SCAN_DONE
+        } else {
+            viewState = ViewState.SCANNING
+            foundCount = 0
+            // worker 边扫边累加；UI 按固定节拍读快照，扫完立刻再推一次收尾。
+            // 加载态是否离开由手动面板等翻牌 settle 后再切，这里不再按首次推数估算等待。
+            // 始终扫全集，保证缓存对任意筛选都完整；自动保留也因此能看到全量。
+            val latestCount = AtomicInteger(0)
+            val sessions = coroutineScope {
+                val job = async(Dispatchers.IO) {
+                    scanAllChatSessions(ChatTool.entries.toSet()) { count, _ ->
+                        latestCount.set(count)
+                    }
+                }
+                while (true) {
+                    val finished = withTimeoutOrNull(SCAN_SNAPSHOT_INTERVAL_MS) {
+                        job.join()
+                        true
+                    } == true
+                    foundCount = latestCount.get()
+                    if (finished) break
+                }
+                job.await()
+            }
+            ChatScanCache.update(sessions)
+            allSessions = sessions
+            viewState = ViewState.SCAN_DONE
+        }
+
+        val sessions = allSessions
         // 首次扫完按已保存的策略执行一次。每进程只跑一次：删完要重扫，
         // 若不加闸门，重扫又会触发执行，成为循环。
-        // 首次扫描必然发生在筛选为「所有」时（进页面的初始状态），执行器因此看到全量会话；
-        // 别把这段挪到筛选之后，否则筛了工具就只会删那个工具的会话。
-        if (!autoRunDone) {
-            autoRunDone = true
+        // 缓存始终是全量，执行器因此看到全部会话，与顶栏筛选无关。
+        if (!ChatScanCache.autoRunDone) {
+            ChatScanCache.markAutoRunDone()
+            val prefs = withContext(Dispatchers.IO) { AppPreferences.read() }
             val result = RetentionRunner.runIfNeeded(sessions)
             if (result.freedBytes > 0L) {
                 withContext(Dispatchers.IO) { CleanHistory.append(result.freedBytes) }
             }
             autoNotice = when {
+                !prefs.autoCleanNotify -> null
                 result.blockedTools.isNotEmpty() ->
                     "${result.blockedTools.joinToString("、")} 正在运行，自动清理已跳过其会话"
                 result.deletedSessions > 0 ->
@@ -169,11 +195,17 @@ fun ChatsView(modifier: Modifier = Modifier) {
                 else -> null
             }
             // 删过东西，当前清单已失效，必须重扫而不是就地改。
-            if (result.deletedSessions > 0) rescanToken++
+            if (result.deletedSessions > 0) {
+                ChatScanCache.invalidate()
+                rescanToken++
+            }
         }
     }
 
     val now = remember { Instant.now() }
+    val displayedSessions = remember(allSessions, selectedTool) {
+        filterCachedSessions(allSessions, selectedTool)
+    }
 
     Column(
         modifier = modifier
@@ -210,9 +242,12 @@ fun ChatsView(modifier: Modifier = Modifier) {
                     ChatsMode.MANUAL -> ManualPane(
                         viewState = viewState,
                         foundCount = foundCount,
-                        allSessions = allSessions,
+                        allSessions = displayedSessions,
                         nowMillis = now.toEpochMilli(),
-                        onRescan = { rescanToken++ },
+                        onRescan = {
+                            ChatScanCache.invalidate()
+                            rescanToken++
+                        },
                     )
                     ChatsMode.AUTO -> ChatsAutoPane(
                         modifier = Modifier.fillMaxSize(),

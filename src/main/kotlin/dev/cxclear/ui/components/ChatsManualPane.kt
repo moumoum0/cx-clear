@@ -47,6 +47,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TriStateCheckbox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -96,8 +97,15 @@ internal fun ChatsManualPane(
     onDeleted: (deleted: Int, freedBytes: Long) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    if (isScanning) {
-        ScanningIndicator(foundCount, modifier)
+    // 扫完后仍短暂留在加载态，直到翻牌显示值追上最终计数，避免播到一半被结果页掐断。
+    var settledFor by remember { mutableIntStateOf(foundCount) }
+    val showScanning = isScanning || settledFor != foundCount
+    if (showScanning) {
+        ScanningIndicator(
+            foundCount = foundCount,
+            onCountSettled = { settledFor = it },
+            modifier = modifier,
+        )
         return
     }
 
@@ -244,7 +252,11 @@ internal fun ChatsManualPane(
 // ─────────────────────────────────────────────
 
 @Composable
-private fun ScanningIndicator(foundCount: Int, modifier: Modifier = Modifier) {
+private fun ScanningIndicator(
+    foundCount: Int,
+    onCountSettled: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
     Box(
         modifier = modifier.fillMaxSize(),
         contentAlignment = Alignment.Center,
@@ -265,6 +277,7 @@ private fun ScanningIndicator(foundCount: Int, modifier: Modifier = Modifier) {
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Medium,
                     color = AppColors.TextPrimary,
+                    onSettled = onCountSettled,
                 )
                 Text(" 个", fontSize = 16.sp, fontWeight = FontWeight.Medium, color = AppColors.TextPrimary)
             }
