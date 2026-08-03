@@ -16,7 +16,7 @@
   <a href="https://www.jetbrains.com/lp/compose-multiplatform/">
     <img alt="Compose Desktop" src="https://img.shields.io/badge/Compose%20Desktop-Material%203-4285F4?style=flat&logo=jetpackcompose&logoColor=white"></a>
   <a href="./LICENSE">
-    <img alt="License" src="https://img.shields.io/badge/license-TBD-lightgrey?style=flat"></a>
+    <img alt="License" src="https://img.shields.io/badge/license-GPL--3.0-blue?style=flat"></a>
 
   Cx Clear 是面向 AI 编程工具的本地缓存清理工具。支持 Codex、Claude Code、Cursor，采用 Kotlin 与 Compose for Desktop / Material 3 构建。
 
@@ -102,6 +102,10 @@ Made with [contrib.rocks](https://contrib.rocks).
    <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=OWNER/cxclear&type=date&legend=top-left" />
  </picture>
 </a>
+
+## 开源协议
+
+本项目以 [GNU General Public License v3.0](./LICENSE) 发布。
 
 ## 致谢
 
