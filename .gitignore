@@ -1,28 +1,46 @@
 # Build output
 build/
 out/
+bin/
+
+# Packaged installers (may be copied out of build/)
+*.msi
+*.dmg
+*.exe
+*.deb
+*.rpm
 
 # Gradle
 .gradle/
+.gradle-user/
+local.properties
+
+# Kotlin compiler
+.kotlin/
 
 # IDE
 .idea/
 *.iml
 *.iws
 *.ipr
+.vscode/
+*.swp
+*~
 
 # OS
 .DS_Store
 Thumbs.db
+Desktop.ini
 
-# Kotlin compiler
-.kotlin/
-
-# Claude Code
-.claude/settings.local.json
+# JVM crash / heap dumps
+hs_err_pid*
+replay_pid*
+*.hprof
 
 # Logs
 *.log
 
+# Local / personal project notes (not for the public repo)
 CLAUDE.md
-.gradle-user
+CLAUDE.local.md
+.claude/settings.local.json
