@@ -3,6 +3,7 @@ package dev.cxclear.ui.components
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -32,6 +33,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -41,6 +43,7 @@ import androidx.compose.ui.unit.sp
 import dev.cxclear.AppMeta
 import dev.cxclear.resources.Res
 import dev.cxclear.resources.bilibili
+import dev.cxclear.resources.hex_knot_arrow
 import dev.cxclear.resources.ic_github
 import dev.cxclear.ui.theme.AppColors
 import org.jetbrains.compose.resources.DrawableResource
@@ -90,20 +93,20 @@ fun AboutView(
             horizontalAlignment = Alignment.CenterHorizontally,
             contentPadding = PaddingValues(vertical = 24.dp),
         ) {
-            // 应用图标 — 120dp / 12dp 圆角，与 selves 一致
+            // 应用图标 — 120dp / 12dp 圆角，细描边无底色
             item {
                 Box(
                     modifier = Modifier
                         .size(120.dp)
                         .clip(RoundedCornerShape(12.dp))
-                        .background(AppColors.PrimaryContainer),
+                        .border(1.dp, AppColors.Outline, RoundedCornerShape(12.dp)),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Text(
-                        text = "CX",
-                        style = MaterialTheme.typography.headlineLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = AppColors.Primary,
+                    Icon(
+                        painter = painterResource(Res.drawable.hex_knot_arrow),
+                        contentDescription = AppMeta.NAME,
+                        tint = Color.Unspecified,
+                        modifier = Modifier.size(72.dp),
                     )
                 }
                 Spacer(modifier = Modifier.height(24.dp))
@@ -164,21 +167,30 @@ fun AboutView(
                         HorizontalDivider(color = AppColors.Outline.copy(alpha = 0.5f))
                         Spacer(modifier = Modifier.height(12.dp))
 
-                        LinkRowImage(
-                            icon = Res.drawable.bilibili,
-                            label = "Bilibili",
-                            url = AppMeta.BILIBILI_URL,
-                        )
-                        LinkRowImage(
-                            icon = Res.drawable.ic_github,
-                            label = "GitHub",
-                            url = AppMeta.GITHUB_URL,
-                        )
-                        LinkRowVector(
-                            icon = Icons.Default.Group,
-                            label = "QQ 群",
-                            url = AppMeta.QQ_GROUP_URL,
-                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceEvenly,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            LinkRowImage(
+                                icon = Res.drawable.bilibili,
+                                label = "Bilibili",
+                                url = AppMeta.BILIBILI_URL,
+                                modifier = Modifier.weight(1f),
+                            )
+                            LinkRowImage(
+                                icon = Res.drawable.ic_github,
+                                label = "GitHub",
+                                url = AppMeta.GITHUB_URL,
+                                modifier = Modifier.weight(1f),
+                            )
+                            LinkRowVector(
+                                icon = Icons.Default.Group,
+                                label = "QQ 群",
+                                url = AppMeta.QQ_GROUP_URL,
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
                     }
                 }
                 Spacer(modifier = Modifier.height(24.dp))
@@ -221,14 +233,14 @@ private fun LinkRowImage(
     icon: DrawableResource,
     label: String,
     url: String,
+    modifier: Modifier = Modifier,
 ) {
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
+        modifier = modifier
             .clickable(enabled = url.isNotBlank()) { openUrl(url) }
             .padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
     ) {
         Image(
             painter = painterResource(icon),
@@ -238,7 +250,7 @@ private fun LinkRowImage(
         )
         Text(
             text = label,
-            style = MaterialTheme.typography.bodyLarge,
+            style = MaterialTheme.typography.bodyMedium,
             color = AppColors.TextPrimary,
         )
     }
@@ -249,14 +261,14 @@ private fun LinkRowVector(
     icon: ImageVector,
     label: String,
     url: String,
+    modifier: Modifier = Modifier,
 ) {
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
+        modifier = modifier
             .clickable(enabled = url.isNotBlank()) { openUrl(url) }
             .padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
     ) {
         Icon(
             imageVector = icon,
@@ -266,7 +278,7 @@ private fun LinkRowVector(
         )
         Text(
             text = label,
-            style = MaterialTheme.typography.bodyLarge,
+            style = MaterialTheme.typography.bodyMedium,
             color = AppColors.TextPrimary,
         )
     }

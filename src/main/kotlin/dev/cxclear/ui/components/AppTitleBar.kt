@@ -5,6 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -32,8 +33,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.WindowScope
+import dev.cxclear.resources.Res
+import dev.cxclear.resources.hex_knot_arrow
 import dev.cxclear.ui.theme.AppColors
 import dev.cxclear.ui.theme.AppDimensions
+import org.jetbrains.compose.resources.painterResource
 
 @Composable
 fun WindowScope.AppTitleBar(
@@ -63,7 +67,14 @@ fun WindowScope.AppTitleBar(
                     .fillMaxWidth()
                     .padding(horizontal = AppDimensions.SpacingMedium.dp),
                 verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
+                Icon(
+                    painter = painterResource(Res.drawable.hex_knot_arrow),
+                    contentDescription = null,
+                    tint = Color.Unspecified,
+                    modifier = Modifier.size(16.dp),
+                )
                 Text(
                     text = title,
                     fontSize = 13.sp,

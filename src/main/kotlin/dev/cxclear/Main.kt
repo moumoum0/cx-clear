@@ -6,7 +6,10 @@ import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
+import dev.cxclear.resources.Res
+import dev.cxclear.resources.hex_knot_arrow
 import dev.cxclear.ui.App
+import org.jetbrains.compose.resources.painterResource
 import java.awt.Dimension
 
 private fun configureHighDpiRendering() {
@@ -35,6 +38,7 @@ private fun startApplication() = application {
         undecorated = true,
         // 透明底才能露出圆角外的桌面，否则仍是方角黑/白底。
         transparent = true,
+        icon = painterResource(Res.drawable.hex_knot_arrow),
     ) {
         window.minimumSize = Dimension(856, 643)
         App(

@@ -53,6 +53,7 @@ compose.desktop {
                 upgradeUuid = "B5F8A2C1-3D4E-5F6A-7B8C-9D0E1F2A3B4C"
                 dirChooser = true
                 perUserInstall = true
+                iconFile.set(project.file("packaging/app_icon.ico"))
             }
         }
     }
