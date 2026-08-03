@@ -7,7 +7,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,7 +20,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -44,6 +42,8 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -55,9 +55,12 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onPlaced
+import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -289,6 +292,52 @@ private fun readableCondition(c: ChatCondition): String = when (c.type.kind) {
     ConditionValueKind.TEXT -> "${c.type.label}「${c.text}」"
 }
 
+/**
+ * 向导顶部简介：已定条件 + 正在点的那一条，随点选/输入即时刷新。
+ *
+ * [valuePreview] 是取值列里还没点确认的草稿（数字原文或文本）。
+ * 点了「且」、下一条还没选时，句子末尾立刻挂上「且」。
+ */
+private fun draftSentence(draft: Draft, valuePreview: String? = null): String {
+    // showCombine：末尾已定好；若正在重打自定义值，用预览替换末尾那句。
+    // 否则：committed 全是定稿，正在拼的在 attr/larger（+ 可选预览）上。
+    val finished = if (draft.showCombine) draft.committed.dropLast(1) else draft.committed
+    val tail = when {
+        draft.showCombine && valuePreview != null && draft.attr != null ->
+            pendingFragment(draft.attr, draft.larger, valuePreview)
+        draft.showCombine -> draft.committed.lastOrNull()?.let { readableCondition(it) }
+        else -> pendingFragment(draft.attr, draft.larger, valuePreview)
+    }
+    val parts = finished.map { readableCondition(it) } + listOfNotNull(tail)
+    if (parts.isEmpty()) return "删除"
+    val body = "删除 " + parts.joinToString(" ${draft.join.label} ")
+    // 点「且」后 attr 被清空、下一条还没起头：把连接词立刻挂上，别等选了属性才出现。
+    val awaitingNext = !draft.showCombine && finished.isNotEmpty() && tail == null
+    return if (awaitingNext) "$body ${draft.join.label}" else body
+}
+
+/** 正在拼、还没进 committed 的那半句；缺取值时只写到已选层级，不加省略号。 */
+private fun pendingFragment(attr: AttrSpec?, larger: Boolean?, valuePreview: String?): String? {
+    if (attr == null) return null
+    if (attr.isNumeric && larger == null) return attr.label
+    val type = attr.typeFor(larger)
+    val preview = valuePreview?.trim().orEmpty()
+    return when (type.kind) {
+        ConditionValueKind.DAYS, ConditionValueKind.MEGABYTES -> {
+            val n = preview.toIntOrNull()
+            if (n != null && n >= 1) "${type.label} $n ${type.kind.unit}"
+            else type.label
+        }
+        ConditionValueKind.TOOL -> {
+            val tool = ChatTool.entries.firstOrNull { it.id == preview || it.displayName == preview }
+            if (tool != null) "${type.label} ${tool.displayName}" else type.label
+        }
+        ConditionValueKind.TEXT -> {
+            if (preview.isNotEmpty()) "${type.label}「$preview」" else type.label
+        }
+    }
+}
+
 // ─────────────────────────────────────────────
 // 列表态：策略读成句子 + 新建入口
 // ─────────────────────────────────────────────
@@ -446,6 +495,16 @@ private fun Draft.isColumnEditable(columnIndex: Int): Boolean =
 
 private val ColumnWidth = 150.dp
 
+/** 向导里一轮条件的渲染条目；[id] 跨「且」稳定，用来保住 composition。 */
+private data class RoundEntry(
+    val id: Int,
+    val locked: Boolean,
+    val attr: AttrSpec?,
+    val larger: Boolean?,
+    val condition: ChatCondition?,
+    val priorTypes: List<ChatConditionType>,
+)
+
 private fun segmentedItemCenterY(index: Int, segH: Float, divH: Float): Float =
     index * (segH + divH) + segH / 2f
 
@@ -490,142 +549,179 @@ private fun WizardView(
     }
     var valueSelectedCenterY by remember { mutableFloatStateOf(Float.NaN) }
     var rowTopInWindow by remember { mutableFloatStateOf(Float.NaN) }
-
-    // 属性列右边那一列（数值属性→比较符列，工具/文本属性→取值列）是两个 call-site，
-    // 但视觉上占同一位置。共享一份动画状态，换属性时它能平滑滑过去而不是重播入场。
-    // 整列撤走（attr 清空）时复位，下次再出现重新走入场。
-    val col1Anim = remember { ColumnAnim() }
-    LaunchedEffect(draft.attr == null) {
-        if (draft.attr == null) col1Anim.reset()
+    // 取值列里尚未确认的输入，只用来刷新顶部简介；点预设/确认进 committed 后清掉。
+    var valuePreview by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(draft.attr, draft.larger, draft.showCombine) {
+        valuePreview = null
     }
 
-    val attrOptions = ATTRS.filter { spec -> spec.types.any { it !in draft.usedTypes } }
-    val attrIndex = attrOptions.indexOfFirst { it == draft.attr }
-    val attrCenterY = if (attrIndex >= 0) segmentedItemCenterY(attrIndex, segH, divH) else null
-    val attrEditable = draft.isColumnEditable(0)
-    val col1Editable = draft.isColumnEditable(1)
+    // 每一轮有稳定 id：点「且」后旧轮只把 locked 打开，不换 composable / key，才不会闪一下。
+    val committedRoundIds = remember { mutableStateListOf<Int>() }
+    var buildingRoundId by remember { mutableIntStateOf(0) }
+    var nextRoundId by remember { mutableIntStateOf(1) }
+
+    fun applyDraft(newDraft: Draft) {
+        val oldSize = draft.committed.size
+        val newSize = newDraft.committed.size
+        if (newSize > oldSize) {
+            while (committedRoundIds.size < newSize) {
+                committedRoundIds.add(buildingRoundId)
+            }
+        } else if (newSize < oldSize) {
+            while (committedRoundIds.size > newSize) {
+                committedRoundIds.removeAt(committedRoundIds.lastIndex)
+            }
+        }
+        onDraftChange(newDraft)
+    }
+
+    fun startNextRound() {
+        applyDraft(
+            draft.copy(join = ConditionJoin.AND, attr = null, larger = null, showCombine = false),
+        )
+        buildingRoundId = nextRoundId
+        nextRoundId += 1
+    }
+
+    fun reopenLastRound() {
+        if (committedRoundIds.isEmpty() || draft.committed.isEmpty()) return
+        buildingRoundId = committedRoundIds.last()
+        val (attr, larger) = pathOf(draft.committed.last())
+        applyDraft(draft.copy(attr = attr, larger = larger, showCombine = true))
+    }
+
+    // 所有轮次排成一条列表、共用同一套 key 槽位：点「且」时旧轮只改 locked，不挪到另一个 for 里去挂。
+    val frozenCount = if (draft.showCombine) {
+        (draft.committed.size - 1).coerceAtLeast(0)
+    } else {
+        draft.committed.size
+    }
+    val roundEntries = buildList {
+        for (index in 0 until frozenCount) {
+            val condition = draft.committed[index]
+            val (attr, larger) = pathOf(condition)
+            add(
+                RoundEntry(
+                    id = committedRoundIds.getOrElse(index) { index },
+                    locked = true,
+                    attr = attr,
+                    larger = larger,
+                    condition = condition,
+                    priorTypes = draft.committed.take(index).map { it.type },
+                ),
+            )
+        }
+        add(
+            RoundEntry(
+                id = buildingRoundId,
+                locked = false,
+                attr = draft.attr,
+                larger = draft.larger,
+                condition = if (draft.showCombine) draft.committed.lastOrNull() else null,
+                priorTypes = draft.usedTypes,
+            ),
+        )
+    }
+
+    // 锚点是「当前正在编辑的那一轮固定在左边起点」，不是整条路径右对齐：
+    // 右对齐会让只有一轮时也贴到最右边。这里让前缀（已冻结的轮）往左溢出，
+    // 当前轮恒定落在 x=0，于是第一轮在原位，点「且」后旧轮才被推走。
+    // x 只有一个真值（-前缀宽度），动画从上一帧落点滑到新落点，不做 snapTo 反跳，所以不闪。
+    val pathShift = remember { Animatable(0f) }
+    var shiftInit by remember { mutableStateOf(false) }
+    var shiftTarget by remember { mutableFloatStateOf(0f) }
+    LaunchedEffect(shiftTarget) {
+        if (!shiftInit) {
+            pathShift.snapTo(shiftTarget)
+            shiftInit = true
+        } else {
+            pathShift.animateTo(shiftTarget, animationSpec = Motion.medium())
+        }
+    }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        WizardHeader(draft)
-        Spacer(Modifier.height(AppDimensions.SpacingMedium.dp))
-        Row(
+        WizardHeader(draft, valuePreview)
+        Spacer(modifier = Modifier.height(AppDimensions.SpacingMedium.dp))
+        Layout(
             modifier = Modifier
                 .fillMaxWidth()
-                .horizontalScroll(rememberScrollState())
                 .onGloballyPositioned { rowTopInWindow = it.localToWindow(Offset.Zero).y },
-            horizontalArrangement = Arrangement.spacedBy(AppDimensions.SpacingMedium.dp),
-        ) {
-            AttrColumn(
-                draft = draft,
-                options = attrOptions,
-                editable = attrEditable,
-                onDraftChange = onDraftChange,
-                onCancel = onCancel,
-                onSegmentHeight = onSegHeight,
-            )
-            draft.attr?.let { attr ->
-                if (attr.isNumeric) {
-                    val compOptions = buildList {
-                        if (attr.larger !in draft.usedTypes) add(true)
-                        if (attr.smaller !in draft.usedTypes) add(false)
+            content = {
+            // 只有一个子节点：整条路径一个 Row。所有轮共用同一套 key 槽位，
+            // 当前轮变成已冻结轮时只翻 locked，不换 call-site，所以不会重挂、不闪。
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(AppDimensions.SpacingMedium.dp),
+            ) {
+                roundEntries.forEachIndexed { index, entry ->
+                    if (index > 0) {
+                        JoinLabel(draft.join.label)
                     }
-                    val compIndex = compOptions.indexOf(draft.larger)
-                    AlignedColumn(
-                        anchorCenterY = attrCenterY,
-                        sharedAnim = col1Anim,
-                        body = {
-                            ComparatorColumn(
-                                draft = draft,
-                                attr = attr,
-                                editable = col1Editable,
-                                onDraftChange = onDraftChange,
-                                onSegmentHeight = onSegHeight,
-                            )
-                        },
-                        footer = if (draft.larger == null) {
-                            {
-                                BackCell {
-                                    onDraftChange(draft.copy(attr = null, larger = null, showCombine = false))
-                                }
-                            }
-                        } else {
-                            null
-                        },
-                    )
-                    if (draft.larger != null && compIndex >= 0 && attrCenterY != null) {
-                        val compCenterY = cascadedItemCenterY(
-                            anchorCenterY = attrCenterY,
-                            blockItemCount = compOptions.size,
-                            itemIndex = compIndex,
-                            segH = segH,
-                            divH = divH,
-                        )
-                        AlignedColumn(
-                            anchorCenterY = compCenterY,
-                            body = {
-                                ValueColumn(
-                                    draft = draft,
-                                    attr = attr,
-                                    onDraftChange = onDraftChange,
-                                    onSegmentHeight = onSegHeight,
-                                    onSelectedCenterY = { valueSelectedCenterY = it },
-                                    rowTopInWindow = rowTopInWindow,
-                                )
-                            },
-                            footer = if (!draft.showCombine) {
-                                {
-                                    BackCell {
-                                        onDraftChange(draft.copy(larger = null, showCombine = false))
-                                    }
-                                }
-                            } else {
-                                null
-                            },
-                        )
+                    val isCurrent = index == roundEntries.lastIndex
+                    // 当前轮报出它在 Row 内的 x：这是「该滑多少」的唯一真值。
+                    // positionInParent relative to Row，在 pathShift 之上测得，不受位移影响，不成环。
+                    val anchorModifier = if (isCurrent) {
+                        Modifier.onPlaced { shiftTarget = -it.positionInParent().x }
+                    } else {
+                        Modifier
                     }
-                } else {
-                    AlignedColumn(
-                        anchorCenterY = attrCenterY,
-                        sharedAnim = col1Anim,
-                        body = {
-                            ValueColumn(
+                    key(entry.id) {
+                        Box(modifier = anchorModifier) {
+                            RoundSlot(
+                                locked = entry.locked,
+                                attr = entry.attr,
+                                larger = entry.larger,
+                                condition = entry.condition,
+                                priorTypes = entry.priorTypes,
                                 draft = draft,
-                                attr = attr,
-                                onDraftChange = onDraftChange,
+                                onDraftChange = ::applyDraft,
+                                onCancel = onCancel,
+                                onReopenLast = ::reopenLastRound,
+                                onValuePreview = { valuePreview = it },
                                 onSegmentHeight = onSegHeight,
                                 onSelectedCenterY = { valueSelectedCenterY = it },
                                 rowTopInWindow = rowTopInWindow,
+                                segH = segH,
+                                divH = divH,
+                            )
+                        }
+                    }
+                }
+                if (draft.showCombine && !valueSelectedCenterY.isNaN()) {
+                    AlignedColumn(
+                        anchorCenterY = valueSelectedCenterY,
+                        body = {
+                            CombineColumn(
+                                draft = draft,
+                                onAnd = ::startNextRound,
+                                onSave = onSave,
+                                onSegmentHeight = onSegHeight,
                             )
                         },
-                        footer = if (!draft.showCombine) {
-                            {
-                                BackCell {
-                                    onDraftChange(draft.copy(attr = null, showCombine = false))
-                                }
+                        footer = {
+                            BackCell {
+                                val remaining = draft.committed.dropLast(1)
+                                applyDraft(draft.copy(committed = remaining, showCombine = false))
                             }
-                        } else {
-                            null
                         },
                     )
                 }
             }
-            if (draft.showCombine && !valueSelectedCenterY.isNaN()) {
-                AlignedColumn(
-                    anchorCenterY = valueSelectedCenterY,
-                    body = {
-                        CombineColumn(draft, onDraftChange, onSave, onSegHeight)
-                    },
-                    footer = {
-                        BackCell {
-                            val remaining = draft.committed.dropLast(1)
-                            onDraftChange(draft.copy(committed = remaining, showCombine = false))
-                        }
-                    },
-                )
+            },
+        ) { measurables, constraints ->
+            // 不限宽测量：整条路径想多宽就多宽，允许超出屏幕。
+            val path = measurables[0].measure(
+                constraints.copy(minWidth = 0, maxWidth = Constraints.Infinity),
+            )
+            val viewport = constraints.maxWidth
+            // 位移量由当前轮的 onPlaced 决定（见上），这里不再算落点，
+            // 否则会覆盖锚点值、又退回「整条路径右对齐」那套错的行为。
+            layout(viewport, path.height) {
+                path.placeRelative(pathShift.value.roundToInt(), 0)
             }
         }
     }
 }
+
 
 /**
  * 一列的动画状态：入场进度 [enter] 与竖向锚点 [anchor]。
@@ -666,6 +762,8 @@ private class ColumnAnim {
 private fun AlignedColumn(
     anchorCenterY: Float?,
     sharedAnim: ColumnAnim? = null,
+    /** 为假时跳过入场（已定稿路径从可点列「就地」冻住，不要再淡入一次）。 */
+    playEnter: Boolean = true,
     body: @Composable () -> Unit,
     footer: (@Composable () -> Unit)? = null,
 ) {
@@ -673,9 +771,10 @@ private fun AlignedColumn(
     val slideFrom = with(density) { 20.dp.toPx() }
     val anim = sharedAnim ?: remember { ColumnAnim() }
     // 入场：首次出现从 0 淡入 + 自左滑入；已 appeared 则直接坐实到 1，不再重播。
-    LaunchedEffect(anim) {
-        if (anim.appeared) {
+    LaunchedEffect(anim, playEnter) {
+        if (!playEnter || anim.appeared) {
             anim.enter.snapTo(1f)
+            anim.appeared = true
         } else {
             anim.enter.snapTo(0f)
             anim.enter.animateTo(1f, animationSpec = Motion.grow())
@@ -726,16 +825,11 @@ private fun AlignedColumn(
     }
 }
 
-/** 顶部一句话交代已定到哪；还没定条件时只写「删除…」，不写「请选择」这类空话。 */
+/** 顶部一句话交代已定到哪；随点选与输入即时变。 */
 @Composable
-private fun WizardHeader(draft: Draft) {
-    val sentence = if (draft.committed.isEmpty()) {
-        "删除…"
-    } else {
-        "删除 " + draft.committed.joinToString(" ${draft.join.label} ") { readableCondition(it) }
-    }
+private fun WizardHeader(draft: Draft, valuePreview: String? = null) {
     Text(
-        sentence,
+        draftSentence(draft, valuePreview),
         fontSize = 14.sp,
         fontWeight = FontWeight.Medium,
         // 直接浮在暗画布上（不在卡片内），用反色（近白）保证可读。
@@ -743,151 +837,10 @@ private fun WizardHeader(draft: Draft) {
     )
 }
 
-/** 第一列：属性。类型已被用光的属性不再列出。[editable] 为假时只展示路径、不可改选。 */
-@Composable
-private fun AttrColumn(
-    draft: Draft,
-    options: List<AttrSpec>,
-    editable: Boolean,
-    onDraftChange: (Draft) -> Unit,
-    onCancel: () -> Unit,
-    onSegmentHeight: (Float) -> Unit,
-) {
-    WizColumn {
-        WizSegmented(
-            options = options.map { attr ->
-                WizOption(attr.label, selected = draft.attr == attr, enabled = editable) {
-                    // 换属性要清掉右边选过的比较符，否则会带着上一属性的选择往下走。
-                    onDraftChange(draft.copy(attr = attr, larger = null, showCombine = false))
-                }
-            },
-            onSegmentHeight = onSegmentHeight,
-        )
-        // 属性已点出下一列时，这一列不再留「返回」。
-        if (draft.attr == null) {
-            BackCell {
-                if (draft.committed.isEmpty()) {
-                    onCancel()
-                } else {
-                    // 已有定好的条件：退回上一条的组合列，并把它的路径点回来。
-                    val (attr, larger) = pathOf(draft.committed.last())
-                    onDraftChange(draft.copy(attr = attr, larger = larger, showCombine = true))
-                }
-            }
-        }
-    }
-}
-
-/** 第二列：超过 / 少于。已用过的那半边不再列出（同属性同方向不重复加）。 */
-@Composable
-private fun ComparatorColumn(
-    draft: Draft,
-    attr: AttrSpec,
-    editable: Boolean,
-    onDraftChange: (Draft) -> Unit,
-    onSegmentHeight: (Float) -> Unit,
-) {
-    // 只渲染选项；「返回」由 AlignedColumn.footer 挂在外面，不进对齐高度。
-    WizSegmented(
-        options = buildList {
-            if (attr.larger !in draft.usedTypes) {
-                add(WizOption("超过", selected = draft.larger == true, enabled = editable) {
-                    onDraftChange(draft.copy(larger = true, showCombine = false))
-                })
-            }
-            if (attr.smaller !in draft.usedTypes) {
-                add(WizOption("少于", selected = draft.larger == false, enabled = editable) {
-                    onDraftChange(draft.copy(larger = false, showCombine = false))
-                })
-            }
-        },
-        onSegmentHeight = onSegmentHeight,
-    )
-}
-
-/**
- * 第三列：取值。数值属性给几个预设 + 自定义输入；工具属性列工具；文本属性一个输入框。
- * 点定一个值就把这条条件并进 [Draft.committed]，右边展开组合列。
- */
-@Composable
-private fun ValueColumn(
-    draft: Draft,
-    attr: AttrSpec,
-    onDraftChange: (Draft) -> Unit,
-    onSegmentHeight: (Float) -> Unit,
-    onSelectedCenterY: (Float) -> Unit,
-    rowTopInWindow: Float,
-) {
-    val type = attr.typeFor(draft.larger)
-    // 已定好的这一条就是 committed 的末尾：重选取值应替换它，而不是再加一条。
-    val replacing = draft.showCombine
-
-    fun commit(condition: ChatCondition) {
-        val base = if (replacing) draft.committed.dropLast(1) else draft.committed
-        onDraftChange(draft.copy(committed = base + condition, showCombine = true))
-    }
-
-    val chosen = if (replacing) draft.committed.lastOrNull() else null
-    val presets = presetsFor(attr.kind)
-    val customNumberSelected = chosen != null && attr.isNumeric && chosen.number !in presets
-
-    fun reportCenter(coords: LayoutCoordinates) {
-        if (rowTopInWindow.isNaN() || !coords.isAttached) return
-        val centerInWindow = coords.localToWindow(Offset(0f, coords.size.height / 2f)).y
-        onSelectedCenterY(centerInWindow - rowTopInWindow)
-    }
-
-    // 只渲染取值区；「返回」由 AlignedColumn.footer 挂在外面，不进对齐高度。
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        when (attr.kind) {
-            ConditionValueKind.MEGABYTES, ConditionValueKind.DAYS -> {
-                WizSegmented(
-                    options = presets.map { n ->
-                        WizOption("$n ${attr.kind.unit}", selected = chosen?.number == n) {
-                            commit(ChatCondition(type = type, number = n))
-                        }
-                    },
-                    onSegmentHeight = onSegmentHeight,
-                    onSelectedCoords = { reportCenter(it) },
-                )
-                CustomNumberCell(
-                    unit = attr.kind.unit,
-                    reportCoords = customNumberSelected,
-                    onCoords = { reportCenter(it) },
-                ) { n ->
-                    commit(ChatCondition(type = type, number = n))
-                }
-            }
-
-            ConditionValueKind.TOOL -> WizSegmented(
-                options = ChatTool.entries.map { tool ->
-                    WizOption(tool.displayName, selected = chosen?.text == tool.id) {
-                        commit(ChatCondition(type = type, text = tool.id))
-                    }
-                },
-                onSegmentHeight = onSegmentHeight,
-                onSelectedCoords = { reportCenter(it) },
-            )
-
-            ConditionValueKind.TEXT -> CustomTextCell(
-                reportCoords = chosen != null,
-                onCoords = { reportCenter(it) },
-            ) { text ->
-                commit(ChatCondition(type = type, text = text))
-            }
-        }
-    }
-}
-
-/**
- * 末列：这条条件已定完，选下一步——且 / 或（定下整条的连接词，回左边加下一个条件）、保存、返回。
- *
- * 「返回」把刚定的这条撤掉：这一列是它带出来的，退回去自然该连它一起退。
- */
 @Composable
 private fun CombineColumn(
     draft: Draft,
-    onDraftChange: (Draft) -> Unit,
+    onAnd: () -> Unit,
     onSave: (List<ChatCondition>, ConditionJoin) -> Unit,
     onSegmentHeight: (Float) -> Unit,
 ) {
@@ -900,16 +853,312 @@ private fun CombineColumn(
     WizSegmented(
         options = buildList {
             if (canAddMore) {
-                add(WizOption("且") {
-                    onDraftChange(
-                        draft.copy(join = ConditionJoin.AND, attr = null, larger = null, showCombine = false)
-                    )
-                })
+                add(WizOption("且", onClick = onAnd))
             }
             add(WizOption("保存") { onSave(draft.committed, draft.join) })
         },
         onSegmentHeight = onSegmentHeight,
     )
+}
+
+// ─────────────────────────────────────────────
+// 一轮条件列：可点 / 锁定共用同一棵树（点「且」只翻 locked，不卸挂）
+// ─────────────────────────────────────────────
+
+/** 轮次之间的「且」：与首段文字大致齐平，分隔已冻路径与下一轮。 */
+@Composable
+private fun JoinLabel(label: String) {
+    Text(
+        label,
+        fontSize = 13.sp,
+        color = AppColors.TextOnScrim,
+        modifier = Modifier.padding(top = 13.dp),
+    )
+}
+
+/**
+ * 一轮的属性 →（比较符）→ 取值。
+ *
+ * [locked] 为真时选项全禁用、不留返回——点「且」后旧轮就地锁住；
+ * 为假时与原来的可点路径同一套列，供当前轮继续点选。
+ * 冻结 / 当前必须走这一棵树，才能靠外层 [key] 在「且」时复用节点、避免闪一下。
+ */
+@Composable
+private fun RoundSlot(
+    locked: Boolean,
+    attr: AttrSpec?,
+    larger: Boolean?,
+    condition: ChatCondition?,
+    priorTypes: List<ChatConditionType>,
+    draft: Draft,
+    onDraftChange: (Draft) -> Unit,
+    onCancel: () -> Unit,
+    onReopenLast: () -> Unit,
+    onValuePreview: (String?) -> Unit,
+    onSegmentHeight: (Float) -> Unit,
+    onSelectedCenterY: (Float) -> Unit,
+    rowTopInWindow: Float,
+    segH: Float,
+    divH: Float,
+) {
+    val col1Anim = remember { ColumnAnim() }
+    LaunchedEffect(attr == null) {
+        if (attr == null) col1Anim.reset()
+    }
+
+    val attrOptions = ATTRS.filter { spec -> spec.types.any { it !in priorTypes } }
+    val attrIndex = attrOptions.indexOfFirst { it == attr }
+    val attrCenterY = if (attrIndex >= 0) segmentedItemCenterY(attrIndex, segH, divH) else null
+    val depth = when {
+        attr == null -> 0
+        condition != null -> if (attr.isNumeric) 3 else 2
+        attr.isNumeric && larger == null -> 1
+        attr.isNumeric -> 2
+        else -> 1
+    }
+    fun colEditable(columnIndex: Int): Boolean =
+        !locked && columnIndex >= depth - 1
+
+    // 一轮收成一个 Row：外层只挂一个带 key 的节点，锁定时不拆成多列兄弟重排。
+    Row(horizontalArrangement = Arrangement.spacedBy(AppDimensions.SpacingMedium.dp)) {
+        WizColumn {
+            WizSegmented(
+                options = attrOptions.map { spec ->
+                    WizOption(
+                        spec.label,
+                        selected = attr == spec,
+                        enabled = colEditable(0),
+                    ) {
+                        onDraftChange(draft.copy(attr = spec, larger = null, showCombine = false))
+                    }
+                },
+                onSegmentHeight = onSegmentHeight,
+            )
+            if (!locked && attr == null) {
+                BackCell {
+                    if (draft.committed.isEmpty()) {
+                        onCancel()
+                    } else {
+                        onReopenLast()
+                    }
+                }
+            }
+        }
+
+        val currentAttr = attr ?: return@Row
+
+        if (currentAttr.isNumeric) {
+            val compOptions = buildList {
+                if (currentAttr.larger !in priorTypes) add(true)
+                if (currentAttr.smaller !in priorTypes) add(false)
+            }
+            val compIndex = compOptions.indexOf(larger)
+            AlignedColumn(
+                anchorCenterY = attrCenterY,
+                sharedAnim = col1Anim,
+                body = {
+                    WizSegmented(
+                        options = compOptions.map { isLarger ->
+                            WizOption(
+                                if (isLarger) "超过" else "少于",
+                                selected = larger == isLarger,
+                                enabled = colEditable(1),
+                            ) {
+                                onDraftChange(draft.copy(larger = isLarger, showCombine = false))
+                            }
+                        },
+                        onSegmentHeight = onSegmentHeight,
+                    )
+                },
+                footer = if (!locked && larger == null) {
+                    {
+                        BackCell {
+                            onDraftChange(draft.copy(attr = null, larger = null, showCombine = false))
+                        }
+                    }
+                } else {
+                    null
+                },
+            )
+            if (larger != null && compIndex >= 0 && attrCenterY != null) {
+                val compCenterY = cascadedItemCenterY(
+                    anchorCenterY = attrCenterY,
+                    blockItemCount = compOptions.size,
+                    itemIndex = compIndex,
+                    segH = segH,
+                    divH = divH,
+                )
+                AlignedColumn(
+                    anchorCenterY = compCenterY,
+                    body = {
+                        RoundValueColumn(
+                            attr = currentAttr,
+                            larger = larger,
+                            condition = condition,
+                            locked = locked,
+                            priorCommitted = if (condition != null) {
+                                draft.committed.dropLast(1)
+                            } else {
+                                draft.committed
+                            },
+                            draft = draft,
+                            onDraftChange = onDraftChange,
+                            onValuePreview = onValuePreview,
+                            onSegmentHeight = onSegmentHeight,
+                            onSelectedCenterY = onSelectedCenterY,
+                            rowTopInWindow = rowTopInWindow,
+                        )
+                    },
+                    footer = if (!locked && condition == null) {
+                        {
+                            BackCell {
+                                onDraftChange(draft.copy(larger = null, showCombine = false))
+                            }
+                        }
+                    } else {
+                        null
+                    },
+                )
+            }
+        } else {
+            AlignedColumn(
+                anchorCenterY = attrCenterY,
+                sharedAnim = col1Anim,
+                body = {
+                    RoundValueColumn(
+                        attr = currentAttr,
+                        larger = larger,
+                        condition = condition,
+                        locked = locked,
+                        priorCommitted = if (condition != null) {
+                            draft.committed.dropLast(1)
+                        } else {
+                            draft.committed
+                        },
+                        draft = draft,
+                        onDraftChange = onDraftChange,
+                        onValuePreview = onValuePreview,
+                        onSegmentHeight = onSegmentHeight,
+                        onSelectedCenterY = onSelectedCenterY,
+                        rowTopInWindow = rowTopInWindow,
+                    )
+                },
+                footer = if (!locked && condition == null) {
+                    {
+                        BackCell {
+                            onDraftChange(draft.copy(attr = null, showCombine = false))
+                        }
+                    }
+                } else {
+                    null
+                },
+            )
+        }
+    }
+}
+
+/** 一轮的取值列：锁定时只展示选中态；可点时与原 ValueColumn 相同。 */
+@Composable
+private fun RoundValueColumn(
+    attr: AttrSpec,
+    larger: Boolean?,
+    condition: ChatCondition?,
+    locked: Boolean,
+    priorCommitted: List<ChatCondition>,
+    draft: Draft,
+    onDraftChange: (Draft) -> Unit,
+    onValuePreview: (String?) -> Unit,
+    onSegmentHeight: (Float) -> Unit,
+    onSelectedCenterY: (Float) -> Unit,
+    rowTopInWindow: Float,
+) {
+    val type = attr.typeFor(larger)
+
+    fun commit(next: ChatCondition) {
+        if (locked) return
+        onValuePreview(null)
+        onDraftChange(draft.copy(committed = priorCommitted + next, showCombine = true))
+    }
+
+    val chosen = condition
+    val presets = presetsFor(attr.kind)
+    val customNumberSelected = chosen != null && attr.isNumeric && chosen.number !in presets
+
+    fun reportCenter(coords: LayoutCoordinates) {
+        if (locked || rowTopInWindow.isNaN() || !coords.isAttached) return
+        val centerInWindow = coords.localToWindow(Offset(0f, coords.size.height / 2f)).y
+        onSelectedCenterY(centerInWindow - rowTopInWindow)
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        when (attr.kind) {
+            ConditionValueKind.MEGABYTES, ConditionValueKind.DAYS -> {
+                // 锁定后仍保留同一套预设 + 自选输入结构，避免点「且」时取值列高度突变闪一下。
+                val numberOptions = buildList {
+                    addAll(presets)
+                    if (chosen != null && chosen.number !in presets) add(chosen.number)
+                }
+                WizSegmented(
+                    options = numberOptions.map { n ->
+                        WizOption(
+                            "$n ${attr.kind.unit}",
+                            selected = chosen?.number == n,
+                            enabled = !locked,
+                        ) {
+                            commit(ChatCondition(type = type, number = n))
+                        }
+                    },
+                    onSegmentHeight = onSegmentHeight,
+                    onSelectedCoords = { reportCenter(it) },
+                )
+                key(type) {
+                    CustomNumberCell(
+                        unit = attr.kind.unit,
+                        editable = !locked,
+                        reportCoords = customNumberSelected && !locked,
+                        onCoords = { reportCenter(it) },
+                        onPreview = onValuePreview,
+                    ) { n ->
+                        commit(ChatCondition(type = type, number = n))
+                    }
+                }
+            }
+
+            ConditionValueKind.TOOL -> WizSegmented(
+                options = ChatTool.entries.map { tool ->
+                    WizOption(
+                        tool.displayName,
+                        selected = chosen?.text == tool.id,
+                        enabled = !locked,
+                    ) {
+                        commit(ChatCondition(type = type, text = tool.id))
+                    }
+                },
+                onSegmentHeight = onSegmentHeight,
+                onSelectedCoords = { reportCenter(it) },
+            )
+
+            ConditionValueKind.TEXT -> {
+                if (locked && chosen != null) {
+                    WizSegmented(
+                        options = listOf(
+                            WizOption("「${chosen.text}」", selected = true, enabled = false) {},
+                        ),
+                    )
+                } else {
+                    key(type) {
+                        CustomTextCell(
+                            reportCoords = chosen != null,
+                            onCoords = { reportCenter(it) },
+                            onPreview = onValuePreview,
+                        ) { text ->
+                            commit(ChatCondition(type = type, text = text))
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 // ─────────────────────────────────────────────
@@ -1043,24 +1292,31 @@ private fun BackCell(onClick: () -> Unit) {
 @Composable
 private fun CustomNumberCell(
     unit: String,
+    editable: Boolean = true,
     reportCoords: Boolean = false,
     onCoords: ((LayoutCoordinates) -> Unit)? = null,
+    onPreview: ((String?) -> Unit)? = null,
     onConfirm: (Int) -> Unit,
 ) {
     var input by remember { mutableStateOf("") }
     val n = input.toIntOrNull() ?: 0
-    val enabled = n >= 1
+    val enabled = editable && n >= 1
     val confirmTint = if (enabled) AppColors.Primary else AppColors.TextTertiary
     OutlinedTextField(
         value = input,
         onValueChange = { raw ->
-            if (raw.all { it.isDigit() } && raw.length <= 5) input = raw
+            if (!editable) return@OutlinedTextField
+            if (raw.all { it.isDigit() } && raw.length <= 5) {
+                input = raw
+                onPreview?.invoke(raw.ifEmpty { null })
+            }
         },
         modifier = Modifier
             .fillMaxWidth()
             .onGloballyPositioned { coords ->
                 if (reportCoords) onCoords?.invoke(coords)
             },
+        enabled = editable,
         placeholder = { Text("自选输入") },
         suffix = if (input.isNotEmpty()) {
             { Text(unit) }
@@ -1093,6 +1349,7 @@ private fun CustomNumberCell(
 private fun CustomTextCell(
     reportCoords: Boolean = false,
     onCoords: ((LayoutCoordinates) -> Unit)? = null,
+    onPreview: ((String?) -> Unit)? = null,
     onConfirm: (String) -> Unit,
 ) {
     var input by remember { mutableStateOf("") }
@@ -1100,7 +1357,10 @@ private fun CustomTextCell(
     val confirmTint = if (enabled) AppColors.Primary else AppColors.TextTertiary
     OutlinedTextField(
         value = input,
-        onValueChange = { input = it.take(60) },
+        onValueChange = {
+            input = it.take(60)
+            onPreview?.invoke(input.ifBlank { null })
+        },
         modifier = Modifier
             .fillMaxWidth()
             .onGloballyPositioned { coords ->
