@@ -46,8 +46,8 @@
 
 ## 贡献者
 
-<a href="https://github.com/moumoum0/cx-clear">
-  <img src="https://contrib.rocks/image?repo=OWNER/cxclear" />
+<a href="https://github.com/moumoum0/cx-clear/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=moumoum0/cx-clear" />
 </a>
 
 Made with [contrib.rocks](https://contrib.rocks).
