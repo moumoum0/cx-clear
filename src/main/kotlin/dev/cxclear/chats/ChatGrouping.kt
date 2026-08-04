@@ -12,7 +12,6 @@ import java.time.format.DateTimeFormatter
  * 便于 UI 层随状态变化反复调用。
  */
 
-/** 列表排列方式。 */
 enum class ChatSortKey(val label: String) {
     UPDATED("更新时间"),
     SIZE("大小"),
@@ -20,7 +19,6 @@ enum class ChatSortKey(val label: String) {
     TITLE("标题"),
 }
 
-/** 分组维度：决定下方列表按哪个维度切成可折叠区块。 */
 enum class ChatGroupDimension(val label: String) {
     TIME("时间"),
     SIZE("大小"),
@@ -45,7 +43,6 @@ enum class ChatAxis(
     TITLE("标题", ChatSortKey.TITLE, null),
 }
 
-/** 一个可折叠区块：同一档位/项目下的会话集合。 */
 data class ChatGroup(
     val key: String,
     val label: String,
@@ -54,13 +51,9 @@ data class ChatGroup(
     val totalBytes: Long get() = sessions.sumOf { it.sizeBytes }
 }
 
-// ─────────────────────────────────────────────
-// 档位定义
-// ─────────────────────────────────────────────
-
 private const val MB = 1024L * 1024L
 
-/** 大小档：[minInclusive, maxExclusive)。顺序即展示顺序。 */
+/** [min, max) ；顺序即展示顺序。 */
 private data class SizeBucket(val key: String, val label: String, val min: Long, val max: Long)
 
 private val SIZE_BUCKETS = listOf(
@@ -84,10 +77,6 @@ private val TIME_BUCKETS = listOf(
 /** 项目为空时的归档名。Codex 未记录 cwd、Claude 目录名缺失时落到这里。 */
 private const val NO_PROJECT_LABEL = "未归属项目"
 
-// ─────────────────────────────────────────────
-// 项目名展示
-// ─────────────────────────────────────────────
-
 /**
  * Claude 的项目目录名是把绝对路径整条编码进来的（`d--project-cxclear`），
  * 直接显示太长且看不出重点，取最后一段作为标签。Codex 记的已经是目录名，原样返回。
@@ -100,11 +89,6 @@ fun projectLabel(session: ChatSessionSummary): String {
     }
 }
 
-// ─────────────────────────────────────────────
-// 筛选 / 排序 / 分组
-// ─────────────────────────────────────────────
-
-/** 按搜索词过滤：匹配标题或项目名，大小写不敏感。空词返回原列表。 */
 fun filterSessions(
     sessions: List<ChatSessionSummary>,
     query: String,
@@ -130,7 +114,6 @@ private fun sortSessions(
             compareBy<ChatSessionSummary> { projectLabel(it).lowercase() }
                 .thenBy { it.updatedMillis }
         )
-        // 标题用不区分大小写的字典序，中文按 UTF-16 码点序，够稳定。
         ChatSortKey.TITLE -> sessions.sortedBy { it.title.lowercase() }
     }
     return if (ascending) sorted else sorted.reversed()
@@ -205,14 +188,9 @@ fun groupSessions(
     }
 }
 
-// ─────────────────────────────────────────────
-// 时间展示
-// ─────────────────────────────────────────────
-
 private val DATE_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd")
 private val TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm")
 
-/** 更新时间的简短展示：今天给时刻，近一周给「N 天前」，更早给日期。 */
 fun formatUpdatedAt(millis: Long, nowMillis: Long): String {
     val zone = ZoneId.systemDefault()
     val date = Instant.ofEpochMilli(millis).atZone(zone)

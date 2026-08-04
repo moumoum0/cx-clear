@@ -73,19 +73,15 @@ private enum class ViewState { IDLE, SCANNING, SCAN_DONE }
 
 private enum class ChatsMode { MANUAL, AUTO }
 
-/** 对话管理顶栏筛选：all = Codex + Claude；Cursor 不可选。 */
 private const val TOOL_FILTER_ALL = "all"
 
-/** 与扫描页 `SNAPSHOT_INTERVAL_MS` 对齐：进度数字每 0.5s 推一次。 */
 private const val SCAN_SNAPSHOT_INTERVAL_MS = 500L
 
-/** 顶栏筛选值 → 参与展示的工具集合。 */
 private fun resolveTools(filter: String): Set<ChatTool> = when (filter) {
     TOOL_FILTER_ALL -> ChatTool.entries.toSet()
     else -> ChatTool.entries.filter { it.id == filter }.toSet()
 }
 
-/** 从全量缓存裁出当前筛选要展示的会话。 */
 private fun filterCachedSessions(
     sessions: List<ChatSessionSummary>,
     filter: String,
@@ -109,7 +105,6 @@ fun ChatsView(modifier: Modifier = Modifier) {
 
     var config by remember { mutableStateOf(RetentionConfig()) }
 
-    // 有进程缓存时直接进结果态，避免切页回来再闪一遍扫描。
     val cachedOnEnter = remember { ChatScanCache.snapshot() }
     var viewState by remember {
         mutableStateOf(if (cachedOnEnter != null) ViewState.SCAN_DONE else ViewState.IDLE)
@@ -118,27 +113,20 @@ fun ChatsView(modifier: Modifier = Modifier) {
         mutableStateOf(cachedOnEnter ?: emptyList())
     }
     var foundCount by remember { mutableIntStateOf(cachedOnEnter?.size ?: 0) }
-    // 删除完成后 invalidate 缓存并自增，触发下面的扫描 LaunchedEffect 重跑
-    //（清单必须重扫，不能就地改）。
     var rescanToken by remember { mutableIntStateOf(0) }
-
-    // 自动清理提示；闸门在 ChatScanCache.autoRunDone，不因导航重置。
     var autoNotice by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) {
         config = withContext(Dispatchers.IO) { RetentionStore.read() }
     }
 
-    /** 策略改动即时落盘，不设「保存」按钮——开关拨了就该生效。 */
     fun updateConfig(updated: RetentionConfig) {
         config = updated
-        // rememberCoroutineScope 已绑 Compose 调度器；桌面没有 Dispatchers.Main。
+        // 桌面没有 Dispatchers.Main。
         scope.launch { withContext(Dispatchers.IO) { RetentionStore.write(updated) } }
     }
 
-    // 进入手动模式时：有缓存直接用；无缓存或删除失效后才扫全量。
-    // 切工具筛选不重扫——展示层从全量缓存裁剪（与首页扫描页「换工具不抹结果」同哲学）。
-    // 默认落在自动页时也要跑完进程级扫描+自动清理，否则总开关永远摸不到会话。
+    // 切筛选不重扫；自动页也要跑完扫描+自动清理。
     LaunchedEffect(mode, rescanToken) {
         if (mode != ChatsMode.MANUAL && ChatScanCache.autoRunDone) return@LaunchedEffect
 
@@ -150,9 +138,6 @@ fun ChatsView(modifier: Modifier = Modifier) {
         } else {
             viewState = ViewState.SCANNING
             foundCount = 0
-            // worker 边扫边累加；UI 按固定节拍读快照，扫完立刻再推一次收尾。
-            // 加载态是否离开由手动面板等翻牌 settle 后再切，这里不再按首次推数估算等待。
-            // 始终扫全集，保证缓存对任意筛选都完整；自动保留也因此能看到全量。
             val latestCount = AtomicInteger(0)
             val sessions = coroutineScope {
                 val job = async(Dispatchers.IO) {
@@ -176,9 +161,7 @@ fun ChatsView(modifier: Modifier = Modifier) {
         }
 
         val sessions = allSessions
-        // 首次扫完按已保存的策略执行一次。每进程只跑一次：删完要重扫，
-        // 若不加闸门，重扫又会触发执行，成为循环。
-        // 缓存始终是全量，执行器因此看到全部会话，与顶栏筛选无关。
+        // 每进程只跑一次，否则删→重扫→再删成环。
         if (!ChatScanCache.autoRunDone) {
             ChatScanCache.markAutoRunDone()
             val prefs = withContext(Dispatchers.IO) { AppPreferences.read() }
@@ -194,7 +177,6 @@ fun ChatsView(modifier: Modifier = Modifier) {
                     "自动清理已删除 ${result.deletedSessions} 个会话 · ${formatBytes(result.freedBytes)}"
                 else -> null
             }
-            // 删过东西，当前清单已失效，必须重扫而不是就地改。
             if (result.deletedSessions > 0) {
                 ChatScanCache.invalidate()
                 rescanToken++
@@ -276,7 +258,7 @@ private fun ChatsTopBar(
             horizontalArrangement = Arrangement.spacedBy(AppDimensions.SpacingSmall.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            // 单选：所有 / Codex / Claude；Cursor 会话不在对话管理范围内，仅作视觉占位不可选。
+            // Cursor 会话不在范围内，占位不可选。
             AllFilterButton(isSelected = selectedTool == TOOL_FILTER_ALL) {
                 onToolSelect(TOOL_FILTER_ALL)
             }

@@ -11,10 +11,6 @@ import kotlinx.coroutines.withContext
 import java.io.IOException
 import java.nio.file.Files
 
-// ─────────────────────────────────────────────
-// 进程保护：找对应 ToolProfile
-// ─────────────────────────────────────────────
-
 private fun profileForTool(tool: ChatTool): ToolProfile? =
     ALL_PROFILES.firstOrNull { it.id == tool.id }
 
@@ -26,10 +22,6 @@ internal val defaultChatToolIsRunning: (ChatTool) -> Boolean = { tool ->
     val profile = profileForTool(tool)
     if (profile == null) false else isToolProcessRunning(profile)
 }
-
-// ─────────────────────────────────────────────
-// 删除逻辑
-// ─────────────────────────────────────────────
 
 /**
  * 删除单条会话。

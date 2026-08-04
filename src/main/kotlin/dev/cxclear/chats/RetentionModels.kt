@@ -12,22 +12,17 @@ package dev.cxclear.chats
 private const val MB = 1024L * 1024L
 private const val DAY_MILLIS = 86_400_000L
 
-/** 条件取值的形态，决定 UI 给什么输入控件、以及数值后面跟什么单位。 */
+/** 条件取值形态：决定输入控件与单位。 */
 enum class ConditionValueKind(val unit: String) {
-    /** 天数，整数 */
     DAYS("天"),
-
-    /** 兆字节，整数 */
     MEGABYTES("MB"),
-
     /** 单选一个 [ChatTool]，值存工具 id */
     TOOL(""),
-
     /** 自由文本，大小写不敏感的「包含」匹配 */
     TEXT(""),
 }
 
-/** 条件类型。[label] 与取值拼起来就是一句可读的中文（「未更新超过 30 天」）。 */
+/** 条件类型。[label] 与取值拼成可读中文（如「未更新超过 30 天」）。 */
 enum class ChatConditionType(
     val id: String,
     val label: String,
@@ -64,7 +59,6 @@ fun defaultNumberFor(type: ChatConditionType): Int = when (type.kind) {
     else -> 0
 }
 
-/** 规则内条件的组合方式。 */
 enum class ConditionJoin(val id: String, val label: String) {
     AND("and", "且"),
     OR("or", "或"),
@@ -92,10 +86,6 @@ data class RetentionRule(
 /** 全部策略。规则之间是「或」：任一条命中的会话都会被删。 */
 data class RetentionConfig(val rules: List<RetentionRule> = emptyList())
 
-// ─────────────────────────────────────────────
-// 条件完整性
-// ─────────────────────────────────────────────
-
 /**
  * 条件是否填写完整。不完整的条件一律不参与匹配。
  *
@@ -108,17 +98,12 @@ fun ChatCondition.isComplete(): Boolean = when (type.kind) {
     ConditionValueKind.TEXT -> text.isNotBlank()
 }
 
-/** 参与匹配的条件（滤掉没填完的）。 */
 fun RetentionRule.effectiveConditions(): List<ChatCondition> = conditions.filter { it.isComplete() }
 
-/** 这条规则是否真的会删东西：开着，且至少有一个填完的条件。 */
+/** 开着且至少有一个完整条件才会真正删东西。 */
 fun RetentionRule.isEffective(): Boolean = enabled && effectiveConditions().isNotEmpty()
 
-// ─────────────────────────────────────────────
-// 匹配
-// ─────────────────────────────────────────────
-
-/** 单个条件是否命中某会话。[nowMillis] 由调用方固定，保证一次判定内时间基准一致。 */
+/** [nowMillis] 由调用方固定，保证一次判定内时间基准一致。 */
 fun ChatCondition.matches(session: ChatSessionSummary, nowMillis: Long): Boolean = when (type) {
     ChatConditionType.UPDATED_BEFORE_DAYS ->
         session.updatedMillis < nowMillis - number * DAY_MILLIS
@@ -158,10 +143,9 @@ fun RetentionRule.matches(session: ChatSessionSummary, nowMillis: Long): Boolean
     }
 }
 
-/** 配置里是否有任何一条规则真的会执行。 */
 fun RetentionConfig.isActive(): Boolean = rules.any { it.isEffective() }
 
-/** 按全部规则（规则间取「或」）筛出待删会话。 */
+/** 规则间取「或」筛出待删会话。 */
 fun RetentionConfig.match(
     sessions: List<ChatSessionSummary>,
     nowMillis: Long,

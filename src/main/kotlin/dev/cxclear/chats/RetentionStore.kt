@@ -26,10 +26,6 @@ object RetentionStore {
 
     private fun file(): Path? = AppDir.dir()?.resolve(FILE_NAME)
 
-    // ─────────────────────────────────────────
-    // 转义
-    // ─────────────────────────────────────────
-
     private fun encode(raw: String): String = raw
         .replace("\\", "\\\\")
         .replace("\n", "\\n")
@@ -54,10 +50,6 @@ object RetentionStore {
         }
         return sb.toString()
     }
-
-    // ─────────────────────────────────────────
-    // 读
-    // ─────────────────────────────────────────
 
     fun read(): RetentionConfig {
         val path = file() ?: return RetentionConfig()
@@ -123,10 +115,6 @@ object RetentionStore {
             )
         )
     }
-
-    // ─────────────────────────────────────────
-    // 写
-    // ─────────────────────────────────────────
 
     fun write(config: RetentionConfig) {
         val path = file() ?: return

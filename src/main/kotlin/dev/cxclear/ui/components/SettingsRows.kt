@@ -34,7 +34,6 @@ fun SettingsGroupTitle(title: String) {
     )
 }
 
-/** 可点击设置行：图标 + 标题 + 副标题。 */
 @Composable
 fun SettingsItem(
     icon: ImageVector,
@@ -68,7 +67,6 @@ fun SettingsItem(
     }
 }
 
-/** 带开关的设置行；整行可点切换。 */
 @Composable
 fun SettingsSwitchItem(
     icon: ImageVector,
@@ -112,7 +110,6 @@ fun SettingsSwitchItem(
     }
 }
 
-/** 操作进行中时在行尾显示小进度圈。 */
 @Composable
 fun SettingsItemWithProgress(
     icon: ImageVector,

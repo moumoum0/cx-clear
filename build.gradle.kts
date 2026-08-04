@@ -19,7 +19,6 @@ dependencies {
     implementation(compose.desktop.currentOs)
     implementation(compose.components.resources)
     implementation("org.jetbrains.compose.material3:material3:1.11.0-alpha07")
-    // JB 官方定格版本，不会再更新，必须显式写死。
     implementation("org.jetbrains.compose.material:material-icons-extended:1.7.3")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")
     implementation("net.java.dev.jna:jna:5.19.1")

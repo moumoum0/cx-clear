@@ -9,10 +9,6 @@ import java.nio.file.Path
 import java.nio.file.attribute.BasicFileAttributes
 import kotlin.streams.toList
 
-// ─────────────────────────────────────────────
-// 路径解析
-// ─────────────────────────────────────────────
-
 internal fun claudeProjectsRoot(): Path? =
     homeDir()?.resolve(".claude")?.resolve("projects")?.takeIf { Files.isDirectory(it) }
 
@@ -22,16 +18,11 @@ internal fun codexSessionsRoot(): Path? =
 internal fun codexIndexFile(): Path? =
     homeDir()?.resolve(".codex")?.resolve("session_index.jsonl")?.takeIf { Files.isRegularFile(it) }
 
-// ─────────────────────────────────────────────
-// 辅助：快照工具
-// ─────────────────────────────────────────────
-
-/** 目录下所有直接子条目，失败返回空列表。 */
 private fun listDir(dir: Path): List<Path> = runCatching {
     Files.newDirectoryStream(dir).use { it.toList() }
 }.getOrDefault(emptyList())
 
-/** 递归收集 [dir] 下所有文件和目录（包含 dir 本身）的快照，不跟随软链接。 */
+/** 不跟随软链接。 */
 private fun snapshotTree(dir: Path): List<PathSnapshot> {
     if (!Files.exists(dir)) return emptyList()
     val snap = readPathSnapshot(dir) ?: return emptyList()
@@ -44,7 +35,7 @@ private fun snapshotTree(dir: Path): List<PathSnapshot> {
     return list
 }
 
-/** 目录及其全部内容的字节总量（只计文件，不跟随链接）。 */
+/** 只计文件，不跟随链接。 */
 private fun treeSize(dir: Path): Long {
     if (!Files.exists(dir)) return 0L
     return runCatching {
@@ -60,14 +51,9 @@ private fun treeSize(dir: Path): Long {
     }.getOrDefault(0L)
 }
 
-// ─────────────────────────────────────────────
-// Codex index
-// ─────────────────────────────────────────────
-
-/** `session_index.jsonl` 里的一行：id → thread_name / updated_at。 */
 private data class CodexIndexEntry(val id: String, val title: String, val updatedAt: String?)
 
-/** 解析整份索引，失败跳过该行（索引本身不会被删除，损坏了不影响主流程）。 */
+/** 坏行跳过；索引本身不会被删，损坏不影响主流程。 */
 @Suppress("UNCHECKED_CAST")
 private fun readCodexIndex(): Map<String, CodexIndexEntry> {
     val file = codexIndexFile() ?: return emptyMap()
@@ -84,11 +70,6 @@ private fun readCodexIndex(): Map<String, CodexIndexEntry> {
     return map
 }
 
-// ─────────────────────────────────────────────
-// Codex 会话扫描
-// ─────────────────────────────────────────────
-
-/** 把 ISO 8601 字符串（带或不带小数秒、带或不带 'Z'）转成毫秒；失败返回 null。 */
 private fun isoToMillis(iso: String?): Long? {
     iso ?: return null
     return runCatching {
@@ -96,16 +77,13 @@ private fun isoToMillis(iso: String?): Long? {
     }.getOrNull()
 }
 
-/** 取路径字符串的最后一段目录名（同时兼容 `\` 与 `/`）。 */
 private fun lastPathSegment(raw: String): String = raw
     .trimEnd('\\', '/')
     .substringAfterLast('\\')
     .substringAfterLast('/')
 
-/** 从 rollout jsonl 文件名里提取 UUID（最后一段 `-<uuid>`）。 */
 private fun codexFileId(file: Path): String {
     val name = file.fileName.toString()
-    // 格式：rollout-YYYY-MM-DDTHH-MM-SS-<uuid>.jsonl
     val withoutExt = if (name.endsWith(".jsonl")) name.dropLast(6) else name
     val dashIdx = withoutExt.indexOfLast { it == '-' }
     return if (dashIdx >= 0) withoutExt.substring(dashIdx + 1) else withoutExt
@@ -121,7 +99,6 @@ private fun firstLineSummary(raw: String): String? = raw
     .firstOrNull { it.isNotBlank() && !it.startsWith('<') }
     ?.take(60)
 
-/** 从 rollout jsonl 里读出的会话元信息：标题与所属项目（`session_meta.cwd` 末段）。 */
 private data class CodexMeta(val title: String?, val project: String?)
 
 /**
@@ -151,7 +128,6 @@ private fun readCodexMeta(file: Path): CodexMeta {
                         }
                     }
                 }
-                // 两项都拿到就不必继续读了。
                 if (title != null && project != null) break
             }
             CodexMeta(title ?: project, project)
@@ -206,14 +182,8 @@ private fun scanCodexSessions(
     return sessions.sortedByDescending { it.updatedMillis }
 }
 
-// ─────────────────────────────────────────────
-// Claude 会话扫描
-// ─────────────────────────────────────────────
-
-/** 跳过非会话目录（memory、其他文本目录）。 */
 private val CLAUDE_SKIP_DIRS = setOf("memory", "settings", "todos")
 
-/** UUID 正则：8-4-4-4-12。 */
 private val UUID_REGEX = Regex(
     "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
 )
@@ -294,7 +264,6 @@ private fun scanClaudeSessions(
                     java.nio.file.LinkOption.NOFOLLOW_LINKS)
                 val updatedMs = attrs.lastModifiedTime().toMillis()
 
-                // 同名子目录（含 subagents 等）
                 val siblingDir = projectDir.resolve(uuid)
                 val hasSiblingDir = Files.isDirectory(siblingDir)
 
@@ -327,10 +296,6 @@ private fun scanClaudeSessions(
     return sessions.sortedByDescending { it.updatedMillis }
 }
 
-// ─────────────────────────────────────────────
-// 公开 API
-// ─────────────────────────────────────────────
-
 /**
  * 枚举本机所有 [ChatTool.CODEX] + [ChatTool.CLAUDE] 会话，按更新时间倒序。运行在 IO 线程。
  *
@@ -353,11 +318,7 @@ fun scanAllChatSessions(
     return result.sortedByDescending { it.updatedMillis }
 }
 
-// ─────────────────────────────────────────────
-// 详情按需解析
-// ─────────────────────────────────────────────
-
-/** 解析 [session] 的消息流，返回 user/assistant 纯文本列表。只读 IO，不修改任何文件。 */
+/** 只读 IO，不改任何文件。 */
 @Suppress("UNCHECKED_CAST")
 fun loadChatMessages(session: ChatSessionSummary): List<ChatMessage> = runCatching {
     when (session.tool) {

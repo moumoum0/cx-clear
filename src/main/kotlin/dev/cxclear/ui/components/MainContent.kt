@@ -116,7 +116,7 @@ fun MainContent(
     var isCleaning by remember { mutableStateOf(false) }
     var showCleanConfirm by remember { mutableStateOf(false) }
     var cleanError by remember { mutableStateOf<String?>(null) }
-    // 每完成一次清理 +1，累计卡片 key 在它上面，借此重新从磁盘读取最新统计。
+    // 清理完成后 bump，驱动累计卡 / 磁盘卡重读磁盘。
     var cleanTick by remember { mutableStateOf(0) }
     val scope = rememberCoroutineScope()
 
@@ -141,7 +141,7 @@ fun MainContent(
                 clean(requests).collect { event ->
                     when (event) {
                         is CleanEvent.AllDone -> {
-                            // 记实测删除量，不是扫描预估值。0 字节 append 会被自动忽略。
+                            // 用实测释放量，不用扫描预估。
                             CleanHistory.append(event.totalFreedBytes)
                         }
                         is CleanEvent.Blocked -> errors +=
@@ -172,12 +172,9 @@ fun MainContent(
         selectedTargets = emptySet()
         scope.launch {
             val profiles = ALL_PROFILES.filter { it.id in selectedTools }
-            // SpaceScanned / TargetsScanned 每次都是全量快照，直接整份替换即可。
             var results = emptyList<ScanResult>()
             var spaces = emptyList<ToolSpaceResult>()
 
-            // 定时快照每到一次就重算一次分类：阶段一「已找到」随总占用生长，
-            // 阶段二柱体按可清理项测量进度生长；节奏由 Scanner 定时器拍平。
             scanStream(profiles).collect { event ->
                 when (event) {
                     is ScanEvent.Started -> Unit
@@ -191,7 +188,7 @@ fun MainContent(
                 )
             }
 
-            // 跟 CleanTarget.defaultSelected 对齐：SAFE 但重建成本高的项可显式不默认勾。
+            // 跟 defaultSelected 对齐，不能写死 risk == SAFE。
             selectedTargets = scanCategories
                 .flatMap { it.items }
                 .filter { it.defaultSelected && it.bytes > 0L }
@@ -205,7 +202,6 @@ fun MainContent(
         .filter { it.key in selectedTargets }
         .sumOf { it.bytes }
 
-    // CHATS / SETTINGS 自带与扫描页同构的 TopBar + 内容卡外壳。
     if (currentScreen == Screen.CHATS) {
         ChatsView(modifier = modifier)
         return
@@ -215,7 +211,6 @@ fun MainContent(
         return
     }
 
-    // SCAN 页：TopBar + 内容区 + 底部统计卡
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -226,8 +221,7 @@ fun MainContent(
         TopBar(
             selectedTools = selectedTools,
             onToolToggle = { id ->
-                // 只切换选择，不动已完成的扫描结果——换工具图标不该抹掉上一轮扫出来的内容，
-                // 用户想把新工具纳入统计时再点「重新扫描」即可。
+                // 换工具只改勾选，不抹已有扫描结果。
                 if (scanPhase != ScanPhase.SCANNING) {
                     selectedTools = if (id in selectedTools) selectedTools - id else selectedTools + id
                 }
@@ -382,8 +376,6 @@ private fun buildCategories(
     val knownBytes = (packageItems + workingItems + historyItems).sumOf { it.bytes }
     val retainedBytes = (totalToolBytes - knownBytes).coerceAtLeast(0L)
 
-    // retained 排在最前：它在图例最上、在柱体顶端留空。可清理的三类自底向上填，
-    // 扫描时彩色只增不减，顶部空区被逐渐顶掉，柱身高度（=totalBytes）始终不变。
     return listOf(
         ScanCategory(
             id = "retained",
@@ -415,7 +407,6 @@ private fun buildCategories(
     )
 }
 
-/** 尚无扫描数据时的零分类：与 [buildCategories] 同结构，便于 IDLE / 扫描初期直接画真实结果区。 */
 private fun emptyScanCategories(): List<ScanCategory> = listOf(
     ScanCategory(
         id = "retained",
@@ -450,8 +441,6 @@ private fun ScanView(
     selectedTargets: Set<TargetKey>,
     onTargetToggle: (TargetKey) -> Unit,
 ) {
-    // IDLE / 扫描共用同一套结果区（扫描态文案与柱体 stub），不再用灰底骨架。
-    // 扫光只在真正 SCANNING 时开；IDLE 静止，避免未点扫描也在「动」。
     val displayCategories = categories.ifEmpty { emptyScanCategories() }
     ScanResultView(
         categories = displayCategories,
@@ -472,7 +461,6 @@ private fun ScanResultView(
     onTargetToggle: (TargetKey) -> Unit,
     showCylinderSweep: Boolean = isScanning,
 ) {
-    // 单向展开：同时最多打开一个分类，避免多栏同时撑开把列表冲散。
     var expandedCategoryId by remember(categories) { mutableStateOf<String?>(null) }
     val selectedBytes = categories
         .flatMap { it.items }
@@ -484,7 +472,7 @@ private fun ScanResultView(
             .fillMaxSize()
             .padding(horizontal = 42.dp, vertical = 20.dp),
         horizontalArrangement = Arrangement.spacedBy(44.dp),
-        // 顶对齐：展开后列表变高时若仍垂直居中，顶部会被父级裁掉。
+        // 居中展开会被裁顶。
         verticalAlignment = Alignment.Top,
     ) {
         StorageCylinder(
@@ -561,16 +549,12 @@ private fun ScanResultView(
                     }
                 }
             }
-            // 占比条两态各表意，且都随数据动态生长：
-            // 扫描时 = 可清理 / 总占用（随字节累加实时增长，呼应「可清理共 X」）；
-            // 完成后 = 已选 / 可清理（呼应「已选择 X」）。补间动画抹平两态切换。
             Spacer(modifier = Modifier.height(8.dp))
             val selectedFraction = if (isScanning) {
                 if (totalBytes > 0L) (cleanableBytes.toFloat() / totalBytes).coerceIn(0f, 1f) else 0f
             } else {
                 if (cleanableBytes > 0L) (selectedBytes.toFloat() / cleanableBytes).coerceIn(0f, 1f) else 0f
             }
-            // 补间到目标占比，勾选/取消时宽度滑动而非瞬跳。
             val animatedFraction by animateFloatAsState(
                 targetValue = selectedFraction,
                 animationSpec = Motion.medium(),
@@ -617,7 +601,6 @@ private fun ScanResultView(
                     else -> 0.72f
                 }
 
-                // 头行 + 子项共一张卡：展开时往下长，而不是头下另挂一串游离行。
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -631,9 +614,7 @@ private fun ScanResultView(
                                 expandedCategoryId = if (isExpanded) null else category.id
                             },
                     ) {
-                        // 行内占比底纹：宽度 = 该类 / 总占用，用分类色淡染。
-                        // retained 不染（它是留白概念），彩色只给可清理项。
-                        // matchParentSize：不参与父测量，避免把分类头撑成整页高。
+                        // matchParentSize，别把分类头撑高。
                         if (!isRetained && fraction > 0f) {
                             Box(Modifier.matchParentSize()) {
                                 Box(
@@ -650,7 +631,6 @@ private fun ScanResultView(
                                 .padding(horizontal = 14.dp, vertical = 11.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            // retained 在柱体里是留白，图例也用空心描边圈呼应，不给实心色块。
                             if (isRetained) {
                                 Box(
                                     Modifier
@@ -677,7 +657,7 @@ private fun ScanResultView(
                                 }
                             }
 
-                            // 保留数据 = 总占用 − 已扫可清理，扫描中会一路变小；行保留，字节扫完再出。
+                            // 扫描中 retained 在变，扫完再出数。
                             if (!(isScanning && isRetained)) {
                                 FlipBytesText(
                                     bytes = category.bytes,
@@ -761,7 +741,6 @@ private fun TargetSelectionRow(
             .padding(start = 10.dp, end = 14.dp, top = 10.dp, bottom = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // 分类色竖条：把子项钉在所属类上，避免展开后看起来像另一套列表。
         Box(
             Modifier
                 .width(3.dp)
@@ -807,7 +786,7 @@ private fun TargetSelectionRow(
                     color = AppColors.TextSecondary,
                 )
             }
-            // 只在 OPTIONAL 亮说明：SAFE 的「会重建」对勾选决策没有增量信息。
+            // SAFE 说明对勾选没增量，只亮 OPTIONAL。
             if (isOptional && target.description.isNotBlank()) {
                 Spacer(modifier = Modifier.height(3.dp))
                 Text(
@@ -821,22 +800,13 @@ private fun TargetSelectionRow(
     }
 }
 
-/** 一段短圆柱的绘制几何，已折算为像素区间；Canvas 只负责按序画出。 */
 private data class CylinderSlice(
     val color: Color,
     val top: Float,
     val bottom: Float,
 )
 
-/**
- * 把各段占比自底向上摊成像素区间。
- *
- * 占比极小的段会被抬升到 [minHeight]，否则会退化成一条被邻段底盘完全盖住的线；
- * 抬升后整体等比压回筒内，因此累计高度永远不会溢出筒身。
- *
- * [stubZero]：扫描初期各段份额还是 0 时，仍画出 [minHeight] 高的扁片，
- * 避免整根柱体只剩空壳；结果出来后关掉，真正为 0 的段照旧不画。
- */
+// 极小段抬高再压回，不然被底盘盖没；stubZero 扫初期画扁片。
 private fun sliceCylinder(
     colors: List<Color>,
     shares: List<Float>,
@@ -870,20 +840,12 @@ private fun StorageCylinder(
     showSweep: Boolean = isScanning,
     modifier: Modifier = Modifier,
 ) {
-    // 分母取全量（含首项的 retained），但 retained 本身不进柱体：可清理的几类
-    // 自底向上填，占比之和 < 1，剩下的就是顶部空筒——那块正是不可清理的保留数据，
-    // 以留白表达而非画出来。扫描时彩色段只增不减，顶部空区被顶掉，柱身高度不变。
     val totalBytes = categories.sumOf { it.bytes }.toFloat().coerceAtLeast(1f)
-    // 图例自上而下按占用递减，柱体自下而上堆叠，故这里反转；同时丢掉 retained。
+    // retained 只留白，不进柱体；图例自上而下 → 柱体反转堆。
     val stack = remember(categories) { categories.filter { it.id != "retained" }.asReversed() }
 
-    // 每段一个独立占比动画：0 表示尚未出现。
-    // 扫描期每来一批测量结果就重新补间，各段互不等待；结果就绪后同一组动画值
-    // 继续补间到最终占比。「生长」和「重新分配高度」因此共用一套状态，
-    // 不需要额外的全局进度，也不会出现顶面与最上段脱节。
     val shares = remember(stack.size) { List(stack.size) { Animatable(0f) } }
-    // key 只跟字节数走。别把 isScanning 加进来：扫描结束那一刻占比通常已经到位，
-    // 多这个 key 只会白重启一轮补间，看着像柱子又抖了一下。
+    // 别把 isScanning 塞进 key，扫完会白抖一轮。
     LaunchedEffect(stack.map { it.bytes }) {
         stack.forEachIndexed { index, category ->
             launch {
@@ -895,7 +857,6 @@ private fun StorageCylinder(
         }
     }
 
-    // 扫描期沿筒身上行的光带，作为「仍在统计」的活体信号；与 isScanning 解耦，IDLE 可静置。
     val sweep = remember { Animatable(0f) }
     LaunchedEffect(showSweep) {
         if (showSweep) {
@@ -959,12 +920,7 @@ private fun StorageCylinder(
 
         clipRect(left, top - capHeight / 2f, right, bottom + capHeight / 2f) {
             slices.forEach { slice ->
-                // 侧面与底盘共用一支笔刷：底盘是同一段柱面的延续，
-                // 不额外压暗，否则每条接缝都会读成一道投影。
-                // 柱面基本平涂，只在右侧收一点暗边交代圆度；不加高光，
-                // 否则会在整根柱子上留下一条与数据无关的白斑。
-                // 暗边混的是分类色自身的深色而非纯黑：混黑会把蓝色拉向灰，
-                // 一眼看过去像蒙了层脏，混同色系只降明度、不掉饱和。
+                // 暗边用同色系，别混黑（蓝会脏）；别加高光（会留白斑）。
                 val bodyBrush = Brush.horizontalGradient(
                     0f to slice.color,
                     0.80f to slice.color,
@@ -977,8 +933,6 @@ private fun StorageCylinder(
                     topLeft = Offset(left, slice.top),
                     size = Size(cylinderWidth, slice.bottom - slice.top),
                 )
-                // 每段只画自己朝下的底盘。它向下凸出、盖住下一段的顶端，
-                // 接缝的弧线由此产生；顶面留给最上面那段单独处理，避免互相穿插。
                 drawOval(
                     brush = bodyBrush,
                     topLeft = Offset(left, slice.bottom - capHeight / 2f),
@@ -999,8 +953,7 @@ private fun StorageCylinder(
                     topLeft = Offset(left, fillTop - capHeight / 2f),
                     size = Size(cylinderWidth, capHeight),
                 )
-                // 筒壁投在顶面上的阴影，靠后沿最深。alpha 压得很低：
-                // 这是整根柱子上唯一的纯黑，稍重一点顶面就会读成一个凹坑。
+                // 柱上唯一纯黑，alpha 重了像凹坑。
                 drawOval(
                     brush = Brush.verticalGradient(
                         listOf(Color.Black.copy(alpha = 0.10f), Color.Transparent),
@@ -1027,7 +980,6 @@ private fun StorageCylinder(
             }
         }
 
-        // 玻璃顶盖压在所有内容之上，alpha 高了会把最上段的颜色一起洗白。
         drawOval(
             color = Color.White.copy(alpha = 0.28f),
             topLeft = Offset(left, 0f),
@@ -1211,7 +1163,6 @@ internal fun ToolIcon(
 
 @Composable
 private fun CleaningStatsCard(refreshKey: Int, modifier: Modifier = Modifier) {
-    // refreshKey 变化（一次清理完成）就重新从磁盘读，把最新记录带进来。
     val total by remember(refreshKey) { mutableStateOf(CleanHistory.totalBytes()) }
     val daily by remember(refreshKey) { mutableStateOf(CleanHistory.recentDaily(limit = 7)) }
 
@@ -1252,15 +1203,11 @@ private fun CleaningStatsCard(refreshKey: Int, modifier: Modifier = Modifier) {
     }
 }
 
-// 柱子固定宽度，靠左排列：只有一两根记录时也不会被 weight 拉宽成一整条。
+// 别用 weight，一两根会被拉成整条。
 private val BarWidth = 26.dp
 private val BarSpacing = 8.dp
 private val BarLabelHeight = 16.dp
 
-/**
- * 最近几次清理的柱状图。每根柱子 = 一天的清理总量，只画有记录的天（空天跳过）。
- * 高度按当前窗口内的最大值归一，最新一根用主色高亮。
- */
 @Composable
 private fun CleanHistoryBars(daily: List<DailyClean>, modifier: Modifier = Modifier) {
     val maxBytes = daily.maxOf { it.bytes }.coerceAtLeast(1L)
@@ -1282,7 +1229,6 @@ private fun CleanHistoryBars(daily: List<DailyClean>, modifier: Modifier = Modif
                 verticalArrangement = Arrangement.Bottom,
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                // 柱子只在这块「剩余高度」里按占比生长，日期标签始终有自己的固定高度。
                 Box(
                     modifier = Modifier.fillMaxWidth().weight(1f),
                     contentAlignment = Alignment.BottomCenter,
@@ -1306,7 +1252,6 @@ private fun CleanHistoryBars(daily: List<DailyClean>, modifier: Modifier = Modif
     }
 }
 
-/** 尚无清理记录时的骨架占位：几根等宽的空框，交代「这里将来会画柱状图」。 */
 @Composable
 private fun CleanHistoryBarsPlaceholder(modifier: Modifier = Modifier) {
     val heights = listOf(0.4f, 0.68f, 0.32f, 0.84f, 0.52f)
@@ -1339,10 +1284,6 @@ private fun CleanHistoryBarsPlaceholder(modifier: Modifier = Modifier) {
     }
 }
 
-/**
- * C 盘占用卡：布局与左侧累计清理卡对齐——顶行左标签右百分比，底下一根横放圆柱。
- * 「C 盘占用」与左侧「累计清理」同顶对齐；正下方展示「已用 / 总量」。磁盘读取走 IO 线程；清理完成（refreshKey 变化）后重读一次。
- */
 @Composable
 private fun DiskUsageCard(refreshKey: Int, modifier: Modifier = Modifier) {
     var usage by remember { mutableStateOf<DiskUsage?>(null) }
@@ -1352,7 +1293,6 @@ private fun DiskUsageCard(refreshKey: Int, modifier: Modifier = Modifier) {
     val snapshot = usage
     val fraction = snapshot?.usedFraction ?: 0f
     val hasData = snapshot?.hasData == true
-    // 补间到实测占比，读取完成时柱身从左往右生长而非瞬现。
     val animatedFraction by animateFloatAsState(
         targetValue = if (hasData) fraction else 0f,
         animationSpec = Motion.slow(),
@@ -1372,7 +1312,6 @@ private fun DiskUsageCard(refreshKey: Int, modifier: Modifier = Modifier) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                // 与「累计清理」卡一致顶对齐，避免标题被大号百分比往下拽。
                 verticalAlignment = Alignment.Top,
             ) {
                 Column {
@@ -1393,7 +1332,6 @@ private fun DiskUsageCard(refreshKey: Int, modifier: Modifier = Modifier) {
 
             Spacer(Modifier.weight(1f))
 
-            // 与左侧柱状图同高，贴底；横放的扫描风圆柱表达占用占比。
             DiskUsageCylinder(
                 fraction = animatedFraction,
                 modifier = Modifier.fillMaxWidth().height(72.dp),
@@ -1402,10 +1340,6 @@ private fun DiskUsageCard(refreshKey: Int, modifier: Modifier = Modifier) {
     }
 }
 
-/**
- * 横放占用圆柱：柱面暗边、占用前缘端面高光对齐扫描页的 [StorageCylinder]。
- * 左端只做闭口圆角收口，不画竖筒顶那种开口玻璃透视。
- */
 @Composable
 private fun DiskUsageCylinder(fraction: Float, modifier: Modifier = Modifier) {
     val fill = fraction.coerceIn(0f, 1f)
@@ -1417,7 +1351,6 @@ private fun DiskUsageCylinder(fraction: Float, modifier: Modifier = Modifier) {
         val right = size.width - capWidth / 2f
         val bodyWidth = right - left
 
-        // 空筒壳：竖直渐变交代横躺圆度。
         drawRect(
             brush = Brush.verticalGradient(
                 listOf(
@@ -1432,7 +1365,6 @@ private fun DiskUsageCylinder(fraction: Float, modifier: Modifier = Modifier) {
             topLeft = Offset(left, top),
             size = Size(bodyWidth, cylinderHeight),
         )
-        // 左右都是闭口端盖（对齐竖筒底），不用白色开口高光。
         drawOval(
             brush = Brush.horizontalGradient(
                 listOf(AppColors.CylinderShellLight, AppColors.CylinderShellMid),
@@ -1451,7 +1383,7 @@ private fun DiskUsageCylinder(fraction: Float, modifier: Modifier = Modifier) {
         if (fill > 0f) {
             val fillRight = left + bodyWidth * fill
             val fillColor = AppColors.Primary
-            // 柱面基本平涂，只在下沿收一点暗边；混同色系深色，不混黑。
+            // 同色系暗边，别混黑。
             val bodyBrush = Brush.verticalGradient(
                 0f to fillColor,
                 0.80f to fillColor,
@@ -1459,7 +1391,6 @@ private fun DiskUsageCylinder(fraction: Float, modifier: Modifier = Modifier) {
                 startY = top,
                 endY = top + cylinderHeight,
             )
-            // 两端各放出半个端盖：左闭口圆角 + 占用前缘端面。
             clipRect(
                 left - capWidth / 2f,
                 top,
@@ -1471,13 +1402,11 @@ private fun DiskUsageCylinder(fraction: Float, modifier: Modifier = Modifier) {
                     topLeft = Offset(left, top),
                     size = Size((fillRight - left).coerceAtLeast(0f), cylinderHeight),
                 )
-                // 左端闭口：与壳同形，刷成填充色，避免露灰边。
                 drawOval(
                     brush = bodyBrush,
                     topLeft = Offset(left - capWidth / 2f, top),
                     size = Size(capWidth, cylinderHeight),
                 )
-                // 占用前缘的端面高光。
                 drawOval(
                     brush = Brush.horizontalGradient(
                         listOf(
@@ -1490,7 +1419,6 @@ private fun DiskUsageCylinder(fraction: Float, modifier: Modifier = Modifier) {
                     topLeft = Offset(fillRight - capWidth / 2f, top),
                     size = Size(capWidth, cylinderHeight),
                 )
-                // 筒壁投在端面上的阴影，靠后沿最深。
                 drawOval(
                     brush = Brush.horizontalGradient(
                         listOf(Color.Black.copy(alpha = 0.10f), Color.Transparent),

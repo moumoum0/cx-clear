@@ -87,7 +87,6 @@ fun WindowScope.App(
     }
 
     val overlayHost = remember { OverlayHostState() }
-    // 浮层出现时把底层内容模糊掉，营造「在画布上叠了一层」的纵深；关闭时平滑回到 0。
     val blurRadius by animateDpAsState(
         targetValue = if (overlayHost.content != null) 12.dp else 0.dp,
         animationSpec = Motion.normal(),
@@ -96,8 +95,7 @@ fun WindowScope.App(
 
     AppTheme {
     CompositionLocalProvider(LocalOverlayHost provides overlayHost) {
-    // 整窗浮层要盖过标题栏，得有一层铺满整窗的 Box 兜着 scrim 与浮层内容；
-    // clip 在最外层，scrim 与浮层因此都尊重窗口圆角。
+    // clip 最外层，scrim/浮层才跟窗口圆角。
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -124,7 +122,7 @@ fun WindowScope.App(
                 onClose = onCloseRequest,
             )
 
-            // 必须 weight 吃掉标题栏以下剩余高度；fillMaxSize 会按整窗量高，底边被窗口 clip 裁掉一块。
+            // fillMaxSize 会按整窗量高，底边被 clip 裁掉。
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -143,7 +141,6 @@ fun WindowScope.App(
             }
         }
 
-        // scrim + 浮层：只在有内容时出现，淡入淡出。点 scrim 空白处等同取消。
         val overlay = overlayHost.content
         AnimatedVisibility(
             visible = overlay != null,
@@ -161,8 +158,7 @@ fun WindowScope.App(
                     ),
             )
         }
-        // 浮层内容单独渲染，不随 scrim 的 AnimatedVisibility 一起卸载——
-        // 内容自持状态（草稿/输入），交给它自己决定何时 hide()。
+        // 别跟 scrim 一起卸，草稿状态会丢。
         overlay?.invoke()
     }
     }

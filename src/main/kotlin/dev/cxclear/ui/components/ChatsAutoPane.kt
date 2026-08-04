@@ -83,13 +83,6 @@ import dev.cxclear.ui.theme.appOutlinedTextFieldColors
 import kotlin.math.max
 import kotlin.math.roundToInt
 
-/**
- * 自动清理：策略列表 + 点击式创建 / 编辑向导。
- *
- * 列表里每条策略是一张卡片（标题 + 条件句子 + 编辑 + 开关）；长按卡片弹出删除。
- * 改动即时落盘（[onConfigChange]）。新建 / 编辑都走全屏分步向导——每步只列几个可点选项，
- * 当前最右列末尾一个「返回」上一层，一路点到「保存」才落盘，中途「返回」不改动已有策略。
- */
 @Composable
 internal fun ChatsAutoPane(
     config: RetentionConfig,
@@ -97,7 +90,6 @@ internal fun ChatsAutoPane(
     modifier: Modifier = Modifier,
 ) {
     val overlayHost = LocalOverlayHost.current
-    // 新建第一步：先给策略起名。填完名再把向导推进全窗浮层。
     var namingForNew by remember { mutableStateOf(false) }
 
     fun openWizard(
@@ -105,7 +97,6 @@ internal fun ChatsAutoPane(
         initial: RetentionRule? = null,
         onSave: (List<ChatCondition>, ConditionJoin) -> Unit,
     ) {
-        // 浮层内容挂到根部渲染，scrim 已挡住列表，这里对 config 的快照在浮层存续期间不会变。
         overlayHost.show {
             WizardOverlay(
                 ruleName = ruleName,
@@ -158,9 +149,6 @@ internal fun ChatsAutoPane(
     }
 }
 
-/**
- * 新建策略第一步：起名。名称是列表里唯一的可读标识，必填——空白时确认不可点。
- */
 @Composable
 private fun NameRuleDialog(
     onDismiss: () -> Unit,
@@ -212,14 +200,6 @@ private fun NameRuleDialog(
     )
 }
 
-/**
- * 全窗浮层里的向导：scrim 与模糊已由 [dev.cxclear.ui.App] 铺在整窗底下，向导直接落在这块变暗的
- * 灰色画布上，不再套一层白底面板。草稿状态自持在浮层里，跟着点选即时重组。
- *
- * 编辑区限回原来那块内容区（避开左侧栏与顶部标题栏），跟没进浮层时向导所在的位置一致；
- * 编辑区吞掉点击，避免工作区里的误点落到 scrim 触发取消，其余裸 scrim 区点了 = 取消（[onDismiss]）。
- * 策略名放到整窗右下角、放大、用反色（近白），压在暗画布上仍清晰。
- */
 @Composable
 private fun WizardOverlay(
     ruleName: String,
@@ -232,13 +212,12 @@ private fun WizardOverlay(
         mutableStateOf(draftFromExisting(initialConditions, initialJoin))
     }
     Box(modifier = Modifier.fillMaxSize()) {
-        // 编辑区收回原内容区：左让开侧栏、上让开标题栏，内侧再留一圈与原来一致的边距。
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(start = AppDimensions.SidebarWidth.dp, top = AppDimensions.TitleBarHeight.dp)
                 .padding(AppDimensions.SpacingLarge.dp)
-                // 编辑区吞点击，避免落到底下的 scrim 触发取消。
+                // 吞点击，别落到 scrim 上取消。
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
@@ -252,7 +231,6 @@ private fun WizardOverlay(
                 onSave = onSave,
             )
         }
-        // 策略名钉在整窗右下角，放大 + 反色，作为「正在建哪条」的落款。
         Text(
             ruleName,
             fontSize = 22.sp,
@@ -265,14 +243,6 @@ private fun WizardOverlay(
     }
 }
 
-// ─────────────────────────────────────────────
-// 属性 → 具体条件类型的映射（向导用）
-// ─────────────────────────────────────────────
-
-/**
- * 一个可选「属性」。数值属性有「超过 / 少于」两个比较符，各对应一个具体 [ChatConditionType]；
- * 工具 / 文本属性没有比较符，[direct] 直接就是类型。
- */
 private data class AttrSpec(
     val label: String,
     val kind: ConditionValueKind,
@@ -280,7 +250,6 @@ private data class AttrSpec(
     val smaller: ChatConditionType? = null,
     val direct: ChatConditionType? = null,
 ) {
-    /** 这个属性用到的全部具体类型。 */
     val types: List<ChatConditionType> = listOfNotNull(larger, smaller, direct)
 }
 
@@ -296,22 +265,12 @@ private val ATTRS = listOf(
 
 private fun attrFor(type: ChatConditionType): AttrSpec = ATTRS.first { type in it.types }
 
-/** 数值属性的取值预设，省得每次都手打；末尾仍留「自定义」。 */
 private fun presetsFor(kind: ConditionValueKind): List<Int> = when (kind) {
     ConditionValueKind.MEGABYTES -> listOf(1, 5, 10)
     ConditionValueKind.DAYS -> listOf(7, 30, 90)
     else -> emptyList()
 }
 
-// ─────────────────────────────────────────────
-// 只读句子
-// ─────────────────────────────────────────────
-
-/**
- * 一条已建好的策略读成一句话：「未更新超过 30 天 且 大小超过 10 MB」。
- *
- * 不带「删除」前缀——列表里每条都顶着同一个词，零信息量还挤掉真正要看的条件。
- */
 private fun ruleSentence(rule: RetentionRule): String {
     if (rule.conditions.isEmpty()) return "无条件"
     val parts = rule.conditions.map { readableCondition(it) }
@@ -325,15 +284,7 @@ private fun readableCondition(c: ChatCondition): String = when (c.type.kind) {
     ConditionValueKind.TEXT -> "${c.type.label}「${c.text}」"
 }
 
-/**
- * 向导顶部简介：已定条件 + 正在点的那一条，随点选/输入即时刷新。
- *
- * [valuePreview] 是取值列里还没点确认的草稿（数字原文或文本）。
- * 点了「且」、下一条还没选时，句子末尾立刻挂上「且」。
- */
 private fun draftSentence(draft: Draft, valuePreview: String? = null): String {
-    // showCombine：末尾已定好；若正在重打自定义值，用预览替换末尾那句。
-    // 否则：committed 全是定稿，正在拼的在 attr/larger（+ 可选预览）上。
     val finished = if (draft.showCombine) draft.committed.dropLast(1) else draft.committed
     val tail = when {
         draft.showCombine && valuePreview != null && draft.attr != null ->
@@ -344,12 +295,10 @@ private fun draftSentence(draft: Draft, valuePreview: String? = null): String {
     val parts = finished.map { readableCondition(it) } + listOfNotNull(tail)
     if (parts.isEmpty()) return "删除"
     val body = "删除 " + parts.joinToString(" ${draft.join.label} ")
-    // 点「且」后 attr 被清空、下一条还没起头：把连接词立刻挂上，别等选了属性才出现。
     val awaitingNext = !draft.showCombine && finished.isNotEmpty() && tail == null
     return if (awaitingNext) "$body ${draft.join.label}" else body
 }
 
-/** 正在拼、还没进 committed 的那半句；缺取值时只写到已选层级，不加省略号。 */
 private fun pendingFragment(attr: AttrSpec?, larger: Boolean?, valuePreview: String?): String? {
     if (attr == null) return null
     if (attr.isNumeric && larger == null) return attr.label
@@ -370,10 +319,6 @@ private fun pendingFragment(attr: AttrSpec?, larger: Boolean?, valuePreview: Str
         }
     }
 }
-
-// ─────────────────────────────────────────────
-// 列表态：策略读成句子 + 新建入口
-// ─────────────────────────────────────────────
 
 @Composable
 private fun RuleListView(
@@ -423,10 +368,6 @@ private fun RuleListView(
     }
 }
 
-/**
- * 一条策略卡片：标题 + 条件详情，右侧「编辑」与开关；长按弹出删除。
- * 卡片外形对齐手动管理里的分组卡（圆角 Surface 容器）。
- */
 @Composable
 private fun RuleCard(
     rule: RetentionRule,
@@ -435,7 +376,6 @@ private fun RuleCard(
     onDelete: () -> Unit,
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
-    // 名称是列表主标识；旧配置/迁移出来的空名用「未命名策略」，详情仍走条件句子。
     val title = rule.name.ifBlank { "未命名策略" }
     val detail = ruleSentence(rule)
 
@@ -455,7 +395,6 @@ private fun RuleCard(
                 .padding(start = 12.dp, end = 8.dp, top = 10.dp, bottom = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            // 标题与条件句竖排：条件句是这条策略真正要看的东西，不跟名字抢同一行宽度。
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     title,
@@ -513,50 +452,31 @@ private fun RuleCard(
     }
 }
 
-// ─────────────────────────────────────────────
-// 向导态：一步一屏，点着走
-// ─────────────────────────────────────────────
-
-/**
- * 正在建的策略草稿。[committed] 是已定好的条件，[attr] / [larger] 是「正在拼的这一条」选到哪。
- *
- * 向导一路点到「保存」才把它变成一条真正的 [RetentionRule]，中途「返回」不碰已有策略。
- */
 private data class Draft(
     val committed: List<ChatCondition> = emptyList(),
     val join: ConditionJoin = ConditionJoin.AND,
     val attr: AttrSpec? = null,
     val larger: Boolean? = null,
-    /** 取值已定，右侧展开「且 / 或 / 保存 / 返回」那一列。 */
     val showCombine: Boolean = false,
 ) {
-    /**
-     * 已被别的条件占用、不该再出现在列里的类型。
-     *
-     * 正在改的那一条不算占用——[showCombine] 为真时 [committed] 末尾就是它，
-     * 若把它也算进去，它自己的属性与比较符会从列里消失，回头就改不成了。
-     */
+    // showCombine 时末尾是正在改的那条，算占用会把自己选项弄没。
     val usedTypes: List<ChatConditionType>
         get() = (if (showCombine) committed.dropLast(1) else committed).map { it.type }
 
-    /** 真正已占用的全部类型，用于判断「还有没有下一个条件可加」。 */
     val allTypes: List<ChatConditionType> get() = committed.map { it.type }
 }
 
-/** 数值属性才有「超过 / 少于」两个比较符，也才需要中间那一列。 */
 private val AttrSpec.isNumeric: Boolean
     get() = kind == ConditionValueKind.MEGABYTES || kind == ConditionValueKind.DAYS
 
 private fun AttrSpec.typeFor(larger: Boolean?): ChatConditionType =
     if (isNumeric) (if (larger == true) this.larger!! else smaller!!) else direct!!
 
-/** 从一个已定条件反推它当初的选择路径，用于「返回」时把左边几列原样点回来。 */
 private fun pathOf(condition: ChatCondition): Pair<AttrSpec, Boolean?> {
     val attr = attrFor(condition.type)
     return attr to if (attr.isNumeric) condition.type == attr.larger else null
 }
 
-/** 把已有策略条件还原成向导草稿，落在「且 / 或 / 保存」列，便于接着改或直接保存。 */
 private fun draftFromExisting(conditions: List<ChatCondition>, join: ConditionJoin): Draft {
     if (conditions.isEmpty()) return Draft(join = join)
     val last = conditions.last()
@@ -570,12 +490,6 @@ private fun draftFromExisting(conditions: List<ChatCondition>, join: ConditionJo
     )
 }
 
-/**
- * 当前最右列深度（0 = 属性列）。
- *
- * 数值路径：属性 → 比较符 → 取值 → 组合；非数值：属性 → 取值 → 组合。
- * 前一列仍可改选；再往前锁定，只能靠「返回」一步步退。
- */
 private fun Draft.rightmostDepth(): Int {
     val a = attr ?: return 0
     return when {
@@ -586,13 +500,11 @@ private fun Draft.rightmostDepth(): Int {
     }
 }
 
-/** 列下标是否可点选：当前列与前一列可以，前前列及更早锁定。 */
 private fun Draft.isColumnEditable(columnIndex: Int): Boolean =
     columnIndex >= rightmostDepth() - 1
 
 private val ColumnWidth = 150.dp
 
-/** 向导里一轮条件的渲染条目；[id] 跨「且」稳定，用来保住 composition。 */
 private data class RoundEntry(
     val id: Int,
     val locked: Boolean,
@@ -620,16 +532,6 @@ private fun cascadedItemCenterY(
     return offsetY + segmentedItemCenterY(itemIndex, segH, divH)
 }
 
-/**
- * 创建向导：从左到右一列列展开。
- *
- * 属性列 → （数值属性才有的）比较符列 → 取值列 → 且 / 或 / 保存 列。
- * 选过的项高亮留在原位，整条路径一直看得见；只有当前最右一列末尾留「返回」，
- * 右边一旦展开下一列，左边那列的「返回」就撤掉。
- * 可改选范围：当前列 + 前一列；前前列及更早锁定（仍显示路径，点不动）。
- * 下一列选项区（不含「返回」）相对上一列选中项中线垂直居中；顶边若会越过行顶则贴顶。
- * 锚点用选中下标同步计算，Layout 同帧落位，项数变化不跳。
- */
 @Composable
 private fun WizardView(
     draft: Draft,
@@ -646,14 +548,12 @@ private fun WizardView(
     }
     var valueSelectedCenterY by remember { mutableFloatStateOf(Float.NaN) }
     var rowTopInWindow by remember { mutableFloatStateOf(Float.NaN) }
-    // 取值列里尚未确认的输入，只用来刷新顶部简介；点预设/确认进 committed 后清掉。
     var valuePreview by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(draft.attr, draft.larger, draft.showCombine) {
         valuePreview = null
     }
 
-    // 每一轮有稳定 id：点「且」后旧轮只把 locked 打开，不换 composable / key，才不会闪一下。
-    // 编辑已有策略时草稿可能已带条件，按当前草稿预置 id，避免 building 与 frozen 撞 key。
+    // RoundEntry.id 要稳：点「且」只翻 locked，别换 key。
     val initialFrozenCount = if (draft.showCombine) {
         (draft.committed.size - 1).coerceAtLeast(0)
     } else {
@@ -697,7 +597,6 @@ private fun WizardView(
         applyDraft(draft.copy(attr = attr, larger = larger, showCombine = true))
     }
 
-    // 所有轮次排成一条列表、共用同一套 key 槽位：点「且」时旧轮只改 locked，不挪到另一个 for 里去挂。
     val frozenCount = if (draft.showCombine) {
         (draft.committed.size - 1).coerceAtLeast(0)
     } else {
@@ -730,10 +629,7 @@ private fun WizardView(
         )
     }
 
-    // 锚点是「当前正在编辑的那一轮固定在左边起点」，不是整条路径右对齐：
-    // 右对齐会让只有一轮时也贴到最右边。这里让前缀（已冻结的轮）往左溢出，
-    // 当前轮恒定落在 x=0，于是第一轮在原位，点「且」后旧轮才被推走。
-    // x 只有一个真值（-前缀宽度），动画从上一帧落点滑到新落点，不做 snapTo 反跳，所以不闪。
+    // 当前轮钉左边；右对齐单轮也会贴右。位移只信 onPlaced（-x），别在 layout 里重算。
     val pathShift = remember { Animatable(0f) }
     var shiftInit by remember { mutableStateOf(false) }
     var shiftTarget by remember { mutableFloatStateOf(0f) }
@@ -754,8 +650,6 @@ private fun WizardView(
                 .fillMaxWidth()
                 .onGloballyPositioned { rowTopInWindow = it.localToWindow(Offset.Zero).y },
             content = {
-            // 只有一个子节点：整条路径一个 Row。所有轮共用同一套 key 槽位，
-            // 当前轮变成已冻结轮时只翻 locked，不换 call-site，所以不会重挂、不闪。
             Row(
                 horizontalArrangement = Arrangement.spacedBy(AppDimensions.SpacingMedium.dp),
             ) {
@@ -764,8 +658,6 @@ private fun WizardView(
                         JoinLabel(draft.join.label)
                     }
                     val isCurrent = index == roundEntries.lastIndex
-                    // 当前轮报出它在 Row 内的 x：这是「该滑多少」的唯一真值。
-                    // positionInParent relative to Row，在 pathShift 之上测得，不受位移影响，不成环。
                     val anchorModifier = if (isCurrent) {
                         Modifier.onPlaced { shiftTarget = -it.positionInParent().x }
                     } else {
@@ -815,13 +707,10 @@ private fun WizardView(
             }
             },
         ) { measurables, constraints ->
-            // 不限宽测量：整条路径想多宽就多宽，允许超出屏幕。
             val path = measurables[0].measure(
                 constraints.copy(minWidth = 0, maxWidth = Constraints.Infinity),
             )
             val viewport = constraints.maxWidth
-            // 位移量由当前轮的 onPlaced 决定（见上），这里不再算落点，
-            // 否则会覆盖锚点值、又退回「整条路径右对齐」那套错的行为。
             layout(viewport, path.height) {
                 path.placeRelative(pathShift.value.roundToInt(), 0)
             }
@@ -829,47 +718,23 @@ private fun WizardView(
     }
 }
 
-
-/**
- * 一列的动画状态：入场进度 [enter] 与竖向锚点 [anchor]。
- *
- * 拆出来单独 hold，是为了让它能被「同一视觉位置、但内容会换的列」共享——
- * 比如属性列右边那一列，选数值属性时是比较符列、选工具/文本属性时是取值列，
- * 二者是不同的 composable（不同 call-site），各自 `remember` 会让状态在切换时丢失、
- * 于是每次换属性都重播入场。把状态 hoist 到 [WizardView] 按位置共享，切内容也不丢，
- * 就能「已经在场 → 换上一列选项 → 平滑滑过去」而不是重新淡入。
- */
+// 同槽位会换 call-site（比较符↔取值），状态得 hoist，否则每次重播入场。
 private class ColumnAnim {
     val enter = Animatable(0f)
     val anchor = Animatable(0f)
-    /** 已播过入场：之后只做位移，不再淡入。 */
     var appeared = false
-    /** 锚点已首次落位：之后锚点变化走动画。 */
     var anchorInit = false
 
-    /** 列整个撤走时复位，下次再出现重新走入场（而非从旧位置突兀滑入）。 */
     fun reset() {
         appeared = false
         anchorInit = false
     }
 }
 
-/**
- * 相对锚点（上一列选中项中线）垂直居中 [body]；[footer]（返回）不参与居中。
- *
- * 两段动画各管一件事：
- * - **入场**：这一列首次出现时播一次淡入 + 自左滑入（「选了上一列某项、这一列弹出来」的那一下）。
- * - **移动**：列已经在场时，若上一列换了选项、锚点随之改变，整列平滑滑到新位置，而不是重新淡入。
- *   不同选项弹出的选项数可能不同（高度不同），高度按新内容即时取，竖向中线走动画。
- *
- * [sharedAnim] 非空时用它（跨内容切换保留状态，见 [ColumnAnim]）；为空则本列自持一份，
- * 每次首次出现都走入场——适合「选了上一列才冒出来」的真·新列。
- */
 @Composable
 private fun AlignedColumn(
     anchorCenterY: Float?,
     sharedAnim: ColumnAnim? = null,
-    /** 为假时跳过入场（已定稿路径从可点列「就地」冻住，不要再淡入一次）。 */
     playEnter: Boolean = true,
     body: @Composable () -> Unit,
     footer: (@Composable () -> Unit)? = null,
@@ -877,7 +742,6 @@ private fun AlignedColumn(
     val density = LocalDensity.current
     val slideFrom = with(density) { 20.dp.toPx() }
     val anim = sharedAnim ?: remember { ColumnAnim() }
-    // 入场：首次出现从 0 淡入 + 自左滑入；已 appeared 则直接坐实到 1，不再重播。
     LaunchedEffect(anim, playEnter) {
         if (!playEnter || anim.appeared) {
             anim.enter.snapTo(1f)
@@ -888,7 +752,6 @@ private fun AlignedColumn(
             anim.appeared = true
         }
     }
-    // 竖向锚点：首次直接落位；在场时上一列换选项导致锚点变化，就平滑滑过去。
     LaunchedEffect(anim, anchorCenterY) {
         val target = anchorCenterY ?: return@LaunchedEffect
         if (anim.anchorInit) {
@@ -919,7 +782,6 @@ private fun AlignedColumn(
         val width = max(bodyPlaceable.width, footerPlaceable?.width ?: 0)
             .coerceIn(constraints.minWidth, constraints.maxWidth)
         val contentH = bodyPlaceable.height + gap + (footerPlaceable?.height ?: 0)
-        // 读 anim.anchor.value（在 layout 阶段）→ 动画每帧驱动重新落位。
         val yOff = if (anchorCenterY != null) {
             (anim.anchor.value - bodyPlaceable.height / 2f).roundToInt().coerceAtLeast(0)
         } else {
@@ -932,14 +794,12 @@ private fun AlignedColumn(
     }
 }
 
-/** 顶部一句话交代已定到哪；随点选与输入即时变。 */
 @Composable
 private fun WizardHeader(draft: Draft, valuePreview: String? = null) {
     Text(
         draftSentence(draft, valuePreview),
         fontSize = 14.sp,
         fontWeight = FontWeight.Medium,
-        // 直接浮在暗画布上（不在卡片内），用反色（近白）保证可读。
         color = AppColors.TextOnScrim,
     )
 }
@@ -951,12 +811,8 @@ private fun CombineColumn(
     onSave: (List<ChatCondition>, ConditionJoin) -> Unit,
     onSegmentHeight: (Float) -> Unit,
 ) {
-    // 所有类型都用过了就没有「下一个条件」可加，不留点了没反应的入口。
-    // 这里按 allTypes 算：刚定好的这一条确实占了一个类型。
     val canAddMore = ATTRS.any { spec -> spec.types.any { it !in draft.allTypes } }
 
-    // 规则内条件恒为「且」：不给连接词选项，「且」就是「再加一个条件」的动作，不是持久选中态。
-    // 只渲染且/保存；「返回」由 AlignedColumn.footer 挂在外面，不进对齐高度。
     WizSegmented(
         options = buildList {
             if (canAddMore) {
@@ -968,11 +824,6 @@ private fun CombineColumn(
     )
 }
 
-// ─────────────────────────────────────────────
-// 一轮条件列：可点 / 锁定共用同一棵树（点「且」只翻 locked，不卸挂）
-// ─────────────────────────────────────────────
-
-/** 轮次之间的「且」：与首段文字大致齐平，分隔已冻路径与下一轮。 */
 @Composable
 private fun JoinLabel(label: String) {
     Text(
@@ -983,13 +834,6 @@ private fun JoinLabel(label: String) {
     )
 }
 
-/**
- * 一轮的属性 →（比较符）→ 取值。
- *
- * [locked] 为真时选项全禁用、不留返回——点「且」后旧轮就地锁住；
- * 为假时与原来的可点路径同一套列，供当前轮继续点选。
- * 冻结 / 当前必须走这一棵树，才能靠外层 [key] 在「且」时复用节点、避免闪一下。
- */
 @Composable
 private fun RoundSlot(
     locked: Boolean,
@@ -1026,10 +870,8 @@ private fun RoundSlot(
     fun colEditable(columnIndex: Int): Boolean =
         !locked && columnIndex >= depth - 1
 
-    // 已定稿的轮整体降一档重量，焦点留给当前轮。
     val roundWeight = if (locked) WizWeight.DIMMED else WizWeight.ACTIVE
 
-    // 一轮收成一个 Row：外层只挂一个带 key 的节点，锁定时不拆成多列兄弟重排。
     Row(horizontalArrangement = Arrangement.spacedBy(AppDimensions.SpacingMedium.dp)) {
         WizColumn {
             WizSegmented(
@@ -1169,7 +1011,6 @@ private fun RoundSlot(
     }
 }
 
-/** 一轮的取值列：锁定时只展示选中态；可点时与原 ValueColumn 相同。 */
 @Composable
 private fun RoundValueColumn(
     attr: AttrSpec,
@@ -1185,7 +1026,6 @@ private fun RoundValueColumn(
     rowTopInWindow: Float,
 ) {
     val type = attr.typeFor(larger)
-    // 锁定 = 这一轮已定稿，选中段走淡填充，把焦点让给当前轮。
     val weight = if (locked) WizWeight.DIMMED else WizWeight.ACTIVE
 
     fun commit(next: ChatCondition) {
@@ -1207,7 +1047,7 @@ private fun RoundValueColumn(
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         when (attr.kind) {
             ConditionValueKind.MEGABYTES, ConditionValueKind.DAYS -> {
-                // 锁定后仍保留同一套预设 + 自选输入结构，避免点「且」时取值列高度突变闪一下。
+                // 锁定也留自选行，不然点「且」高度会跳。
                 val numberOptions = buildList {
                     addAll(presets)
                     if (chosen != null && chosen.number !in presets) add(chosen.number)
@@ -1278,11 +1118,6 @@ private fun RoundValueColumn(
     }
 }
 
-// ─────────────────────────────────────────────
-// 向导的一列 + 竖向连体分段
-// ─────────────────────────────────────────────
-
-/** 一列：固定宽度竖着排。宽度定死，列多了整行横向滚动，不让某列被挤窄。 */
 @Composable
 private fun WizColumn(content: @Composable ColumnScope.() -> Unit) {
     Column(
@@ -1292,7 +1127,6 @@ private fun WizColumn(content: @Composable ColumnScope.() -> Unit) {
     )
 }
 
-/** 分段选项：文字 + 选中态。整列拼成一块连体控件，不再各自成卡。[enabled] 为假时锁定不可点。 */
 private data class WizOption(
     val label: String,
     val selected: Boolean = false,
@@ -1300,19 +1134,8 @@ private data class WizOption(
     val onClick: () -> Unit,
 )
 
-/**
- * 一列的视觉重量。
- *
- * [ACTIVE] 是正在点的那一轮：选中段主色实心，抢眼。
- * [DIMMED] 是已定稿、锁住的轮：选中段改成 primaryContainer 淡填充，
- * 路径仍看得见，但焦点让给当前轮——否则定稿的和在编辑的一样亮，看不出正在改哪条。
- */
 private enum class WizWeight { ACTIVE, DIMMED }
 
-/**
- * 竖向连体分段，视觉对齐顶栏手动/自动切换：
- * 共享一圈描边、未选段浅底、选中段主色填充、段间分隔线；仍是文字、仍是竖排。
- */
 @Composable
 private fun WizSegmented(
     options: List<WizOption>,
@@ -1330,8 +1153,7 @@ private fun WizSegmented(
             .background(AppColors.Surface3),
     ) {
         options.forEachIndexed { index, option ->
-            // 按选项本身 key，别按下标：轮次之间选项增删会换位，
-            // 无 key 时新选项会落进上一个下标残留的颜色动画里，看起来「没选却高亮」。
+            // 别按下标 key，选项换位会串颜色动画。
             key(option.label) {
                 if (index > 0) {
                     Box(
@@ -1400,7 +1222,6 @@ private fun WizSegment(
     }
 }
 
-/** 每列末尾的「返回」：无底色、带左箭头，视觉上比选项弱一档。 */
 @Composable
 private fun BackCell(onClick: () -> Unit) {
     Row(
@@ -1412,7 +1233,6 @@ private fun BackCell(onClick: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        // 「返回」无底色，直接压在暗画布上，用反色近白保证可读。
         Icon(
             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
             contentDescription = null,
@@ -1423,7 +1243,6 @@ private fun BackCell(onClick: () -> Unit) {
     }
 }
 
-/** 自选输入（数值）：输入框 + 单位 + 确认。空/零不提交（`isComplete()` 也会兜底）。 */
 @Composable
 private fun CustomNumberCell(
     unit: String,
@@ -1479,7 +1298,6 @@ private fun CustomNumberCell(
     )
 }
 
-/** 自选输入（文本）：输入框 + 确认；空白不提交。 */
 @Composable
 private fun CustomTextCell(
     reportCoords: Boolean = false,
@@ -1522,17 +1340,6 @@ private fun CustomTextCell(
     )
 }
 
-
-// ─────────────────────────────────────────────
-// 空态 + 新建入口
-// ─────────────────────────────────────────────
-
-/**
- * 空态：一条策略都没有。
- *
- * 不用灰底骨架——这里不是加载中，摆两条假卡片只会让人以为已经有策略了。
- * 直说没有，并交代策略是干什么的，下面就是「新建策略」入口。
- */
 @Composable
 private fun EmptyRuleList(modifier: Modifier = Modifier) {
     Column(

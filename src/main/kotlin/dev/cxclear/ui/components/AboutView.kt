@@ -64,7 +64,6 @@ fun AboutView(
             .fillMaxSize()
             .background(AppColors.Surface1),
     ) {
-        // 对齐 selves TopAppBar：返回 +「关于」（字重 Normal）
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -93,7 +92,6 @@ fun AboutView(
             horizontalAlignment = Alignment.CenterHorizontally,
             contentPadding = PaddingValues(vertical = 24.dp),
         ) {
-            // 应用图标 — 120dp / 12dp 圆角，细描边无底色
             item {
                 Box(
                     modifier = Modifier
@@ -112,7 +110,6 @@ fun AboutView(
                 Spacer(modifier = Modifier.height(24.dp))
             }
 
-            // 应用名称
             item {
                 Text(
                     text = AppMeta.NAME,
@@ -123,7 +120,6 @@ fun AboutView(
                 Spacer(modifier = Modifier.height(8.dp))
             }
 
-            // 版本信息
             item {
                 Text(
                     text = "版本 ${AppMeta.VERSION}",
@@ -133,7 +129,6 @@ fun AboutView(
                 Spacer(modifier = Modifier.height(32.dp))
             }
 
-            // 开发者信息卡
             item {
                 OutlinedCard(
                     modifier = Modifier.fillMaxWidth(),
@@ -196,7 +191,6 @@ fun AboutView(
                 Spacer(modifier = Modifier.height(24.dp))
             }
 
-            // 第三方库标题
             item {
                 Text(
                     text = "使用的第三方库",
