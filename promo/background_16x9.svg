@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">
+  <defs>
+    <!-- 背景：三段深蓝黑渐变，中间微微提亮制造景深 -->
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#07090F"/>
+      <stop offset="0.5" stop-color="#0E111A"/>
+      <stop offset="1" stop-color="#080A12"/>
+    </linearGradient>
+
+    <!-- 主光晕：品牌蓝紫，左下角，大而柔 -->
+    <radialGradient id="glowPrimary" cx="0.22" cy="0.88" r="0.78">
+      <stop offset="0" stop-color="#475D92" stop-opacity="0.5"/>
+      <stop offset="0.45" stop-color="#475D92" stop-opacity="0.16"/>
+      <stop offset="1" stop-color="#475D92" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- 次光晕：浅蓝 inversePrimary，右上角，更淡，形成对角平衡 -->
+    <radialGradient id="glowSecondary" cx="0.84" cy="0.12" r="0.62">
+      <stop offset="0" stop-color="#B0C6FF" stop-opacity="0.2"/>
+      <stop offset="1" stop-color="#B0C6FF" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- 暗角：聚焦中心，边缘压暗 -->
+    <radialGradient id="vignette" cx="0.5" cy="0.5" r="0.78">
+      <stop offset="0.55" stop-color="#000000" stop-opacity="0"/>
+      <stop offset="1" stop-color="#000000" stop-opacity="0.5"/>
+    </radialGradient>
+
+    <!-- 居中细线：中心亮、两端淡出，作文字视觉锚点 -->
+    <linearGradient id="hairline" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#B0C6FF" stop-opacity="0"/>
+      <stop offset="0.5" stop-color="#B0C6FF" stop-opacity="0.45"/>
+      <stop offset="1" stop-color="#B0C6FF" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1920" height="1080" fill="url(#bg)"/>
+  <rect width="1920" height="1080" fill="url(#glowPrimary)"/>
+  <rect width="1920" height="1080" fill="url(#glowSecondary)"/>
+  <rect width="1920" height="1080" fill="url(#vignette)"/>
+
+  <line x1="810" y1="540" x2="1110" y2="540" stroke="url(#hairline)" stroke-width="1"/>
+</svg>
