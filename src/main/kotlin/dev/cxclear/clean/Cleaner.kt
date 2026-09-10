@@ -143,8 +143,11 @@ private fun deletePlan(request: CleanRequest, outcome: DeleteOutcome) {
     }
 }
 
-private fun processMatchesTool(profile: ToolProfile, executableName: String): Boolean =
-    profile.processNamePrefixes.any { executableName.startsWith(it.lowercase()) }
+/** 可执行文件名去 .exe 后与 [ToolProfile.processNamePrefixes] 精确比对。 */
+internal fun processMatchesTool(profile: ToolProfile, executableName: String): Boolean {
+    val stem = executableName.lowercase().removeSuffix(".exe")
+    return profile.processNamePrefixes.any { stem == it.lowercase() }
+}
 
 /** 清理运行中的工具会产生扫描/删除竞态；检测到相关进程时整批阻断。 */
 internal fun isToolProcessRunning(profile: ToolProfile): Boolean = runCatching {

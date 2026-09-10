@@ -31,6 +31,8 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.runtime.*
 import androidx.compose.animation.animateColorAsState
@@ -58,6 +60,7 @@ import dev.cxclear.resources.Res
 import dev.cxclear.resources.claude
 import dev.cxclear.resources.codex
 import dev.cxclear.resources.cursor
+import dev.cxclear.resources.opencode
 import org.jetbrains.compose.resources.DrawableResource
 import org.jetbrains.compose.resources.painterResource
 import dev.cxclear.model.TargetKey
@@ -108,7 +111,7 @@ fun MainContent(
 ) {
     val initialPrefs = remember { AppPreferences.read() }
     var selectedTools by remember {
-        mutableStateOf(initialPrefs.defaultTools.ifEmpty { setOf("codex") })
+        mutableStateOf(initialPrefs.defaultTools.ifEmpty { setOf("codex", "claude", "cursor", "opencode") })
     }
     var scanPhase by remember { mutableStateOf(ScanPhase.IDLE) }
     var scanCategories by remember { mutableStateOf(emptyList<ScanCategory>()) }
@@ -1098,6 +1101,8 @@ private fun ToolSelector(
     selectedTools: Set<String>,
     onToolToggle: (String) -> Unit,
 ) {
+    var expanded by remember { mutableStateOf(false) }
+
     Row(
         horizontalArrangement = Arrangement.spacedBy(AppDimensions.SpacingSmall.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -1106,13 +1111,25 @@ private fun ToolSelector(
         ToolIcon("Claude", Res.drawable.claude, "claude" in selectedTools) { onToolToggle("claude") }
         ToolIcon("Cursor", Res.drawable.cursor, "cursor" in selectedTools) { onToolToggle("cursor") }
 
+        AnimatedVisibility(visible = expanded) {
+            Row(horizontalArrangement = Arrangement.spacedBy(AppDimensions.SpacingSmall.dp)) {
+                ToolIcon("Open Code", Res.drawable.opencode, "opencode" in selectedTools) { onToolToggle("opencode") }
+            }
+        }
+
         Box(
             modifier = Modifier
                 .size(48.dp)
-                .background(AppColors.Surface3, RoundedCornerShape(AppDimensions.Radius.dp)),
+                .background(AppColors.Surface3, RoundedCornerShape(AppDimensions.Radius.dp))
+                .clickable { expanded = !expanded },
             contentAlignment = Alignment.Center
         ) {
-            Text(">", color = AppColors.TextSecondary, fontSize = 16.sp)
+            Icon(
+                imageVector = if (expanded) Icons.AutoMirrored.Filled.KeyboardArrowLeft else Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = if (expanded) "收起" else "展开更多工具",
+                tint = AppColors.TextSecondary,
+                modifier = Modifier.size(20.dp)
+            )
         }
     }
 }

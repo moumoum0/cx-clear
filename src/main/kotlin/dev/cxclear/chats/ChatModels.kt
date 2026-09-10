@@ -3,10 +3,12 @@ package dev.cxclear.chats
 import dev.cxclear.model.PathSnapshot
 import java.nio.file.Path
 
-/** 支持对话管理的工具。Cursor 的会话在受保护的主库里，不做。 */
+/** 支持对话管理的工具。 */
 enum class ChatTool(val id: String, val displayName: String) {
     CODEX("codex", "Codex"),
     CLAUDE("claude", "Claude Code"),
+    CURSOR("cursor", "Cursor"),
+    OPENCODE("opencode", "Open Code"),
 }
 
 enum class ChatRole { USER, ASSISTANT }

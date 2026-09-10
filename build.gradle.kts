@@ -22,6 +22,7 @@ dependencies {
     implementation("org.jetbrains.compose.material:material-icons-extended:1.7.3")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")
     implementation("net.java.dev.jna:jna:5.19.1")
+    implementation("org.xerial:sqlite-jdbc:3.47.1.0")
     // 视频录制临时用implementation("org.jcodec:jcodec-javase:0.2.5")
     testImplementation(kotlin("test"))
 }
@@ -62,7 +63,7 @@ compose.desktop {
             vendor = "CX Clear"
 
             // 只打进实际用到的 JDK 模块，砍掉捆绑 JRE 体积。
-            modules("java.base", "java.desktop", "java.logging", "jdk.unsupported")
+            modules("java.base", "java.desktop", "java.logging", "java.net.http", "jdk.unsupported")
 
             windows {
                 menuGroup = "CX Clear"

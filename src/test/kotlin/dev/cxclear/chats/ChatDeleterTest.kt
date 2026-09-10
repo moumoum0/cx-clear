@@ -5,6 +5,7 @@ import dev.cxclear.scan.readPathSnapshot
 import kotlinx.coroutines.runBlocking
 import java.nio.file.Files
 import java.nio.file.Path
+import java.sql.DriverManager
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -147,6 +148,104 @@ class ChatDeleterTest {
         assertEquals(0L, result.freedBytes)
     }
 
+    @Test
+    fun `Cursor sessions delete state vscdb keys and frozen transcripts`() = runBlocking {
+        val root = tempDir()
+        val main = Files.writeString(root.resolve("cursor.jsonl"), "data")
+        val other = Files.writeString(root.resolve("keep.jsonl"), "keep")
+        val s = session(main, root, tool = ChatTool.CURSOR)
+        val db = writeCursorStateDb(
+            root.resolve("state.vscdb"),
+            composerId = s.id,
+            otherComposerId = "keep-composer",
+        )
+
+        val result = deleteSessions(
+            sessions = listOf(s),
+            toolIsRunning = neverRunning,
+            cursorStateDb = db,
+        )
+
+        assertFalse(Files.exists(main))
+        assertTrue(Files.exists(other))
+        assertEquals(1, result.deletedSessions)
+        assertTrue(result.errors.isEmpty())
+        assertEquals(0, kvCount(db, "composerData:${s.id}"))
+        assertEquals(0, kvCount(db, "bubbleId:${s.id}:msg-1"))
+        assertEquals(0, kvCount(db, "checkpointId:${s.id}:cp-1"))
+        assertEquals(0, kvCount(db, "ofsContent:${s.id}:file:///tmp/a.kt"))
+        assertEquals(0, kvCount(db, "cloudAgentDraft:${s.id}"))
+        assertEquals(1, kvCount(db, "composerData:keep-composer"))
+        assertEquals(1, kvCount(db, "bubbleId:keep-composer:msg-keep"))
+        assertEquals(0, headerCount(db, s.id))
+        assertEquals(1, headerCount(db, "keep-composer"))
+        val index = itemText(db, "composer.composerData")
+        assertTrue(index != null && !index.contains(s.id) && index.contains("keep-composer"))
+        assertTrue(itemText(db, "composer.composerHeaders.version") != null)
+    }
+
+    @Test
+    fun `Cursor delete also removes nested subcomposers`() = runBlocking {
+        val root = tempDir()
+        val main = Files.writeString(root.resolve("cursor.jsonl"), "x")
+        val s = session(main, root, tool = ChatTool.CURSOR)
+        val db = writeCursorStateDb(
+            root.resolve("state.vscdb"),
+            composerId = s.id,
+            subComposerId = "child-composer",
+        )
+
+        val result = deleteSessions(
+            sessions = listOf(s),
+            toolIsRunning = neverRunning,
+            cursorStateDb = db,
+        )
+
+        assertEquals(1, result.deletedSessions)
+        assertEquals(0, kvCount(db, "composerData:${s.id}"))
+        assertEquals(0, kvCount(db, "composerData:child-composer"))
+        assertEquals(0, kvCount(db, "bubbleId:child-composer:msg-child"))
+        assertEquals(0, headerCount(db, "child-composer"))
+    }
+
+    @Test
+    fun `missing Cursor state db reports an error and leaves transcript`() = runBlocking {
+        val root = tempDir()
+        val main = Files.writeString(root.resolve("cursor.jsonl"), "keep")
+        val s = session(main, root, tool = ChatTool.CURSOR)
+
+        val result = deleteSessions(
+            sessions = listOf(s),
+            toolIsRunning = neverRunning,
+            cursorStateDb = null,
+        )
+
+        assertTrue(Files.exists(main))
+        assertEquals(0, result.deletedSessions)
+        assertEquals(0L, result.freedBytes)
+        assertEquals(listOf("Cursor 状态库不存在"), result.errors)
+    }
+
+    @Test
+    fun `running Cursor blocks its sessions and leaves state db untouched`() = runBlocking {
+        val root = tempDir()
+        val main = Files.writeString(root.resolve("cursor.jsonl"), "keep")
+        val s = session(main, root, tool = ChatTool.CURSOR)
+        val db = writeCursorStateDb(root.resolve("state.vscdb"), composerId = s.id)
+
+        val result = deleteSessions(
+            sessions = listOf(s),
+            toolIsRunning = { it == ChatTool.CURSOR },
+            cursorStateDb = db,
+        )
+
+        assertTrue(Files.exists(main))
+        assertEquals(0, result.deletedSessions)
+        assertEquals(listOf(ChatTool.CURSOR.displayName), result.blockedTools)
+        assertEquals(1, kvCount(db, "composerData:${s.id}"))
+        assertEquals(1, headerCount(db, s.id))
+    }
+
     // ─────────────────────────────────────────
     // 进程阻断
     // ─────────────────────────────────────────
@@ -218,4 +317,119 @@ class ChatDeleterTest {
         assertTrue(Files.exists(other))
         assertTrue(Files.isDirectory(root))
     }
+
+    private fun writeCursorStateDb(
+        db: Path,
+        composerId: String,
+        otherComposerId: String? = null,
+        subComposerId: String? = null,
+    ): Path {
+        DriverManager.getConnection("jdbc:sqlite:$db").use { conn ->
+            conn.createStatement().use { stmt ->
+                stmt.execute("CREATE TABLE cursorDiskKV (key TEXT UNIQUE ON CONFLICT REPLACE, value BLOB)")
+                stmt.execute(
+                    """
+                    CREATE TABLE composerHeaders (
+                        composerId TEXT PRIMARY KEY,
+                        workspaceId TEXT,
+                        createdAt INTEGER,
+                        lastUpdatedAt INTEGER,
+                        isArchived INTEGER,
+                        isSubagent INTEGER,
+                        recency INTEGER,
+                        checkpointAt INTEGER,
+                        subagentTypeName TEXT,
+                        value TEXT
+                    )
+                    """.trimIndent(),
+                )
+                stmt.execute("CREATE TABLE ItemTable (key TEXT UNIQUE ON CONFLICT REPLACE, value BLOB)")
+            }
+            val kv = conn.prepareStatement("INSERT INTO cursorDiskKV (key, value) VALUES (?, ?)")
+            val header = conn.prepareStatement(
+                "INSERT INTO composerHeaders (composerId, workspaceId, createdAt, lastUpdatedAt, isArchived, isSubagent, recency, checkpointAt, subagentTypeName, value) VALUES (?, ?, 1, 1, 0, 0, 1, NULL, '', ?)",
+            )
+            fun putComposer(id: String, data: String, extra: List<Pair<String, String>> = emptyList()) {
+                kv.setString(1, "composerData:$id")
+                kv.setString(2, data)
+                kv.executeUpdate()
+                extra.forEach { (key, value) ->
+                    kv.setString(1, key)
+                    kv.setString(2, value)
+                    kv.executeUpdate()
+                }
+                header.setString(1, id)
+                header.setString(2, "ws")
+                header.setString(3, """{"composerId":"$id"}""")
+                header.executeUpdate()
+            }
+            val childJson = if (subComposerId != null) """["$subComposerId"]""" else "[]"
+            putComposer(
+                composerId,
+                """{"composerId":"$composerId","subComposerIds":$childJson}""",
+                extra = listOf(
+                    "bubbleId:$composerId:msg-1" to "bubble",
+                    "checkpointId:$composerId:cp-1" to "cp",
+                    "ofsContent:$composerId:file:///tmp/a.kt" to "ofs",
+                    "cloudAgentDraft:$composerId" to "draft",
+                ),
+            )
+            if (subComposerId != null) {
+                putComposer(
+                    subComposerId,
+                    """{"composerId":"$subComposerId","subComposerIds":[]}""",
+                    extra = listOf("bubbleId:$subComposerId:msg-child" to "child"),
+                )
+            }
+            if (otherComposerId != null) {
+                putComposer(
+                    otherComposerId,
+                    """{"composerId":"$otherComposerId","subComposerIds":[]}""",
+                    extra = listOf("bubbleId:$otherComposerId:msg-keep" to "keep"),
+                )
+            }
+            kv.close()
+            header.close()
+            val selected = listOfNotNull(composerId, otherComposerId)
+                .joinToString(",") { "\"$it\"" }
+            conn.prepareStatement("INSERT INTO ItemTable (key, value) VALUES (?, ?)").use { stmt ->
+                stmt.setString(1, "composer.composerData")
+                stmt.setString(2, """{"selectedComposerIds":[$selected],"lastFocusedComposerIds":[$selected]}""")
+                stmt.executeUpdate()
+            }
+        }
+        return db
+    }
+
+    private fun kvCount(db: Path, key: String): Int =
+        DriverManager.getConnection("jdbc:sqlite:$db").use { conn ->
+            conn.prepareStatement("SELECT COUNT(*) FROM cursorDiskKV WHERE key = ?").use { stmt ->
+                stmt.setString(1, key)
+                stmt.executeQuery().use { rs ->
+                    rs.next()
+                    rs.getInt(1)
+                }
+            }
+        }
+
+    private fun headerCount(db: Path, composerId: String): Int =
+        DriverManager.getConnection("jdbc:sqlite:$db").use { conn ->
+            conn.prepareStatement("SELECT COUNT(*) FROM composerHeaders WHERE composerId = ?").use { stmt ->
+                stmt.setString(1, composerId)
+                stmt.executeQuery().use { rs ->
+                    rs.next()
+                    rs.getInt(1)
+                }
+            }
+        }
+
+    private fun itemText(db: Path, key: String): String? =
+        DriverManager.getConnection("jdbc:sqlite:$db").use { conn ->
+            conn.prepareStatement("SELECT value FROM ItemTable WHERE key = ?").use { stmt ->
+                stmt.setString(1, key)
+                stmt.executeQuery().use { rs ->
+                    if (rs.next()) rs.getString(1) else null
+                }
+            }
+        }
 }

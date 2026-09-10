@@ -10,6 +10,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.IOException
 import java.nio.file.Files
+import java.nio.file.Path
+import java.sql.DriverManager
 
 private fun profileForTool(tool: ChatTool): ToolProfile? =
     ALL_PROFILES.firstOrNull { it.id == tool.id }
@@ -45,6 +47,12 @@ suspend fun deleteSession(
 suspend fun deleteSessions(
     sessions: List<ChatSessionSummary>,
     toolIsRunning: (ChatTool) -> Boolean = defaultChatToolIsRunning,
+): ChatDeleteResult = deleteSessions(sessions, toolIsRunning, cursorStateDbFile())
+
+internal suspend fun deleteSessions(
+    sessions: List<ChatSessionSummary>,
+    toolIsRunning: (ChatTool) -> Boolean,
+    cursorStateDb: Path?,
 ): ChatDeleteResult = withContext(Dispatchers.IO) {
     // 每个工具只检测一次：进程枚举有成本，且两次检测结果可能不一致，
     // 那会让「报告为阻断」与「实际跳过」对不上。
@@ -59,9 +67,15 @@ suspend fun deleteSessions(
     val errors = mutableListOf<String>()
 
     for (session in toDelete) {
-        val (sessionFreed, sessionErrors) = deleteEntries(session)
+        val (sessionFreed, sessionErrors) = when (session.tool) {
+            ChatTool.OPENCODE -> deleteOpenCodeSession(session)
+            ChatTool.CURSOR -> deleteCursorSession(session, cursorStateDb)
+            else -> deleteEntries(session)
+        }
         freed += sessionFreed
-        if (sessionErrors.isEmpty()) count++
+        if (sessionErrors.isEmpty()) {
+            count++
+        }
         errors += sessionErrors
     }
 
@@ -108,4 +122,91 @@ private fun deleteEntries(session: ChatSessionSummary): Pair<Long, List<String>>
     }
 
     return freed to errors
+}
+
+/**
+ * 删除 Open Code 会话。
+ * Open Code 使用 SQLite 存储，需要：
+ * 1. 从数据库中删除 session 记录（会级联删除 session_message）
+ * 2. 删除 storage/session_diff/<session_id>.json 文件
+ */
+private fun deleteOpenCodeSession(session: ChatSessionSummary): Pair<Long, List<String>> {
+    val dbFile = opencodeDbFile()
+    if (dbFile == null) {
+        return 0L to listOf("Open Code 数据库文件不存在")
+    }
+
+    var freed = 0L
+    val errors = mutableListOf<String>()
+
+    runCatching {
+        // 先删除关联的文件（storage/session_diff）
+        for (entry in session.entries) {
+            if (entry.kind == PathSnapshotKind.FILE && Files.exists(entry.path)) {
+                try {
+                    Files.delete(entry.path)
+                    freed += entry.size
+                } catch (e: IOException) {
+                    errors += "${entry.path.fileName}：${e.message ?: "删除失败"}"
+                }
+            }
+        }
+
+        // 从数据库删除 session（会级联删除 session_message）
+        DriverManager.getConnection("jdbc:sqlite:$dbFile").use { conn ->
+            conn.autoCommit = false
+            try {
+                // 计算要删除的消息数据大小（估算）
+                var messageDataSize = 0L
+                conn.createStatement().use { stmt ->
+                    stmt.executeQuery(
+                        "SELECT SUM(LENGTH(data)) as total FROM session_message WHERE session_id = '${session.id}'"
+                    ).use { rs ->
+                        if (rs.next()) {
+                            messageDataSize = rs.getLong("total")
+                        }
+                    }
+                }
+
+                // 删除 session（会级联删除关联的 session_message）
+                conn.createStatement().use { stmt ->
+                    val deleted = stmt.executeUpdate(
+                        "DELETE FROM session WHERE id = '${session.id}'"
+                    )
+                    if (deleted > 0) {
+                        freed += messageDataSize
+                        conn.commit()
+                    } else {
+                        errors += "会话 ${session.title} 在数据库中不存在"
+                        conn.rollback()
+                    }
+                }
+            } catch (e: Exception) {
+                conn.rollback()
+                throw e
+            }
+        }
+    }.onFailure { e ->
+        errors += "删除 Open Code 会话失败：${e.message}"
+    }
+
+    return freed to errors
+}
+
+/**
+ * 删除 Cursor 会话。
+ * 直接按 ComposerService.deleteComposer 的落盘顺序改 state.vscdb：
+ * composerHeaders、composerData、bubble/checkpoint/ofs 前缀，以及 transcript。
+ * Cursor 在跑时由进程检测整批跳过，避免 WAL 把改动冲掉。
+ */
+private fun deleteCursorSession(
+    session: ChatSessionSummary,
+    cursorStateDb: Path?,
+): Pair<Long, List<String>> {
+    val dbPath = cursorStateDb ?: return 0L to listOf("Cursor 状态库不存在")
+    val (dbFreed, errors) = deleteCursorComposerFromStateDb(dbPath, session.id)
+    if (errors.isNotEmpty()) return 0L to errors
+
+    val (fileFreed, fileErrors) = deleteEntries(session)
+    return (dbFreed + fileFreed) to fileErrors
 }

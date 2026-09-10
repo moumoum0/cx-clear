@@ -107,7 +107,7 @@ data class ToolProfile(
     val subtitle: String,
     val baseDir: () -> Path?,
     val targets: List<CleanTarget>,
-    /** 运行中进程的可执行文件名前缀（小写）；命中时 Cleaner 会阻断该工具的全部清理。 */
+    /** 运行中进程的可执行文件名（小写、不含 .exe）；命中时 Cleaner 会阻断该工具的全部清理。 */
     val processNamePrefixes: Set<String> = emptySet(),
     /** 无论 profile 数据怎样配置都绝不能删除的路径，作为名单之外的最后一道保险。 */
     val protectedPaths: () -> List<Path> = { emptyList() },

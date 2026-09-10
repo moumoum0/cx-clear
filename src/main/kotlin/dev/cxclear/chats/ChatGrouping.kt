@@ -86,6 +86,8 @@ fun projectLabel(session: ChatSessionSummary): String {
     return when (session.tool) {
         ChatTool.CLAUDE -> raw.trimEnd('-').substringAfterLast('-').ifBlank { raw }
         ChatTool.CODEX -> raw
+        ChatTool.CURSOR -> raw
+        ChatTool.OPENCODE -> raw
     }
 }
 

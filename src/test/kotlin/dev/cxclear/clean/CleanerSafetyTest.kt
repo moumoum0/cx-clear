@@ -156,6 +156,17 @@ class CleanerSafetyTest {
     }
 
     @Test
+    fun `process match is exact stem not prefix`() {
+        val profile = profile(Files.createTempDirectory("cxclear-match"), target("cache.bin", MatchKind.FILE))
+            .copy(processNamePrefixes = setOf("cursor"))
+
+        assertTrue(processMatchesTool(profile, "Cursor.exe"))
+        assertTrue(processMatchesTool(profile, "cursor"))
+        assertFalse(processMatchesTool(profile, "cursor-byok-desktop.exe"))
+        assertFalse(processMatchesTool(profile, "cursor-byok-desktop"))
+    }
+
+    @Test
     fun `running tool blocks the entire batch before deletion`() = runBlocking {
         val base = Files.createTempDirectory("cxclear-base")
         val file = Files.writeString(base.resolve("cache.bin"), "keep")

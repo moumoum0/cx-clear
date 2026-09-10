@@ -33,7 +33,6 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Segment
-import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -64,6 +63,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.cxclear.chats.ChatAxis
+import dev.cxclear.chats.ChatDeleteResult
 import dev.cxclear.chats.ChatGroup
 import dev.cxclear.chats.ChatGroupDimension
 import dev.cxclear.chats.ChatSessionSummary
@@ -78,19 +78,25 @@ import dev.cxclear.ui.theme.AppDimensions
 import dev.cxclear.ui.theme.Motion
 import kotlinx.coroutines.launch
 
-// 同一 UUID 可能跨工具出现。
+/** 会话在选择集合里的唯一键：同一 UUID 可能同时存在于两个工具下。 */
 private fun sessionKey(session: ChatSessionSummary): String = "${session.tool.id}:${session.id}"
 
+/**
+ * 手动管理：筛选 + 排序 + 分组勾选 + 删除。
+ *
+ * 会话列表由父级扫描后传入（[allSessions]），这里只做纯展示与选择；
+ * 删除走 [deleteSessions]（只删扫描时冻结的条目），完成后回调父级重扫。
+ */
 @Composable
 internal fun ChatsManualPane(
     isScanning: Boolean,
     foundCount: Int,
     allSessions: List<ChatSessionSummary>,
     nowMillis: Long,
-    onDeleted: (deleted: Int, freedBytes: Long) -> Unit,
+    onDeleted: (ChatDeleteResult) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    // 等翻牌追上再切结果页。
+    // 扫完后仍短暂留在加载态，直到翻牌显示值追上最终计数，避免播到一半被结果页掐断。
     var settledFor by remember { mutableIntStateOf(foundCount) }
     val showScanning = isScanning || settledFor != foundCount
     if (showScanning) {
@@ -105,6 +111,7 @@ internal fun ChatsManualPane(
     val scope = rememberCoroutineScope()
 
     var query by remember { mutableStateOf("") }
+    // 排列与分组共用一个轴：选轴即排序，双击同一个轴切换是否按它分档。
     var axis by remember { mutableStateOf(ChatAxis.TIME) }
     var ascending by remember { mutableStateOf(false) }
     var grouped by remember { mutableStateOf(true) }
@@ -116,13 +123,14 @@ internal fun ChatsManualPane(
     var collapsedGroups by remember { mutableStateOf<Set<String>>(emptySet()) }
     var confirming by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf(false) }
-    var lastError by remember { mutableStateOf<String?>(null) }
 
+    // 扫描结果换了一批（重扫 / 切工具）就丢掉旧选择，避免选中已不存在的会话。
     remember(allSessions) {
         selectedKeys = emptySet()
         true
     }
 
+    // 勾选 / 折叠只改选择态，不能拖着筛选分组一起重算。
     val visible = remember(allSessions, query) { filterSessions(allSessions, query) }
     val groups = remember(visible, dimension, sortKey, ascending, nowMillis) {
         groupSessions(visible, dimension, sortKey, ascending, nowMillis)
@@ -143,6 +151,7 @@ internal fun ChatsManualPane(
             ascending = ascending,
             onAxisClick = { clicked ->
                 if (clicked == axis) {
+                    // 双击同一个轴 = 切换分组；标题没有可用分档，忽略。
                     if (clicked.groupDimension != null) grouped = !grouped
                 } else {
                     axis = clicked
@@ -154,6 +163,7 @@ internal fun ChatsManualPane(
         if (groups.isEmpty()) {
             EmptySessionList(hasQuery = query.isNotBlank(), modifier = Modifier.weight(1f))
         } else {
+            // 组头 + 会话行扁平进 LazyColumn，避免整组 forEach 一次性挂载卡住 UI。
             LazyColumn(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -232,10 +242,6 @@ internal fun ChatsManualPane(
             }
         }
 
-        lastError?.let { message ->
-            SelectionErrorBar(message = message, onDismiss = { lastError = null })
-        }
-
         AnimatedVisibility(
             visible = selectedSessions.isNotEmpty(),
             enter = slideInVertically(Motion.normal()) { it } + fadeIn(Motion.normal()),
@@ -264,18 +270,16 @@ internal fun ChatsManualPane(
                     val result = deleteSessions(targets)
                     deleting = false
                     selectedKeys = emptySet()
-                    lastError = when {
-                        result.blockedTools.isNotEmpty() ->
-                            "${result.blockedTools.joinToString("、")} 正在运行，已跳过其会话"
-                        result.errors.isNotEmpty() -> result.errors.first()
-                        else -> null
-                    }
-                    onDeleted(result.deletedSessions, result.freedBytes)
+                    onDeleted(result)
                 }
             },
         )
     }
 }
+
+// ─────────────────────────────────────────────
+// 扫描中
+// ─────────────────────────────────────────────
 
 @Composable
 private fun ScanningIndicator(
@@ -310,6 +314,9 @@ private fun ScanningIndicator(
         }
     }
 }
+// ─────────────────────────────────────────────
+// 筛选栏
+// ─────────────────────────────────────────────
 
 @Composable
 private fun ChatsFilterBar(
@@ -340,6 +347,7 @@ private fun ChatsFilterBar(
 
         Spacer(Modifier.weight(1f))
 
+        // 升降序独立成一个按钮，避免和「双击切分组」抢同一次点击。
         OrderToggle(ascending = ascending, onClick = onToggleOrder)
 
         SearchField(
@@ -398,6 +406,10 @@ private fun SearchField(
     }
 }
 
+/**
+ * 排列轴胶囊。选中即按该轴排列；再点一下（同一个轴的第二次点击）切换是否按它分档，
+ * 分档开启时胶囊左侧长出分组图标。
+ */
 @Composable
 private fun AxisPill(
     label: String,
@@ -440,6 +452,7 @@ private fun AxisPill(
     }
 }
 
+/** 升降序切换：箭头翻转，跟分组的双击手势分开。 */
 @Composable
 private fun OrderToggle(ascending: Boolean, onClick: () -> Unit) {
     val rotation by animateFloatAsState(
@@ -472,6 +485,9 @@ private fun OrderToggle(ascending: Boolean, onClick: () -> Unit) {
         )
     }
 }
+// ─────────────────────────────────────────────
+// 空态骨架
+// ─────────────────────────────────────────────
 
 @Composable
 private fun EmptySessionList(hasQuery: Boolean, modifier: Modifier = Modifier) {
@@ -486,6 +502,7 @@ private fun EmptySessionList(hasQuery: Boolean, modifier: Modifier = Modifier) {
             fontSize = 13.sp,
             color = AppColors.TextTertiary,
         )
+        // 骨架：形状与真实分组卡一致，数据到位时原地填充。
         repeat(3) {
             Column(
                 modifier = Modifier
@@ -512,6 +529,10 @@ private fun SkeletonBar(width: androidx.compose.ui.unit.Dp, height: androidx.com
             .background(AppColors.Surface3),
     )
 }
+
+// ─────────────────────────────────────────────
+// 分组头 + 会话行（扁平进 LazyColumn）
+// ─────────────────────────────────────────────
 
 @Composable
 private fun ChatGroupHeader(
@@ -642,34 +663,9 @@ private fun SessionRow(
         )
     }
 }
-
-@Composable
-private fun SelectionErrorBar(message: String, onDismiss: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(AppColors.Optional.copy(alpha = 0.10f))
-            .padding(horizontal = AppDimensions.SpacingMedium.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Icon(
-            imageVector = Icons.Filled.Warning,
-            contentDescription = null,
-            tint = AppColors.Optional,
-            modifier = Modifier.size(16.dp),
-        )
-        Text(message, fontSize = 12.sp, color = AppColors.TextSecondary, modifier = Modifier.weight(1f))
-        Icon(
-            imageVector = Icons.Filled.Close,
-            contentDescription = "关闭",
-            tint = AppColors.TextTertiary,
-            modifier = Modifier
-                .size(16.dp)
-                .clickable(onClick = onDismiss),
-        )
-    }
-}
+// ─────────────────────────────────────────────
+// 底部条 + 确认弹窗
+// ─────────────────────────────────────────────
 
 @Composable
 private fun SelectionActionBar(

@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.AutoDelete
 import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -43,6 +44,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.cxclear.chats.ChatDeleteResult
 import dev.cxclear.chats.ChatScanCache
 import dev.cxclear.chats.ChatSessionSummary
 import dev.cxclear.chats.ChatTool
@@ -57,6 +59,7 @@ import dev.cxclear.resources.Res
 import dev.cxclear.resources.claude
 import dev.cxclear.resources.codex
 import dev.cxclear.resources.cursor
+import dev.cxclear.resources.opencode
 import dev.cxclear.ui.theme.AppColors
 import dev.cxclear.ui.theme.AppDimensions
 import dev.cxclear.ui.theme.Motion
@@ -114,7 +117,8 @@ fun ChatsView(modifier: Modifier = Modifier) {
     }
     var foundCount by remember { mutableIntStateOf(cachedOnEnter?.size ?: 0) }
     var rescanToken by remember { mutableIntStateOf(0) }
-    var autoNotice by remember { mutableStateOf<String?>(null) }
+    var notice by remember { mutableStateOf<String?>(null) }
+    var noticeIsWarning by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         config = withContext(Dispatchers.IO) { RetentionStore.read() }
@@ -169,13 +173,9 @@ fun ChatsView(modifier: Modifier = Modifier) {
             if (result.freedBytes > 0L) {
                 withContext(Dispatchers.IO) { CleanHistory.append(result.freedBytes) }
             }
-            autoNotice = when {
-                !prefs.autoCleanNotify -> null
-                result.blockedTools.isNotEmpty() ->
-                    "${result.blockedTools.joinToString("、")} 正在运行，自动清理已跳过其会话"
-                result.deletedSessions > 0 ->
-                    "自动清理已删除 ${result.deletedSessions} 个会话 · ${formatBytes(result.freedBytes)}"
-                else -> null
+            if (prefs.autoCleanNotify) {
+                notice = deleteNotice(result, auto = true)
+                noticeIsWarning = result.blockedTools.isNotEmpty() || result.errors.isNotEmpty()
             }
             if (result.deletedSessions > 0) {
                 ChatScanCache.invalidate()
@@ -203,8 +203,12 @@ fun ChatsView(modifier: Modifier = Modifier) {
             onModeChange = { mode = it },
         )
 
-        autoNotice?.let { message ->
-            AutoCleanNotice(message = message, onDismiss = { autoNotice = null })
+        notice?.let { message ->
+            ChatsNotice(
+                message = message,
+                warning = noticeIsWarning,
+                onDismiss = { notice = null },
+            )
         }
 
         Box(
@@ -226,9 +230,13 @@ fun ChatsView(modifier: Modifier = Modifier) {
                         foundCount = foundCount,
                         allSessions = displayedSessions,
                         nowMillis = now.toEpochMilli(),
-                        onRescan = {
-                            ChatScanCache.invalidate()
-                            rescanToken++
+                        onDeleted = { result ->
+                            notice = deleteNotice(result, auto = false)
+                            noticeIsWarning = result.blockedTools.isNotEmpty() || result.errors.isNotEmpty()
+                            if (result.deletedSessions > 0) {
+                                ChatScanCache.invalidate()
+                                rescanToken++
+                            }
                         },
                     )
                     ChatsMode.AUTO -> ChatsAutoPane(
@@ -258,13 +266,13 @@ private fun ChatsTopBar(
             horizontalArrangement = Arrangement.spacedBy(AppDimensions.SpacingSmall.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            // Cursor 会话不在范围内，占位不可选。
             AllFilterButton(isSelected = selectedTool == TOOL_FILTER_ALL) {
                 onToolSelect(TOOL_FILTER_ALL)
             }
             ToolIcon("Codex", Res.drawable.codex, selectedTool == "codex") { onToolSelect("codex") }
             ToolIcon("Claude", Res.drawable.claude, selectedTool == "claude") { onToolSelect("claude") }
-            ToolIcon("Cursor", Res.drawable.cursor, isSelected = false, enabled = false) {}
+            ToolIcon("Cursor", Res.drawable.cursor, selectedTool == "cursor") { onToolSelect("cursor") }
+            ToolIcon("Open Code", Res.drawable.opencode, selectedTool == "opencode") { onToolSelect("opencode") }
         }
 
         ModeSegmentedControl(
@@ -367,7 +375,7 @@ private fun ManualPane(
     foundCount: Int,
     allSessions: List<ChatSessionSummary>,
     nowMillis: Long,
-    onRescan: () -> Unit,
+    onDeleted: (ChatDeleteResult) -> Unit,
 ) {
     ChatsManualPane(
         modifier = Modifier.fillMaxSize(),
@@ -375,31 +383,42 @@ private fun ManualPane(
         foundCount = foundCount,
         allSessions = allSessions,
         nowMillis = nowMillis,
-        onDeleted = { _, _ -> onRescan() },
+        onDeleted = onDeleted,
     )
 }
 
+private fun deleteNotice(result: ChatDeleteResult, auto: Boolean): String? = when {
+    result.blockedTools.isNotEmpty() -> {
+        val skip = if (auto) "自动清理已跳过其会话" else "已跳过其会话"
+        "${result.blockedTools.joinToString("、")} 正在运行，$skip"
+    }
+    result.errors.isNotEmpty() -> result.errors.first()
+    auto && result.deletedSessions > 0 ->
+        "自动清理已删除 ${result.deletedSessions} 个会话 · ${formatBytes(result.freedBytes)}"
+    else -> null
+}
+
 /**
- * 自动清理的结果提示。
- *
- * 自动删除不该静默发生：本次进程删掉了什么、或因工具在运行而跳过了什么，
- * 都在这里交代一次，用户手动关掉才消失。
+ * 对话页结果条：自动清理和手动删除共用。
+ * 挂在列表外面，避免重扫把提示冲掉。
  */
 @Composable
-private fun AutoCleanNotice(message: String, onDismiss: () -> Unit) {
+private fun ChatsNotice(message: String, warning: Boolean, onDismiss: () -> Unit) {
+    val bg = if (warning) AppColors.Optional.copy(alpha = 0.12f) else AppColors.PrimaryContainer
+    val iconTint = if (warning) AppColors.Optional else AppColors.Primary
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(AppDimensions.Radius.dp))
-            .background(AppColors.PrimaryContainer)
+            .background(bg)
             .padding(horizontal = AppDimensions.SpacingMedium.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(AppDimensions.SpacingSmall.dp),
     ) {
         Icon(
-            imageVector = Icons.Filled.Info,
+            imageVector = if (warning) Icons.Filled.Warning else Icons.Filled.Info,
             contentDescription = null,
-            tint = AppColors.Primary,
+            tint = iconTint,
             modifier = Modifier.size(16.dp),
         )
         Text(

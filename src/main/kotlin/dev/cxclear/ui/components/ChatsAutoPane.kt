@@ -1,7 +1,10 @@
 package dev.cxclear.ui.components
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -26,6 +29,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.AlertDialog
@@ -36,6 +40,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Snackbar
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
@@ -49,6 +54,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -72,6 +78,7 @@ import dev.cxclear.chats.ChatConditionType
 import dev.cxclear.chats.ChatTool
 import dev.cxclear.chats.ConditionJoin
 import dev.cxclear.chats.ConditionValueKind
+import dev.cxclear.chats.RetentionAiPrompt
 import dev.cxclear.chats.RetentionConfig
 import dev.cxclear.chats.RetentionRule
 import dev.cxclear.chats.newRuleId
@@ -80,8 +87,12 @@ import dev.cxclear.ui.theme.AppColors
 import dev.cxclear.ui.theme.AppDimensions
 import dev.cxclear.ui.theme.Motion
 import dev.cxclear.ui.theme.appOutlinedTextFieldColors
+import java.awt.Toolkit
+import java.awt.datatransfer.StringSelection
 import kotlin.math.max
 import kotlin.math.roundToInt
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 @Composable
 internal fun ChatsAutoPane(
@@ -91,6 +102,8 @@ internal fun ChatsAutoPane(
 ) {
     val overlayHost = LocalOverlayHost.current
     var namingForNew by remember { mutableStateOf(false) }
+    var showSnackbar by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
 
     fun openWizard(
         ruleName: String,
@@ -113,6 +126,17 @@ internal fun ChatsAutoPane(
             config = config,
             onConfigChange = onConfigChange,
             onNewRule = { namingForNew = true },
+            onAiPrompt = {
+                runCatching {
+                    Toolkit.getDefaultToolkit().systemClipboard
+                        .setContents(StringSelection(RetentionAiPrompt.text), null)
+                }
+                showSnackbar = true
+                scope.launch {
+                    delay(3000)
+                    showSnackbar = false
+                }
+            },
             onEditRule = { rule ->
                 openWizard(ruleName = rule.name.ifBlank { "未命名策略" }, initial = rule) { conditions, join ->
                     onConfigChange(
@@ -126,6 +150,18 @@ internal fun ChatsAutoPane(
                 }
             },
         )
+        AnimatedVisibility(
+            visible = showSnackbar,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 24.dp),
+        ) {
+            Snackbar {
+                Text("提示词已复制，请粘贴给任意Agent工具", fontSize = 13.sp)
+            }
+        }
     }
 
     if (namingForNew) {
@@ -325,6 +361,7 @@ private fun RuleListView(
     config: RetentionConfig,
     onConfigChange: (RetentionConfig) -> Unit,
     onNewRule: () -> Unit,
+    onAiPrompt: () -> Unit,
     onEditRule: (RetentionRule) -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
@@ -364,7 +401,7 @@ private fun RuleListView(
                 }
             }
         }
-        AddRuleButton(onClick = onNewRule)
+        AddRuleButton(onClick = onNewRule, onAiPrompt = onAiPrompt)
     }
 }
 
@@ -1363,25 +1400,33 @@ private fun EmptyRuleList(modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun AddRuleButton(onClick: () -> Unit) {
+private fun AddRuleButton(onClick: () -> Unit, onAiPrompt: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(top = AppDimensions.SpacingSmall.dp)
-            .clip(RoundedCornerShape(AppDimensions.Radius.dp))
-            .clickable(onClick = onClick)
-            .padding(vertical = 12.dp),
+            .padding(top = AppDimensions.SpacingSmall.dp),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(
-            imageVector = Icons.Filled.Add,
-            contentDescription = null,
-            tint = AppColors.Primary,
-            modifier = Modifier.size(16.dp),
-        )
-        Spacer(Modifier.width(6.dp))
-        Text("新建策略", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = AppColors.Primary)
+        IconButton(onClick = onAiPrompt, modifier = Modifier.size(40.dp)) {
+            Icon(
+                imageVector = Icons.Filled.AutoAwesome,
+                contentDescription = "AI 生成提示词",
+                tint = AppColors.Primary,
+                modifier = Modifier.size(20.dp),
+            )
+        }
+        Row(
+            modifier = Modifier
+                .clip(RoundedCornerShape(AppDimensions.Radius.dp))
+                .clickable(onClick = onClick)
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Spacer(Modifier.width(6.dp))
+            Text("新建策略", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = AppColors.Primary)
+        }
     }
 }
 
