@@ -66,13 +66,7 @@ jobs:
           if (-not $hasBullet) {
             throw "CHANGELOG.md 里 ## v$version 还没有条目。在 新增 / 修复 / 优化 下写完再发。"
           }
-          $notes = @"
-# 更新日志
-
-## v$version
-
-$section
-"@
+          $notes = "# 更新日志$([Environment]::NewLine)$([Environment]::NewLine)## v$version$([Environment]::NewLine)$([Environment]::NewLine)$section"
           [System.IO.File]::WriteAllText(
             (Join-Path $pwd 'release-notes.md'),
             $notes.Trim() + [Environment]::NewLine
