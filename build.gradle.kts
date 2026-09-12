@@ -58,7 +58,7 @@ compose.desktop {
             // Windows 走 app-image + Inno Setup（packageInnoSetup 任务），不再出 MSI。
             targetFormats(TargetFormat.Dmg)
             packageName = "CX Clear"
-            packageVersion = "1.0.0"
+            packageVersion = "1.1.0"
             description = "AI Agent disk cleanup tool"
             vendor = "CX Clear"
 
@@ -105,13 +105,20 @@ tasks.register("packageInnoSetup") {
                 .waitFor()
         }
 
+        val appVersion = Regex("""^\s*packageVersion\s*=\s*"([^"]+)"""", RegexOption.MULTILINE)
+            .find(project.file("build.gradle.kts").readText())
+            ?.groupValues?.get(1)
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
+            ?: error("build.gradle.kts 里找不到 packageVersion = \"x.y.z\"")
+
         val appDir = layout.buildDirectory
             .dir("compose/binaries/main-release/app/CX Clear").get().asFile
         require(appDir.isDirectory) { "未找到 app-image：$appDir（createDistributable 应已生成）" }
 
         val outDir = layout.buildDirectory
             .dir("compose/binaries/main/innosetup").get().asFile
-        val outExe = File(outDir, "CXClear-$version-setup.exe")
+        val outExe = File(outDir, "CXClear-$appVersion-setup.exe")
         if (outExe.exists() && !outExe.delete()) {
             error("旧安装器仍被占用，无法覆盖：$outExe\n已尝试结束 ISCC.exe 但文件仍被锁——可能是你双击运行过它、或杀软正在扫描，先关掉再重试。")
         }
@@ -122,7 +129,7 @@ tasks.register("packageInnoSetup") {
         // 必须主动把 ISCC 的输出流读走。
         val proc = ProcessBuilder(
             iscc.absolutePath,
-            "/DAPP_VERSION=$version",
+            "/DAPP_VERSION=$appVersion",
             "/DAPP_DIR=${appDir.absolutePath}",
             script.absolutePath,
         ).directory(script.parentFile)

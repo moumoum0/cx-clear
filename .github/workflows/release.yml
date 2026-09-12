@@ -1,0 +1,94 @@
+name: Release
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  windows-installer:
+    name: Windows installer
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      - name: Read version
+        shell: pwsh
+        run: |
+          $line = Select-String -Path build.gradle.kts -Pattern '^\s*packageVersion\s*=\s*"([^"]+)"' | Select-Object -First 1
+          if (-not $line) {
+            throw 'build.gradle.kts 里找不到 packageVersion = "x.y.z"'
+          }
+          $version = $line.Matches[0].Groups[1].Value.Trim()
+          if ([string]::IsNullOrWhiteSpace($version)) {
+            throw 'build.gradle.kts 的 packageVersion 是空的'
+          }
+          "APP_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append
+          Write-Host "APP_VERSION=$version"
+
+      - name: Extract changelog for this version
+        shell: pwsh
+        run: |
+          $version = $env:APP_VERSION
+          if (-not (Test-Path -LiteralPath 'CHANGELOG.md')) {
+            throw '找不到 CHANGELOG.md，发 Release 前先写该版本的更新说明'
+          }
+          $text = Get-Content -LiteralPath 'CHANGELOG.md' -Raw -Encoding utf8
+          $escaped = [regex]::Escape($version)
+          $pattern = "(?ms)^##\s+v$escaped\s*\r?\n(.*?)(?=^##\s+|\z)"
+          $match = [regex]::Match($text, $pattern)
+          if (-not $match.Success) {
+            throw "CHANGELOG.md 里没有 ## v$version 这一段。点 Run 前先写好该版本的更新说明。"
+          }
+          $section = $match.Groups[1].Value.Trim()
+          if ([string]::IsNullOrWhiteSpace($section)) {
+            throw "CHANGELOG.md 里 ## v$version 是空的。补上更新说明再发。"
+          }
+          $hasBullet = [regex]::IsMatch($section, '(?m)^\s*[-*]\s+\S')
+          if (-not $hasBullet) {
+            throw "CHANGELOG.md 里 ## v$version 还没有条目。在 新增 / 修复 / 优化 下写完再发。"
+          }
+          $notes = @"
+# 更新日志
+
+## v$version
+
+$section
+"@
+          [System.IO.File]::WriteAllText(
+            (Join-Path $pwd 'release-notes.md'),
+            $notes.Trim() + [Environment]::NewLine
+          )
+          Write-Host "已截取 $($notes.Length) 字更新说明"
+
+      - name: Build Inno Setup installer
+        run: .\gradlew.bat packageInnoSetup --no-daemon --stacktrace
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ env.APP_VERSION }}
+          name: CX Clear v${{ env.APP_VERSION }}
+          body_path: release-notes.md
+          files: build/compose/binaries/main/innosetup/CXClear-${{ env.APP_VERSION }}-setup.exe
+          prerelease: ${{ contains(env.APP_VERSION, '-') }}
+          fail_on_unmatched_files: true
+          make_latest: ${{ !contains(env.APP_VERSION, '-') }}
