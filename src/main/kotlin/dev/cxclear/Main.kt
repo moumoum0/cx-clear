@@ -6,6 +6,7 @@ import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
+import dev.cxclear.cli.Cli
 import dev.cxclear.resources.Res
 import dev.cxclear.resources.hex_knot_arrow
 import dev.cxclear.ui.App
@@ -19,7 +20,7 @@ private fun configureHighDpiRendering() {
     }
 }
 
-fun main() {
+fun main(args: Array<String>) {
     // 修复 Windows 控制台 UTF-8 输出乱码
     System.setProperty("file.encoding", "UTF-8")
     System.setProperty("stdout.encoding", "UTF-8")
@@ -30,7 +31,11 @@ fun main() {
     } catch (e: Exception) {
         // 忽略编码设置失败
     }
-    
+
+    if (args.isNotEmpty()) {
+        Cli.runAndExit(args)
+    }
+
     configureHighDpiRendering()
     startApplication()
 }

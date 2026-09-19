@@ -2,6 +2,8 @@
 
 # 入口
 -keep class dev.cxclear.MainKt { *; }
+-keep class dev.cxclear.cli.Cli { *; }
+-keep class dev.cxclear.cli.CliKt { *; }
 
 # JNA 走反射调用 native，必须整体保留。
 -keep class com.sun.jna.** { *; }

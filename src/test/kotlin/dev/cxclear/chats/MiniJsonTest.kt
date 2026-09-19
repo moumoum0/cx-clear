@@ -92,6 +92,22 @@ class MiniJsonTest {
     }
 
     @Test
+    fun `stringify round trip keeps maps arrays and unicode`() {
+        val value = mapOf(
+            "ok" to true,
+            "n" to 2L,
+            "s" to "a\"b\n你",
+            "arr" to listOf(1, null, "x"),
+        )
+        val json = MiniJson.stringify(value)
+        val parsed = MiniJson.parse(json) as Map<*, *>
+        assertEquals(true, parsed["ok"])
+        assertEquals(2.0, parsed["n"])
+        assertEquals("a\"b\n你", parsed["s"])
+        assertEquals(listOf(1.0, null, "x"), parsed["arr"])
+    }
+
+    @Test
     fun `parses a realistic long transcript line`() {
         val json = """{"type":"response_item","payload":{"type":"message","role":"assistant",""" +
             """"content":[{"type":"output_text","text":"line1\nline2"}]}}"""
