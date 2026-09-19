@@ -1,5 +1,5 @@
 ; CX Clear 安装脚本 —— per-user、现代向导、简体中文
-; 由 Gradle 的 packageInnoSetup 任务调用；APP_DIR / APP_VERSION 通过 /D 传入。
+; 由 Gradle 的 packageInnoSetup 任务调用；APP_DIR / APP_VERSION / OUTPUT_* / APP_EXE 通过 /D 传入。
 
 #ifndef APP_VERSION
   #define APP_VERSION "1.0.0"
@@ -7,9 +7,17 @@
 #ifndef APP_DIR
   #define APP_DIR "..\build\compose\binaries\main\app\CX Clear"
 #endif
+#ifndef OUTPUT_DIR
+  #define OUTPUT_DIR "..\build\compose\binaries\main\dist"
+#endif
+#ifndef OUTPUT_BASE
+  #define OUTPUT_BASE "CXClear-{#APP_VERSION}-setup"
+#endif
+#ifndef APP_EXE
+  #define APP_EXE "CX Clear.exe"
+#endif
 
 #define APP_NAME "CX Clear"
-#define APP_EXE "CX Clear.exe"
 #define APP_PUBLISHER "CX Clear"
 #define APP_ID "{{B5F8A2C1-3D4E-5F6A-7B8C-9D0E1F2A3B4C}"
 
@@ -26,12 +34,12 @@ DefaultDirName={autopf}\{#APP_NAME}
 DefaultGroupName={#APP_NAME}
 DisableProgramGroupPage=yes
 AllowNoIcons=yes
-UninstallDisplayIcon={app}\{#APP_EXE}
+UninstallDisplayIcon={app}\app_icon.ico
 UninstallDisplayName={#APP_NAME}
 Compression=lzma2/fast
 SolidCompression=no
-OutputDir=..\build\compose\binaries\main\innosetup
-OutputBaseFilename=CXClear-{#APP_VERSION}-setup
+OutputDir={#OUTPUT_DIR}
+OutputBaseFilename={#OUTPUT_BASE}
 SetupIconFile=app_icon.ico
 ; 显示「选择安装位置」页，让用户自定义安装目录
 DisableDirPage=no
@@ -45,13 +53,11 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 
 [Files]
 Source: "{#APP_DIR}\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
-Source: "cxclear.cmd"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
-Name: "{group}\{#APP_NAME}"; Filename: "{app}\{#APP_EXE}"
+Name: "{group}\{#APP_NAME}"; Filename: "{app}\{#APP_EXE}"; IconFilename: "{app}\app_icon.ico"
 Name: "{group}\{cm:UninstallProgram,{#APP_NAME}}"; Filename: "{uninstallexe}"
-Name: "{autodesktop}\{#APP_NAME}"; Filename: "{app}\{#APP_EXE}"; Tasks: desktopicon
-
+Name: "{autodesktop}\{#APP_NAME}"; Filename: "{app}\{#APP_EXE}"; IconFilename: "{app}\app_icon.ico"; Tasks: desktopicon
 
 [Run]
 Filename: "{app}\{#APP_EXE}"; Description: "{cm:LaunchProgram,{#APP_NAME}}"; Flags: nowait postinstall skipifsilent

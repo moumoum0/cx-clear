@@ -30,6 +30,9 @@ jobs:
       - name: Install Inno Setup
         run: choco install innosetup --no-progress -y
 
+      - name: Install MinGW
+        run: choco install mingw --no-progress -y
+
       - name: Read version
         shell: pwsh
         run: |
@@ -82,7 +85,11 @@ jobs:
           tag_name: v${{ env.APP_VERSION }}
           name: CX Clear v${{ env.APP_VERSION }}
           body_path: release-notes.md
-          files: build/compose/binaries/main/innosetup/CXClear-${{ env.APP_VERSION }}-setup.exe
+          files: |
+            build/compose/binaries/main/dist/CXClear-${{ env.APP_VERSION }}-setup.exe
+            build/compose/binaries/main/dist/CXClear-${{ env.APP_VERSION }}-setup-no-jre.exe
+            build/compose/binaries/main/dist/CXClear-${{ env.APP_VERSION }}-portable.zip
+            build/compose/binaries/main/dist/CXClear-${{ env.APP_VERSION }}-portable-no-jre.zip
           prerelease: ${{ contains(env.APP_VERSION, '-') }}
           fail_on_unmatched_files: true
           make_latest: ${{ !contains(env.APP_VERSION, '-') }}

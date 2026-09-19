@@ -9,6 +9,8 @@
 ### 新增
 
 - 安装目录提供 `cxclear.cmd` 无头命令，可供 AI 扫描、预览清理、读写对话策略（默认只预览，`--yes` 才落盘或删除）
+- Windows 打包同时出安装版与免安装 zip，各有带 Java / 不带 Java 两套
+- GUI 启动器改为同一个 `CX Clear.exe`：有捆绑 JRE 就用它，没有再找系统 Java
 
 ### 修复
 
