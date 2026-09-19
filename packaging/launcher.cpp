@@ -27,7 +27,7 @@ static std::wstring module_dir() {
     return parent_dir(std::wstring(buf, n));
 }
 
-// 捆绑JRE优先，否则 JAVA_HOME / PATH 里的 javaw
+// 捆绑JRE优先，否则 JAVA_HOME；不再遍历 PATH（性能考虑）
 static std::wstring find_javaw(const std::wstring& app_home) {
     const std::wstring bundled = app_home + L"\\runtime\\bin\\javaw.exe";
     if (is_file(bundled)) {
@@ -45,11 +45,6 @@ static std::wstring find_javaw(const std::wstring& app_home) {
         }
     }
 
-    wchar_t found[32768];
-    const DWORD r = SearchPathW(nullptr, L"javaw.exe", nullptr, 32768, found, nullptr);
-    if (r > 0 && r < 32768) {
-        return std::wstring(found, r);
-    }
     return L"";
 }
 

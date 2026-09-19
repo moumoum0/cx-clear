@@ -66,6 +66,7 @@ import org.jetbrains.compose.resources.painterResource
 import dev.cxclear.model.TargetKey
 import dev.cxclear.profiles.ALL_PROFILES
 import dev.cxclear.storage.AppPreferences
+import dev.cxclear.storage.AppPrefs
 import dev.cxclear.storage.CleanHistory
 import dev.cxclear.storage.DailyClean
 import dev.cxclear.storage.DiskUsage
@@ -109,8 +110,12 @@ fun MainContent(
     currentScreen: Screen,
     modifier: Modifier = Modifier,
 ) {
-    val initialPrefs = remember { AppPreferences.read() }
-    var selectedTools by remember {
+    var prefs by remember { mutableStateOf<AppPrefs?>(null) }
+    LaunchedEffect(Unit) {
+        prefs = withContext(Dispatchers.IO) { AppPreferences.read() }
+    }
+    val initialPrefs = prefs ?: AppPrefs()
+    var selectedTools by remember(initialPrefs) {
         mutableStateOf(initialPrefs.defaultTools.ifEmpty { setOf("codex", "claude", "cursor", "opencode") })
     }
     var scanPhase by remember { mutableStateOf(ScanPhase.IDLE) }

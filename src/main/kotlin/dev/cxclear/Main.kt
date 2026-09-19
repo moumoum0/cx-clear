@@ -57,6 +57,8 @@ private fun startApplication() = application {
         icon = painterResource(Res.drawable.hex_knot_arrow),
     ) {
         window.minimumSize = Dimension(856, 643)
+        window.isAutoRequestFocus = false
+        window.focusableWindowState = true
         App(
             windowState = windowState,
             onCloseRequest = ::exitApplication,

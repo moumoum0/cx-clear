@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -30,6 +31,7 @@ import androidx.compose.ui.window.WindowPlacement
 import androidx.compose.ui.window.WindowScope
 import androidx.compose.ui.window.WindowState
 import dev.cxclear.storage.AppPreferences
+import dev.cxclear.storage.AppPrefs
 import dev.cxclear.ui.components.AppTitleBar
 import dev.cxclear.ui.components.MainContent
 import dev.cxclear.ui.components.Sidebar
@@ -63,7 +65,13 @@ fun WindowScope.App(
     onCloseRequest: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
-    val initialPrefs = remember { AppPreferences.read() }
+    var prefs by remember { mutableStateOf<AppPrefs?>(null) }
+    // 后台异步加载偏好，不阻塞 UI。
+    LaunchedEffect(Unit) {
+        prefs = withContext(Dispatchers.IO) { AppPreferences.read() }
+    }
+
+    val initialPrefs = prefs ?: AppPrefs()
     var currentScreen by remember {
         mutableStateOf(
             if (initialPrefs.rememberLastScreen) screenFromPrefId(initialPrefs.lastScreenId)
