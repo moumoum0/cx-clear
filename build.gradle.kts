@@ -60,7 +60,7 @@ compose.desktop {
             // Windows 走 app-image + Inno Setup（packageInnoSetup 任务），不再出 MSI。
             targetFormats(TargetFormat.Dmg)
             packageName = "CX Clear"
-            packageVersion = "1.1.0"
+            packageVersion = "1.1.1"
             description = "AI Agent disk cleanup tool"
             vendor = "CX Clear"
 
