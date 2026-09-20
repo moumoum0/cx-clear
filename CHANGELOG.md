@@ -1,6 +1,6 @@
 # 更新日志
 
-发 GitHub Release 前，把 `build.gradle.kts` 里的 `packageVersion` 改成目标版本，并在本文件新增对应段落。标题必须是 `## v1.0.0` 这种，和版本号一致。
+发 GitHub Release 前，把 `build.gradle.kts` 里的 `version` 改成目标版本，并在本文件新增对应段落。标题必须是 `## v1.0.0` 这种，和版本号一致。
 
 这三个部分不一定全部需要
 

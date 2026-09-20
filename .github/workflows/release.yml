@@ -36,13 +36,13 @@ jobs:
       - name: Read version
         shell: pwsh
         run: |
-          $line = Select-String -Path build.gradle.kts -Pattern '^\s*packageVersion\s*=\s*"([^"]+)"' | Select-Object -First 1
+          $line = Select-String -Path build.gradle.kts -Pattern '^\s*version\s*=\s*"([^"]+)"' | Select-Object -First 1
           if (-not $line) {
-            throw 'build.gradle.kts 里找不到 packageVersion = "x.y.z"'
+            throw 'build.gradle.kts 里找不到 version = "x.y.z"'
           }
           $version = $line.Matches[0].Groups[1].Value.Trim()
           if ([string]::IsNullOrWhiteSpace($version)) {
-            throw 'build.gradle.kts 的 packageVersion 是空的'
+            throw 'build.gradle.kts 的 version 是空的'
           }
           "APP_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append
           Write-Host "APP_VERSION=$version"

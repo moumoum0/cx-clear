@@ -9,7 +9,7 @@ plugins {
 }
 
 group = "dev.cxclear"
-version = "1.0.0"
+version = "1.1.1"
 
 repositories {
     google()
@@ -60,7 +60,7 @@ compose.desktop {
             // Windows 走 app-image + Inno Setup（packageInnoSetup 任务），不再出 MSI。
             targetFormats(TargetFormat.Dmg)
             packageName = "CX Clear"
-            packageVersion = "1.1.1"
+            packageVersion = version.toString()
             description = "AI Agent disk cleanup tool"
             vendor = "CX Clear"
 
@@ -78,17 +78,30 @@ compose.desktop {
     }
 }
 
-kotlin {
-    jvmToolchain(21)
+val generateAppVersion = tasks.register("generateAppVersion") {
+    val outputDir = layout.buildDirectory.dir("generated/sources/appmeta")
+    val ver = version.toString()
+    inputs.property("version", ver)
+    outputs.dir(outputDir)
+    doLast {
+        val file = outputDir.get().asFile.resolve("dev/cxclear/AppVersion.kt")
+        file.parentFile.mkdirs()
+        file.writeText(
+            "package dev.cxclear\n\ninternal object AppVersion {\n    const val VALUE = \"$ver\"\n}\n",
+        )
+    }
 }
 
-fun readPackageVersion(): String =
-    Regex("""^\s*packageVersion\s*=\s*"([^"]+)"""", RegexOption.MULTILINE)
-        .find(project.file("build.gradle.kts").readText())
-        ?.groupValues?.get(1)
-        ?.trim()
-        ?.takeIf { it.isNotEmpty() }
-        ?: error("build.gradle.kts 里找不到 packageVersion = \"x.y.z\"")
+kotlin {
+    jvmToolchain(21)
+    sourceSets.getByName("main").kotlin.srcDir(
+        layout.buildDirectory.dir("generated/sources/appmeta"),
+    )
+}
+
+tasks.named("compileKotlin") {
+    dependsOn(generateAppVersion)
+}
 
 fun findIscc(): File {
     val candidates = listOf(
@@ -267,7 +280,7 @@ tasks.register("packageInnoSetup") {
     doLast {
         val iscc = findIscc()
         killStuckIscc()
-        val appVersion = readPackageVersion()
+        val appVersion = version.toString()
         val outDir = layout.buildDirectory.dir("compose/binaries/main/dist").get().asFile
         outDir.mkdirs()
 
