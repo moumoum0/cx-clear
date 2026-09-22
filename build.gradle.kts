@@ -25,6 +25,8 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")
     implementation("net.java.dev.jna:jna:5.19.1")
     implementation("org.xerial:sqlite-jdbc:3.47.1.0")
+    implementation("dev.chrisbanes.haze:haze:2.0.0")
+    implementation("dev.chrisbanes.haze:haze-blur:2.0.0")
     // 视频录制临时用implementation("org.jcodec:jcodec-javase:0.2.5")
     testImplementation(kotlin("test"))
 }

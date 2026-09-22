@@ -1,7 +1,6 @@
 package dev.cxclear.ui.components
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
@@ -38,11 +37,16 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.chrisbanes.haze.HazeInput
+import dev.chrisbanes.haze.HazePerformanceMode
+import dev.chrisbanes.haze.blur.HazeBlurStyle
+import dev.chrisbanes.haze.blur.hazeBlur
+import dev.chrisbanes.haze.hazeSource
+import dev.chrisbanes.haze.rememberHazeState
 import dev.cxclear.AppMeta
 import dev.cxclear.chats.RetentionAiPrompt
 import dev.cxclear.scan.formatBytes
@@ -65,17 +69,22 @@ import java.nio.file.Files
 @Composable
 fun SettingsView(modifier: Modifier = Modifier) {
     var showAbout by remember { mutableStateOf(false) }
-    val blurRadius by animateDpAsState(
-        targetValue = if (showAbout) 12.dp else 0.dp,
-        animationSpec = Motion.normal(),
-        label = "aboutBlur",
-    )
+    val hazeState = rememberHazeState()
 
     Box(modifier = modifier.fillMaxSize()) {
         SettingsListPage(
             modifier = Modifier
                 .fillMaxSize()
-                .blur(blurRadius),
+                .hazeSource(hazeState)
+                .then(
+                    if (showAbout) {
+                        Modifier.hazeBlur(
+                            input = HazeInput.Content,
+                            style = HazeBlurStyle { blurRadius(12.dp) },
+                            performanceMode = HazePerformanceMode.Performance,
+                        )
+                    } else Modifier
+                ),
             onOpenAbout = { showAbout = true },
         )
 

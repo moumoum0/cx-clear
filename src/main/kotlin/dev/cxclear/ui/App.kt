@@ -1,7 +1,6 @@
 package dev.cxclear.ui
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
@@ -24,12 +23,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.WindowPlacement
 import androidx.compose.ui.window.WindowScope
 import androidx.compose.ui.window.WindowState
+import dev.chrisbanes.haze.HazeInput
+import dev.chrisbanes.haze.HazePerformanceMode
+import dev.chrisbanes.haze.blur.HazeBlurStyle
+import dev.chrisbanes.haze.blur.hazeBlur
+import dev.chrisbanes.haze.hazeSource
+import dev.chrisbanes.haze.rememberHazeState
 import dev.cxclear.storage.AppPreferences
 import dev.cxclear.storage.AppPrefs
 import dev.cxclear.ui.components.AppTitleBar
@@ -95,11 +99,14 @@ fun WindowScope.App(
     }
 
     val overlayHost = remember { OverlayHostState() }
-    val blurRadius by animateDpAsState(
-        targetValue = if (overlayHost.content != null) 12.dp else 0.dp,
-        animationSpec = Motion.normal(),
-        label = "overlayBlur",
-    )
+    val hazeState = rememberHazeState()
+    
+    // 全局预热 Haze 渲染
+    var isWarmingUp by remember { mutableStateOf(true) }
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.delay(50)
+        isWarmingUp = false
+    }
 
     AppTheme {
     CompositionLocalProvider(LocalOverlayHost provides overlayHost) {
@@ -112,7 +119,16 @@ fun WindowScope.App(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .blur(blurRadius)
+                .hazeSource(hazeState)
+                .then(
+                    if (overlayHost.content != null || isWarmingUp) {
+                        Modifier.hazeBlur(
+                            input = HazeInput.Content,
+                            style = HazeBlurStyle { blurRadius(12.dp) },
+                            performanceMode = HazePerformanceMode.Performance,
+                        )
+                    } else Modifier
+                )
                 .background(AppColors.Surface1, windowShape)
                 .then(
                     if (isMaximized) Modifier
