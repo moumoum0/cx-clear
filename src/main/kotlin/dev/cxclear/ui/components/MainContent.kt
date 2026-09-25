@@ -91,7 +91,6 @@ private data class ScanCategory(
     val id: String,
     val label: String,
     val bytes: Long,
-    val color: Color,
     val items: List<ScanTargetItem> = emptyList(),
 )
 
@@ -389,27 +388,23 @@ private fun buildCategories(
             id = "retained",
             label = "应用保留数据",
             bytes = retainedBytes,
-            color = AppColors.CategoryRetained,
         ),
         ScanCategory(
             id = "packages",
             label = "插件与安装缓存",
             bytes = packageItems.sumOf { it.bytes },
-            color = AppColors.CategoryPackages,
             items = packageItems,
         ),
         ScanCategory(
             id = "working",
             label = "日志与临时文件",
             bytes = workingItems.sumOf { it.bytes },
-            color = AppColors.CategoryWorking,
             items = workingItems,
         ),
         ScanCategory(
             id = "history",
             label = "历史与会话",
             bytes = historyItems.sumOf { it.bytes },
-            color = AppColors.CategoryHistory,
             items = historyItems,
         ),
     )
@@ -420,27 +415,31 @@ private fun emptyScanCategories(): List<ScanCategory> = listOf(
         id = "retained",
         label = "应用保留数据",
         bytes = 0L,
-        color = AppColors.CategoryRetained,
     ),
     ScanCategory(
         id = "packages",
         label = "插件与安装缓存",
         bytes = 0L,
-        color = AppColors.CategoryPackages,
     ),
     ScanCategory(
         id = "working",
         label = "日志与临时文件",
         bytes = 0L,
-        color = AppColors.CategoryWorking,
     ),
     ScanCategory(
         id = "history",
         label = "历史与会话",
         bytes = 0L,
-        color = AppColors.CategoryHistory,
     ),
 )
+
+@Composable
+private fun categoryAccent(id: String): Color = when (id) {
+    "packages" -> AppColors.CategoryPackages
+    "working" -> AppColors.CategoryWorking
+    "history" -> AppColors.CategoryHistory
+    else -> AppColors.CategoryRetained
+}
 
 @Composable
 private fun ScanView(
@@ -590,6 +589,7 @@ private fun ScanResultView(
                 val canExpand = !isScanning && category.items.isNotEmpty()
                 val isExpanded = expandedCategoryId == category.id
                 val isRetained = category.id == "retained"
+                val accent = categoryAccent(category.id)
                 val targetFraction = if (!isScanning && totalBytes > 0L) {
                     (category.bytes.toFloat() / totalBytes).coerceIn(0f, 1f)
                 } else 0f
@@ -629,7 +629,7 @@ private fun ScanResultView(
                                     Modifier
                                         .fillMaxWidth(fraction)
                                         .fillMaxHeight()
-                                        .background(category.color.copy(alpha = if (isExpanded) 0.18f else 0.14f)),
+                                        .background(accent.copy(alpha = if (isExpanded) 0.18f else 0.14f)),
                                 )
                             }
                         }
@@ -649,7 +649,7 @@ private fun ScanResultView(
                                 Box(
                                     Modifier
                                         .size(10.dp)
-                                        .background(category.color, RoundedCornerShape(99.dp))
+                                        .background(accent, RoundedCornerShape(99.dp))
                                 )
                             }
                             Spacer(modifier = Modifier.width(10.dp))
@@ -713,7 +713,7 @@ private fun ScanResultView(
                                 TargetSelectionRow(
                                     target = target,
                                     checked = target.key in selectedTargets,
-                                    accent = category.color,
+                                    accent = accent,
                                     onCheckedChange = { onTargetToggle(target.key) },
                                 )
                             }
@@ -851,6 +851,8 @@ private fun StorageCylinder(
     val totalBytes = categories.sumOf { it.bytes }.toFloat().coerceAtLeast(1f)
     // retained 只留白，不进柱体；图例自上而下 → 柱体反转堆。
     val stack = remember(categories) { categories.filter { it.id != "retained" }.asReversed() }
+    val colors = AppColors
+    val stackColors = stack.map { categoryAccent(it.id) }
 
     val shares = remember(stack.size) { List(stack.size) { Animatable(0f) } }
     // 别把 isScanning 塞进 key，扫完会白抖一轮。
@@ -892,10 +894,10 @@ private fun StorageCylinder(
         drawRect(
             brush = Brush.horizontalGradient(
                 listOf(
-                    AppColors.CylinderShellEdge,
-                    AppColors.CylinderShellLight,
-                    AppColors.CylinderShellMid,
-                    AppColors.CylinderShellEdge,
+                    colors.CylinderShellEdge,
+                    colors.CylinderShellLight,
+                    colors.CylinderShellMid,
+                    colors.CylinderShellEdge,
                 ),
                 startX = left,
                 endX = right,
@@ -904,20 +906,20 @@ private fun StorageCylinder(
             size = Size(cylinderWidth, bodyHeight),
         )
         drawOval(
-            brush = Brush.verticalGradient(listOf(Color.White, AppColors.CylinderShellMid)),
+            brush = Brush.verticalGradient(listOf(colors.Highlight, colors.CylinderShellMid)),
             topLeft = Offset(left, 0f),
             size = Size(cylinderWidth, capHeight),
         )
         drawOval(
             brush = Brush.verticalGradient(
-                listOf(AppColors.CylinderShellMid, AppColors.CylinderShellLight),
+                listOf(colors.CylinderShellMid, colors.CylinderShellLight),
             ),
             topLeft = Offset(left, bottom - capHeight / 2f),
             size = Size(cylinderWidth, capHeight),
         )
 
         val slices = sliceCylinder(
-            colors = stack.map { it.color },
+            colors = stackColors,
             shares = shares.map { it.value },
             bottom = bottom,
             bodyHeight = bodyHeight,
@@ -932,7 +934,7 @@ private fun StorageCylinder(
                 val bodyBrush = Brush.horizontalGradient(
                     0f to slice.color,
                     0.80f to slice.color,
-                    1f to lerp(slice.color, AppColors.CategoryHistory, 0.16f),
+                    1f to lerp(slice.color, colors.CategoryHistory, 0.16f),
                     startX = left,
                     endX = right,
                 )
@@ -952,8 +954,8 @@ private fun StorageCylinder(
                 drawOval(
                     brush = Brush.verticalGradient(
                         listOf(
-                            lerp(topSlice.color, Color.White, 0.32f),
-                            lerp(topSlice.color, Color.White, 0.08f),
+                            lerp(topSlice.color, colors.Highlight, 0.32f),
+                            lerp(topSlice.color, colors.Highlight, 0.08f),
                         ),
                         startY = fillTop - capHeight / 2f,
                         endY = fillTop + capHeight / 2f,
@@ -978,7 +980,11 @@ private fun StorageCylinder(
                 val bandTop = top - bandHeight + (bodyHeight + bandHeight) * (1f - sweep.value)
                 drawRect(
                     brush = Brush.verticalGradient(
-                        listOf(Color.Transparent, Color.White.copy(alpha = 0.34f), Color.Transparent),
+                        listOf(
+                            Color.Transparent,
+                            colors.Highlight.copy(alpha = 0.34f),
+                            Color.Transparent,
+                        ),
                         startY = bandTop,
                         endY = bandTop + bandHeight,
                     ),
@@ -989,7 +995,7 @@ private fun StorageCylinder(
         }
 
         drawOval(
-            color = Color.White.copy(alpha = 0.28f),
+            color = colors.Highlight.copy(alpha = 0.28f),
             topLeft = Offset(left, 0f),
             size = Size(cylinderWidth, capHeight),
         )
@@ -1365,6 +1371,7 @@ private fun DiskUsageCard(refreshKey: Int, modifier: Modifier = Modifier) {
 @Composable
 private fun DiskUsageCylinder(fraction: Float, modifier: Modifier = Modifier) {
     val fill = fraction.coerceIn(0f, 1f)
+    val colors = AppColors
     Canvas(modifier = modifier) {
         val cylinderHeight = size.height * 0.66f
         val top = (size.height - cylinderHeight) / 2f
@@ -1376,10 +1383,10 @@ private fun DiskUsageCylinder(fraction: Float, modifier: Modifier = Modifier) {
         drawRect(
             brush = Brush.verticalGradient(
                 listOf(
-                    AppColors.CylinderShellEdge,
-                    AppColors.CylinderShellLight,
-                    AppColors.CylinderShellMid,
-                    AppColors.CylinderShellEdge,
+                    colors.CylinderShellEdge,
+                    colors.CylinderShellLight,
+                    colors.CylinderShellMid,
+                    colors.CylinderShellEdge,
                 ),
                 startY = top,
                 endY = top + cylinderHeight,
@@ -1389,14 +1396,14 @@ private fun DiskUsageCylinder(fraction: Float, modifier: Modifier = Modifier) {
         )
         drawOval(
             brush = Brush.horizontalGradient(
-                listOf(AppColors.CylinderShellLight, AppColors.CylinderShellMid),
+                listOf(colors.CylinderShellLight, colors.CylinderShellMid),
             ),
             topLeft = Offset(0f, top),
             size = Size(capWidth, cylinderHeight),
         )
         drawOval(
             brush = Brush.horizontalGradient(
-                listOf(AppColors.CylinderShellMid, AppColors.CylinderShellLight),
+                listOf(colors.CylinderShellMid, colors.CylinderShellLight),
             ),
             topLeft = Offset(right - capWidth / 2f, top),
             size = Size(capWidth, cylinderHeight),
@@ -1404,12 +1411,12 @@ private fun DiskUsageCylinder(fraction: Float, modifier: Modifier = Modifier) {
 
         if (fill > 0f) {
             val fillRight = left + bodyWidth * fill
-            val fillColor = AppColors.Primary
+            val fillColor = colors.Primary
             // 同色系暗边，别混黑。
             val bodyBrush = Brush.verticalGradient(
                 0f to fillColor,
                 0.80f to fillColor,
-                1f to lerp(fillColor, AppColors.CategoryHistory, 0.16f),
+                1f to lerp(fillColor, colors.CategoryHistory, 0.16f),
                 startY = top,
                 endY = top + cylinderHeight,
             )
@@ -1432,8 +1439,8 @@ private fun DiskUsageCylinder(fraction: Float, modifier: Modifier = Modifier) {
                 drawOval(
                     brush = Brush.horizontalGradient(
                         listOf(
-                            lerp(fillColor, Color.White, 0.32f),
-                            lerp(fillColor, Color.White, 0.08f),
+                            lerp(fillColor, colors.Highlight, 0.32f),
+                            lerp(fillColor, colors.Highlight, 0.08f),
                         ),
                         startX = fillRight - capWidth / 2f,
                         endX = fillRight + capWidth / 2f,

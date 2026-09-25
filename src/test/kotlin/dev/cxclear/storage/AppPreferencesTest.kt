@@ -1,5 +1,7 @@
 package dev.cxclear.storage
 
+import dev.cxclear.ui.theme.AppColorScheme
+import dev.cxclear.ui.theme.ThemeMode
 import java.nio.file.Files
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
@@ -25,12 +27,14 @@ class AppPreferencesTest {
     @Test
     fun `defaults when file missing`() {
         val prefs = AppPreferences.read()
-        assertEquals(setOf("codex"), prefs.defaultTools)
+        assertEquals(setOf("codex", "claude", "cursor", "opencode"), prefs.defaultTools)
         assertFalse(prefs.rememberLastScreen)
         assertEquals("scan", prefs.lastScreenId)
         assertEquals("manual", prefs.defaultChatsMode)
         assertTrue(prefs.autoCleanEnabled)
         assertTrue(prefs.autoCleanNotify)
+        assertEquals(ThemeMode.SYSTEM, prefs.themeMode)
+        assertEquals(AppColorScheme.APP_DEFAULT, prefs.colorScheme)
     }
 
     @Test
@@ -43,6 +47,8 @@ class AppPreferencesTest {
                 defaultChatsMode = "auto",
                 autoCleanEnabled = false,
                 autoCleanNotify = false,
+                themeMode = ThemeMode.DARK,
+                colorScheme = AppColorScheme.CLOUD_FIELD,
             )
         )
         val prefs = AppPreferences.read()
@@ -52,6 +58,8 @@ class AppPreferencesTest {
         assertEquals("auto", prefs.defaultChatsMode)
         assertFalse(prefs.autoCleanEnabled)
         assertFalse(prefs.autoCleanNotify)
+        assertEquals(ThemeMode.DARK, prefs.themeMode)
+        assertEquals(AppColorScheme.CLOUD_FIELD, prefs.colorScheme)
     }
 
     @Test
@@ -61,10 +69,14 @@ class AppPreferencesTest {
             "default_tools=foo,codex,bar",
             "last_screen=nowhere",
             "default_chats_mode=weird",
+            "theme_mode=neon",
+            "color_scheme=wallpaper",
         ))
         val prefs = AppPreferences.read()
         assertEquals(setOf("codex"), prefs.defaultTools)
         assertEquals("scan", prefs.lastScreenId)
         assertEquals("manual", prefs.defaultChatsMode)
+        assertEquals(ThemeMode.SYSTEM, prefs.themeMode)
+        assertEquals(AppColorScheme.APP_DEFAULT, prefs.colorScheme)
     }
 }

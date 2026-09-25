@@ -15,18 +15,26 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -36,8 +44,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -54,9 +64,12 @@ import dev.cxclear.storage.AppDir
 import dev.cxclear.storage.AppPreferences
 import dev.cxclear.storage.AppPrefs
 import dev.cxclear.storage.CleanHistory
+import dev.cxclear.ui.LocalThemeController
+import dev.cxclear.ui.theme.AppColorScheme
 import dev.cxclear.ui.theme.AppColors
 import dev.cxclear.ui.theme.AppDimensions
 import dev.cxclear.ui.theme.Motion
+import dev.cxclear.ui.theme.ThemeMode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -107,9 +120,12 @@ private fun SettingsListPage(
     modifier: Modifier = Modifier,
 ) {
     val scope = rememberCoroutineScope()
+    val themeController = LocalThemeController.current
     var prefs by remember { mutableStateOf(AppPreferences.read()) }
     var historyTotal by remember { mutableStateOf(CleanHistory.totalBytes()) }
     var showClearHistoryConfirm by remember { mutableStateOf(false) }
+    var showThemeModeDialog by remember { mutableStateOf(false) }
+    var showColorSchemeDialog by remember { mutableStateOf(false) }
     var promptCopied by remember { mutableStateOf(false) }
 
     fun updatePrefs(transform: (AppPrefs) -> AppPrefs) {
@@ -152,6 +168,25 @@ private fun SettingsListPage(
                 verticalArrangement = Arrangement.spacedBy(4.dp),
                 contentPadding = PaddingValues(vertical = 16.dp),
             ) {
+                item { SettingsGroupTitle("外观") }
+                item {
+                    SettingsItem(
+                        icon = Icons.Default.DarkMode,
+                        title = "主题模式",
+                        subtitle = themeController.themeMode.displayName,
+                        onClick = { showThemeModeDialog = true },
+                    )
+                }
+                item {
+                    SettingsItem(
+                        icon = Icons.Default.Palette,
+                        title = "配色方案",
+                        subtitle = themeController.colorScheme.displayName,
+                        onClick = { showColorSchemeDialog = true },
+                    )
+                }
+
+                item { Spacer(modifier = Modifier.height(12.dp)) }
                 item { SettingsGroupTitle("通用") }
                 item {
                     SettingsSwitchItem(
@@ -219,6 +254,34 @@ private fun SettingsListPage(
         }
     }
 
+    if (showThemeModeDialog) {
+        ThemeChoiceDialog(
+            title = "主题模式",
+            options = ThemeMode.entries.map { it to it.displayName },
+            selected = themeController.themeMode,
+            onSelected = {
+                themeController.setThemeMode(it)
+                showThemeModeDialog = false
+            },
+            onDismiss = { showThemeModeDialog = false },
+        )
+    }
+
+    if (showColorSchemeDialog) {
+        ThemeChoiceDialog(
+            title = "配色方案",
+            options = AppColorScheme.entries.map { it to "${it.displayName} · ${it.description}" },
+            selected = themeController.colorScheme,
+            onSelected = {
+                themeController.setColorScheme(it)
+                showColorSchemeDialog = false
+            },
+            onDismiss = { showColorSchemeDialog = false },
+            subtitleOf = { it.description },
+            titleOf = { it.displayName },
+        )
+    }
+
     if (showClearHistoryConfirm) {
         AlertDialog(
             onDismissRequest = { showClearHistoryConfirm = false },
@@ -258,6 +321,71 @@ private fun SettingsListPage(
             containerColor = AppColors.Surface2,
         )
     }
+}
+
+@Composable
+private fun <T> ThemeChoiceDialog(
+    title: String,
+    options: List<Pair<T, String>>,
+    selected: T,
+    onSelected: (T) -> Unit,
+    onDismiss: () -> Unit,
+    titleOf: (T) -> String = { options.first { pair -> pair.first == it }.second },
+    subtitleOf: ((T) -> String)? = null,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(title, color = AppColors.TextPrimary, fontWeight = FontWeight.SemiBold)
+        },
+        text = {
+            Column(modifier = Modifier.selectableGroup()) {
+                options.forEach { (value, _) ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .selectable(
+                                selected = value == selected,
+                                onClick = { onSelected(value) },
+                                role = Role.RadioButton,
+                            )
+                            .padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        RadioButton(
+                            selected = value == selected,
+                            onClick = null,
+                            colors = RadioButtonDefaults.colors(
+                                selectedColor = AppColors.Primary,
+                                unselectedColor = AppColors.Outline,
+                            ),
+                        )
+                        Spacer(modifier = Modifier.width(16.dp))
+                        Column {
+                            Text(
+                                text = titleOf(value),
+                                fontSize = 15.sp,
+                                color = AppColors.TextPrimary,
+                            )
+                            subtitleOf?.let { subtitle ->
+                                Text(
+                                    text = subtitle(value),
+                                    fontSize = 13.sp,
+                                    color = AppColors.TextSecondary,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("关闭", color = AppColors.Primary, fontSize = 14.sp)
+            }
+        },
+        containerColor = AppColors.Surface2,
+    )
 }
 
 private fun openConfigDir() {

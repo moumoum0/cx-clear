@@ -1,28 +1,29 @@
 package dev.cxclear.storage
 
+import dev.cxclear.ui.theme.AppColorScheme
+import dev.cxclear.ui.theme.ThemeMode
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption
 
-/**
- * 应用级偏好。存 `~/.cxclear/preferences.txt`，key=value，容错解析。
- *
- * 与 [RetentionStore] / [CleanHistory] 同目录；只记启动默认与总开关，
- * 不代替对话策略或清理历史。
- */
+// 偏好设置
 data class AppPrefs(
-    /** 扫描页默认勾选的工具 id（codex / claude / cursor / opencode）。空则回退到全部。 */
+    // 扫描页默认勾选的工具 id（codex / claude / cursor / opencode）。空则回退到全部。
     val defaultTools: Set<String> = setOf("codex", "claude", "cursor", "opencode"),
-    /** 启动时是否恢复 [lastScreenId]。 */
+    // 启动时是否恢复 [lastScreenId]。
     val rememberLastScreen: Boolean = false,
-    /** 上次打开的页面：scan / chats / settings。 */
+    // 上次打开的页面：scan / chats / settings。
     val lastScreenId: String = "scan",
-    /** 对话管理默认页：manual / auto。 */
+    // 对话管理默认页：manual / auto。
     val defaultChatsMode: String = "manual",
-    /** 总开关：关则跳过自动清理执行，不改各条规则。 */
+    // 总开关：关则跳过自动清理执行，不改各条规则。
     val autoCleanEnabled: Boolean = true,
-    /** 自动清理删过东西后是否弹出通知条。 */
+    // 自动清理删过东西后是否弹出通知条。
     val autoCleanNotify: Boolean = true,
+    // 亮 / 暗 / 跟随系统。
+    val themeMode: ThemeMode = ThemeMode.SYSTEM,
+    // 配色：应用默认 / 云野。
+    val colorScheme: AppColorScheme = AppColorScheme.APP_DEFAULT,
 )
 
 object AppPreferences {
@@ -33,6 +34,13 @@ object AppPreferences {
     private val knownChatsModes = setOf("manual", "auto")
 
     private fun file(): Path? = AppDir.dir()?.resolve(FILE_NAME)
+
+    private fun parseThemeMode(raw: String?): ThemeMode =
+        ThemeMode.entries.firstOrNull { it.name.equals(raw, ignoreCase = true) } ?: ThemeMode.SYSTEM
+
+    private fun parseColorScheme(raw: String?): AppColorScheme =
+        AppColorScheme.entries.firstOrNull { it.name.equals(raw, ignoreCase = true) }
+            ?: AppColorScheme.APP_DEFAULT
 
     fun read(): AppPrefs {
         val path = file() ?: return AppPrefs()
@@ -63,6 +71,8 @@ object AppPreferences {
             defaultChatsMode = chatsMode,
             autoCleanEnabled = props["auto_clean_enabled"]?.toBooleanStrictOrNull() ?: true,
             autoCleanNotify = props["auto_clean_notify"]?.toBooleanStrictOrNull() ?: true,
+            themeMode = parseThemeMode(props["theme_mode"]),
+            colorScheme = parseColorScheme(props["color_scheme"]),
         )
     }
 
@@ -78,6 +88,8 @@ object AppPreferences {
             "default_chats_mode=$chatsMode",
             "auto_clean_enabled=${prefs.autoCleanEnabled}",
             "auto_clean_notify=${prefs.autoCleanNotify}",
+            "theme_mode=${prefs.themeMode.name}",
+            "color_scheme=${prefs.colorScheme.name}",
         )
         runCatching {
             Files.createDirectories(path.parent)

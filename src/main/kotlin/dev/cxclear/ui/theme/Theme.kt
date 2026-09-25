@@ -1,114 +1,296 @@
 package dev.cxclear.ui.theme
 
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.TextFieldColors
+import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.ReadOnlyComposable
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 
-/**
- * Material 3 浅色方案，逐字段对应设计给的完整 token 表。
- *
- * 这里只做数据声明，不做任何语义解释：UI 一律通过 [AppColors] 取色，
- * 换主题时只需替换这一个对象，调用方不受影响。
- */
-object M3Light {
-    val primary = Color(0xFF475D92)
-    val onPrimary = Color(0xFFFFFFFF)
-    val primaryContainer = Color(0xFFD9E2FF)
-    val onPrimaryContainer = Color(0xFF001945)
-
-    val secondary = Color(0xFF575E71)
-    val onSecondary = Color(0xFFFFFFFF)
-    val secondaryContainer = Color(0xFFDCE2F9)
-    val onSecondaryContainer = Color(0xFF151B2C)
-
-    val tertiary = Color(0xFF725572)
-    val onTertiary = Color(0xFFFFFFFF)
-    val tertiaryContainer = Color(0xFFFDD7FA)
-    val onTertiaryContainer = Color(0xFF2A122C)
-
-    val error = Color(0xFFB3261E)
-    val onError = Color(0xFFFFFFFF)
-    val errorContainer = Color(0xFFF9DEDC)
-    val onErrorContainer = Color(0xFF410E0B)
-
-    val background = Color(0xFFFEFBFF)
-    val onBackground = Color(0xFF1A1B20)
-    val surface = Color(0xFFFEFBFF)
-    val onSurface = Color(0xFF1A1B20)
-    val surfaceVariant = Color(0xFFE1E2EC)
-    val onSurfaceVariant = Color(0xFF44464F)
-
-    val outline = Color(0xFF757780)
-    val outlineVariant = Color(0xFFCAC4D0)
-    val scrim = Color(0xFF000000)
-
-    val inverseSurface = Color(0xFF2F3036)
-    val inverseOnSurface = Color(0xFFF1F0F7)
-    val inversePrimary = Color(0xFFB0C6FF)
-
-    val surfaceDim = Color(0xFFDAD9E0)
-    val surfaceBright = Color(0xFFFEFBFF)
-    val surfaceContainerLowest = Color(0xFFFFFFFF)
-    val surfaceContainerLow = Color(0xFFF8F7FE)
-    val surfaceContainer = Color(0xFFF2F1F8)
-    val surfaceContainerHigh = Color(0xFFECEBF2)
-    val surfaceContainerHighest = Color(0xFFE6E5ED)
+enum class ThemeMode(val displayName: String) {
+    SYSTEM("跟随系统"),
+    LIGHT("浅色模式"),
+    DARK("深色模式"),
 }
 
-/**
- * 语义色门面。每个字段说明「用在哪」，取值一律来自 [M3Light]，
- * 不在此处新造颜色，避免主题之外出现游离色值。
- */
-object AppColors {
-    val Surface0 = M3Light.surfaceContainerLowest
-    val Surface1 = M3Light.surface
-    val Surface2 = M3Light.surfaceContainer
-    val Surface3 = M3Light.surfaceContainerHighest
-    val Surface4 = M3Light.surfaceVariant
-
-    val Primary = M3Light.primary
-    val PrimaryHover = M3Light.inversePrimary
-    val PrimaryContainer = M3Light.primaryContainer
-    val OnPrimary = M3Light.onPrimary
-
-    val Safe = M3Light.primary
-    val Optional = M3Light.tertiary
-    val Error = M3Light.error
-
-    val TextPrimary = M3Light.onSurface
-    val TextSecondary = M3Light.onSurfaceVariant
-    val TextTertiary = M3Light.outline
-
-    val Outline = M3Light.outline
-    val OutlineVariant = M3Light.outlineVariant
-
-    /** scrim 变暗层之上的浮动文字：底是压暗的画布，用反色（近白）保证可读。 */
-    val TextOnScrim = M3Light.inverseOnSurface
-
-    /** 浮层遮罩底色（纯黑），实际用时叠半透明，把身后整窗压暗。 */
-    val Scrim = M3Light.scrim
-
-    /**
-     * 存储分类色：可清理的三类走同一蓝色系明度阶梯，自浅到深；
-     * 不可清理的保留数据用深灰跳出色系，与「可清理」形成类别区分而非程度区分。
-     */
-    val CategoryPackages = M3Light.inversePrimary
-    val CategoryWorking = M3Light.primary
-    val CategoryHistory = M3Light.onPrimaryContainer
-    val CategoryRetained = M3Light.inverseSurface
-
-    /**
-     * 圆柱外壳：容器本体，取最浅的 surface 阶梯，避免与内容争视觉重量。
-     * Edge 只比 Mid 深一阶 —— 用 surfaceDim 会在空筒两侧压出两道明显的灰边，
-     * 圆度靠这一点点明度差交代就够，再深就成了脏。
-     */
-    val CylinderShellLight = M3Light.surfaceContainerLowest
-    val CylinderShellMid = M3Light.surfaceContainerLow
-    val CylinderShellEdge = M3Light.surfaceContainerHigh
+// 壁纸取色是 Android 专用,桌面端暂不开放
+enum class AppColorScheme(
+    val displayName: String,
+    val description: String,
+) {
+    APP_DEFAULT("应用默认", "使用应用默认配色方案"),
+    CLOUD_FIELD("云野", "云野 - 自然清新的绿色主题"),
 }
+
+
+data class M3Tokens(
+    val primary: Color,
+    val onPrimary: Color,
+    val primaryContainer: Color,
+    val onPrimaryContainer: Color,
+    val secondary: Color,
+    val onSecondary: Color,
+    val secondaryContainer: Color,
+    val onSecondaryContainer: Color,
+    val tertiary: Color,
+    val onTertiary: Color,
+    val tertiaryContainer: Color,
+    val onTertiaryContainer: Color,
+    val error: Color,
+    val onError: Color,
+    val errorContainer: Color,
+    val onErrorContainer: Color,
+    val background: Color,
+    val onBackground: Color,
+    val surface: Color,
+    val onSurface: Color,
+    val surfaceVariant: Color,
+    val onSurfaceVariant: Color,
+    val outline: Color,
+    val outlineVariant: Color,
+    val scrim: Color,
+    val inverseSurface: Color,
+    val inverseOnSurface: Color,
+    val inversePrimary: Color,
+    val surfaceDim: Color,
+    val surfaceBright: Color,
+    val surfaceContainerLowest: Color,
+    val surfaceContainerLow: Color,
+    val surfaceContainer: Color,
+    val surfaceContainerHigh: Color,
+    val surfaceContainerHighest: Color,
+)
+
+// 默认配色
+val M3DefaultLight = M3Tokens(
+    primary = Color(0xFF475D92),
+    onPrimary = Color(0xFFFFFFFF),
+    primaryContainer = Color(0xFFD9E2FF),
+    onPrimaryContainer = Color(0xFF001945),
+    secondary = Color(0xFF575E71),
+    onSecondary = Color(0xFFFFFFFF),
+    secondaryContainer = Color(0xFFDCE2F9),
+    onSecondaryContainer = Color(0xFF151B2C),
+    tertiary = Color(0xFF725572),
+    onTertiary = Color(0xFFFFFFFF),
+    tertiaryContainer = Color(0xFFFDD7FA),
+    onTertiaryContainer = Color(0xFF2A122C),
+    error = Color(0xFFB3261E),
+    onError = Color(0xFFFFFFFF),
+    errorContainer = Color(0xFFF9DEDC),
+    onErrorContainer = Color(0xFF410E0B),
+    background = Color(0xFFFEFBFF),
+    onBackground = Color(0xFF1A1B20),
+    surface = Color(0xFFFEFBFF),
+    onSurface = Color(0xFF1A1B20),
+    surfaceVariant = Color(0xFFE1E2EC),
+    onSurfaceVariant = Color(0xFF44464F),
+    outline = Color(0xFF757780),
+    outlineVariant = Color(0xFFCAC4D0),
+    scrim = Color(0xFF000000),
+    inverseSurface = Color(0xFF2F3036),
+    inverseOnSurface = Color(0xFFF1F0F7),
+    inversePrimary = Color(0xFFB0C6FF),
+    surfaceDim = Color(0xFFDAD9E0),
+    surfaceBright = Color(0xFFFEFBFF),
+    surfaceContainerLowest = Color(0xFFFFFFFF),
+    surfaceContainerLow = Color(0xFFF8F7FE),
+    surfaceContainer = Color(0xFFF2F1F8),
+    surfaceContainerHigh = Color(0xFFECEBF2),
+    surfaceContainerHighest = Color(0xFFE6E5ED),
+)
+
+// 目前部分深色由AI自动推算，可能存在错误，之后会改
+val M3DefaultDark = M3Tokens(
+    primary = Color(0xFFB0C6FF),
+    onPrimary = Color(0xFF152E60),
+    primaryContainer = Color(0xFF2E4578),
+    onPrimaryContainer = Color(0xFFD9E2FF),
+    secondary = Color(0xFFC0C6DC),
+    onSecondary = Color(0xFF2A3042),
+    secondaryContainer = Color(0xFF404659),
+    onSecondaryContainer = Color(0xFFDCE2F9),
+    tertiary = Color(0xFFE0BBDC),
+    onTertiary = Color(0xFF412742),
+    tertiaryContainer = Color(0xFF593D59),
+    onTertiaryContainer = Color(0xFFFDD7FA),
+    error = Color(0xFFF2B8B5),
+    onError = Color(0xFF601410),
+    errorContainer = Color(0xFF8C1D18),
+    onErrorContainer = Color(0xFFF9DEDC),
+    background = Color(0xFF121318),
+    onBackground = Color(0xFFE3E2E9),
+    surface = Color(0xFF121318),
+    onSurface = Color(0xFFE3E2E9),
+    surfaceVariant = Color(0xFF44464F),
+    onSurfaceVariant = Color(0xFFC5C6D0),
+    outline = Color(0xFF8F909A),
+    outlineVariant = Color(0xFF44464F),
+    scrim = Color(0xFF000000),
+    inverseSurface = Color(0xFFE3E2E9),
+    inverseOnSurface = Color(0xFF2F3036),
+    inversePrimary = Color(0xFF475D92),
+    surfaceDim = Color(0xFF121318),
+    surfaceBright = Color(0xFF38393E),
+    surfaceContainerLowest = Color(0xFF0D0E13),
+    surfaceContainerLow = Color(0xFF1A1B20),
+    surfaceContainer = Color(0xFF1E1F25),
+    surfaceContainerHigh = Color(0xFF292A2F),
+    surfaceContainerHighest = Color(0xFF34343A),
+)
+
+// 云野浅色
+val M3CloudFieldLight = M3Tokens(
+    primary = Color(0xFF3C6839),
+    onPrimary = Color(0xFFFFFFFF),
+    primaryContainer = Color(0xFFBDF0B3),
+    onPrimaryContainer = Color(0xFF245023),
+    secondary = Color(0xFF53634F),
+    onSecondary = Color(0xFFFFFFFF),
+    secondaryContainer = Color(0xFFD6E8CE),
+    onSecondaryContainer = Color(0xFF3B4B38),
+    tertiary = Color(0xFF38656A),
+    onTertiary = Color(0xFFFFFFFF),
+    tertiaryContainer = Color(0xFFBCEBF0),
+    onTertiaryContainer = Color(0xFF1E4D52),
+    error = Color(0xFFBA1A1A),
+    onError = Color(0xFFFFFFFF),
+    errorContainer = Color(0xFFFFDAD6),
+    onErrorContainer = Color(0xFF93000A),
+    background = Color(0xFFF7FBF1),
+    onBackground = Color(0xFF191D17),
+    surface = Color(0xFFF7FBF1),
+    onSurface = Color(0xFF191D17),
+    surfaceVariant = Color(0xFFDEE5D8),
+    onSurfaceVariant = Color(0xFF424940),
+    outline = Color(0xFF73796F),
+    outlineVariant = Color(0xFFC2C8BD),
+    scrim = Color(0xFF000000),
+    inverseSurface = Color(0xFF2D322B),
+    inverseOnSurface = Color(0xFFEFF2E9),
+    inversePrimary = Color(0xFFA2D399),
+    surfaceDim = Color(0xFFD8DBD2),
+    surfaceBright = Color(0xFFF7FBF1),
+    surfaceContainerLowest = Color(0xFFFFFFFF),
+    surfaceContainerLow = Color(0xFFF1F5EB),
+    surfaceContainer = Color(0xFFECEFE6),
+    surfaceContainerHigh = Color(0xFFE6E9E0),
+    surfaceContainerHighest = Color(0xFFE0E4DA),
+)
+
+// 云野深色
+val M3CloudFieldDark = M3Tokens(
+    primary = Color(0xFFA2D399),
+    onPrimary = Color(0xFF0C390E),
+    primaryContainer = Color(0xFF245023),
+    onPrimaryContainer = Color(0xFFBDF0B3),
+    secondary = Color(0xFFBACCB3),
+    onSecondary = Color(0xFF253423),
+    secondaryContainer = Color(0xFF3B4B38),
+    onSecondaryContainer = Color(0xFFD6E8CE),
+    tertiary = Color(0xFFA0CFD4),
+    onTertiary = Color(0xFF00363B),
+    tertiaryContainer = Color(0xFF1E4D52),
+    onTertiaryContainer = Color(0xFFBCEBF0),
+    error = Color(0xFFFFB4AB),
+    onError = Color(0xFF690005),
+    errorContainer = Color(0xFF93000A),
+    onErrorContainer = Color(0xFFFFDAD6),
+    background = Color(0xFF10140F),
+    onBackground = Color(0xFFE0E4DA),
+    surface = Color(0xFF10140F),
+    onSurface = Color(0xFFE0E4DA),
+    surfaceVariant = Color(0xFF424940),
+    onSurfaceVariant = Color(0xFFC2C8BD),
+    outline = Color(0xFF8C9388),
+    outlineVariant = Color(0xFF424940),
+    scrim = Color(0xFF000000),
+    inverseSurface = Color(0xFFE0E4DA),
+    inverseOnSurface = Color(0xFF2D322B),
+    inversePrimary = Color(0xFF3C6839),
+    surfaceDim = Color(0xFF10140F),
+    surfaceBright = Color(0xFF363A34),
+    surfaceContainerLowest = Color(0xFF0B0F0A),
+    surfaceContainerLow = Color(0xFF191D17),
+    surfaceContainer = Color(0xFF1D211B),
+    surfaceContainerHigh = Color(0xFF272B25),
+    surfaceContainerHighest = Color(0xFF323630),
+)
+
+
+data class AppColorTokens(
+    val Surface0: Color,
+    val Surface1: Color,
+    val Surface2: Color,
+    val Surface3: Color,
+    val Surface4: Color,
+    val Primary: Color,
+    val PrimaryHover: Color,
+    val PrimaryContainer: Color,
+    val OnPrimary: Color,
+    val Safe: Color,
+    val Optional: Color,
+    val Error: Color,
+    val TextPrimary: Color,
+    val TextSecondary: Color,
+    val TextTertiary: Color,
+    val Outline: Color,
+    val OutlineVariant: Color,
+    val TextOnScrim: Color,
+    val Scrim: Color,
+    val CategoryPackages: Color,
+    val CategoryWorking: Color,
+    val CategoryHistory: Color,
+    val CategoryRetained: Color,
+    val CylinderShellLight: Color,
+    val CylinderShellMid: Color,
+    val CylinderShellEdge: Color,
+    /** 柱体高光 / 扫光混色用，暗色下不能硬写 White。 */
+    val Highlight: Color,
+)
+
+fun appColorTokensOf(tokens: M3Tokens): AppColorTokens = AppColorTokens(
+    Surface0 = tokens.surfaceContainerLowest,
+    Surface1 = tokens.surface,
+    Surface2 = tokens.surfaceContainer,
+    Surface3 = tokens.surfaceContainerHighest,
+    Surface4 = tokens.surfaceVariant,
+    Primary = tokens.primary,
+    PrimaryHover = tokens.inversePrimary,
+    PrimaryContainer = tokens.primaryContainer,
+    OnPrimary = tokens.onPrimary,
+    Safe = tokens.primary,
+    Optional = tokens.tertiary,
+    Error = tokens.error,
+    TextPrimary = tokens.onSurface,
+    TextSecondary = tokens.onSurfaceVariant,
+    TextTertiary = tokens.outline,
+    Outline = tokens.outline,
+    OutlineVariant = tokens.outlineVariant,
+    TextOnScrim = tokens.inverseOnSurface,
+    Scrim = tokens.scrim,
+    CategoryPackages = tokens.inversePrimary,
+    CategoryWorking = tokens.primary,
+    CategoryHistory = tokens.onPrimaryContainer,
+    CategoryRetained = tokens.inverseSurface,
+    CylinderShellLight = tokens.surfaceContainerLowest,
+    CylinderShellMid = tokens.surfaceContainerLow,
+    CylinderShellEdge = tokens.surfaceContainerHigh,
+    Highlight = tokens.surfaceBright,
+)
+
+val LocalAppColors = staticCompositionLocalOf { appColorTokensOf(M3DefaultLight) }
+
+/** 当前主题语义色；只在 @Composable 里读。Canvas 等非组合作用域先抓到局部变量再用。 */
+val AppColors: AppColorTokens
+    @Composable
+    @ReadOnlyComposable
+    get() = LocalAppColors.current
 
 object AppDimensions {
     const val SidebarWidth = 88f
@@ -122,52 +304,110 @@ object AppDimensions {
     const val SpacingLarge = 24f
 }
 
-/**
- * M3 组件（Button / Checkbox / Switch / SegmentedButton 等）从 [MaterialTheme] 取默认色。
- * 这里逐字段映射 [M3Light]，让「没显式传 colors 的组件」也落在同一套 token 上，
- * 与 [AppColors] 门面保持同源，不引入游离色。
- */
-private val AppColorScheme = lightColorScheme(
-    primary = M3Light.primary,
-    onPrimary = M3Light.onPrimary,
-    primaryContainer = M3Light.primaryContainer,
-    onPrimaryContainer = M3Light.onPrimaryContainer,
-    inversePrimary = M3Light.inversePrimary,
-    secondary = M3Light.secondary,
-    onSecondary = M3Light.onSecondary,
-    secondaryContainer = M3Light.secondaryContainer,
-    onSecondaryContainer = M3Light.onSecondaryContainer,
-    tertiary = M3Light.tertiary,
-    onTertiary = M3Light.onTertiary,
-    tertiaryContainer = M3Light.tertiaryContainer,
-    onTertiaryContainer = M3Light.onTertiaryContainer,
-    error = M3Light.error,
-    onError = M3Light.onError,
-    errorContainer = M3Light.errorContainer,
-    onErrorContainer = M3Light.onErrorContainer,
-    background = M3Light.background,
-    onBackground = M3Light.onBackground,
-    surface = M3Light.surface,
-    onSurface = M3Light.onSurface,
-    surfaceVariant = M3Light.surfaceVariant,
-    onSurfaceVariant = M3Light.onSurfaceVariant,
-    outline = M3Light.outline,
-    outlineVariant = M3Light.outlineVariant,
-    scrim = M3Light.scrim,
-    inverseSurface = M3Light.inverseSurface,
-    inverseOnSurface = M3Light.inverseOnSurface,
-    surfaceDim = M3Light.surfaceDim,
-    surfaceBright = M3Light.surfaceBright,
-    surfaceContainerLowest = M3Light.surfaceContainerLowest,
-    surfaceContainerLow = M3Light.surfaceContainerLow,
-    surfaceContainer = M3Light.surfaceContainer,
-    surfaceContainerHigh = M3Light.surfaceContainerHigh,
-    surfaceContainerHighest = M3Light.surfaceContainerHighest,
-)
+fun resolveM3Tokens(scheme: AppColorScheme, dark: Boolean): M3Tokens = when (scheme) {
+    AppColorScheme.APP_DEFAULT -> if (dark) M3DefaultDark else M3DefaultLight
+    AppColorScheme.CLOUD_FIELD -> if (dark) M3CloudFieldDark else M3CloudFieldLight
+}
+
+fun M3Tokens.toMaterialColorScheme(dark: Boolean) = if (dark) {
+    darkColorScheme(
+        primary = primary,
+        onPrimary = onPrimary,
+        primaryContainer = primaryContainer,
+        onPrimaryContainer = onPrimaryContainer,
+        inversePrimary = inversePrimary,
+        secondary = secondary,
+        onSecondary = onSecondary,
+        secondaryContainer = secondaryContainer,
+        onSecondaryContainer = onSecondaryContainer,
+        tertiary = tertiary,
+        onTertiary = onTertiary,
+        tertiaryContainer = tertiaryContainer,
+        onTertiaryContainer = onTertiaryContainer,
+        error = error,
+        onError = onError,
+        errorContainer = errorContainer,
+        onErrorContainer = onErrorContainer,
+        background = background,
+        onBackground = onBackground,
+        surface = surface,
+        onSurface = onSurface,
+        surfaceVariant = surfaceVariant,
+        onSurfaceVariant = onSurfaceVariant,
+        outline = outline,
+        outlineVariant = outlineVariant,
+        scrim = scrim,
+        inverseSurface = inverseSurface,
+        inverseOnSurface = inverseOnSurface,
+        surfaceDim = surfaceDim,
+        surfaceBright = surfaceBright,
+        surfaceContainerLowest = surfaceContainerLowest,
+        surfaceContainerLow = surfaceContainerLow,
+        surfaceContainer = surfaceContainer,
+        surfaceContainerHigh = surfaceContainerHigh,
+        surfaceContainerHighest = surfaceContainerHighest,
+    )
+} else {
+    lightColorScheme(
+        primary = primary,
+        onPrimary = onPrimary,
+        primaryContainer = primaryContainer,
+        onPrimaryContainer = onPrimaryContainer,
+        inversePrimary = inversePrimary,
+        secondary = secondary,
+        onSecondary = onSecondary,
+        secondaryContainer = secondaryContainer,
+        onSecondaryContainer = onSecondaryContainer,
+        tertiary = tertiary,
+        onTertiary = onTertiary,
+        tertiaryContainer = tertiaryContainer,
+        onTertiaryContainer = onTertiaryContainer,
+        error = error,
+        onError = onError,
+        errorContainer = errorContainer,
+        onErrorContainer = onErrorContainer,
+        background = background,
+        onBackground = onBackground,
+        surface = surface,
+        onSurface = onSurface,
+        surfaceVariant = surfaceVariant,
+        onSurfaceVariant = onSurfaceVariant,
+        outline = outline,
+        outlineVariant = outlineVariant,
+        scrim = scrim,
+        inverseSurface = inverseSurface,
+        inverseOnSurface = inverseOnSurface,
+        surfaceDim = surfaceDim,
+        surfaceBright = surfaceBright,
+        surfaceContainerLowest = surfaceContainerLowest,
+        surfaceContainerLow = surfaceContainerLow,
+        surfaceContainer = surfaceContainer,
+        surfaceContainerHigh = surfaceContainerHigh,
+        surfaceContainerHighest = surfaceContainerHighest,
+    )
+}
 
 @Composable
-fun AppTheme(content: @Composable () -> Unit) {
-    MaterialTheme(colorScheme = AppColorScheme, content = content)
+fun shouldUseDarkTheme(themeMode: ThemeMode): Boolean = when (themeMode) {
+    ThemeMode.SYSTEM -> isSystemInDarkTheme()
+    ThemeMode.LIGHT -> false
+    ThemeMode.DARK -> true
+}
+
+@Composable
+fun AppTheme(
+    themeMode: ThemeMode = ThemeMode.SYSTEM,
+    colorScheme: AppColorScheme = AppColorScheme.APP_DEFAULT,
+    content: @Composable () -> Unit,
+) {
+    val dark = shouldUseDarkTheme(themeMode)
+    val tokens = resolveM3Tokens(colorScheme, dark)
+    CompositionLocalProvider(LocalAppColors provides appColorTokensOf(tokens)) {
+        MaterialTheme(
+            colorScheme = tokens.toMaterialColorScheme(dark),
+            content = content,
+        )
+    }
 }
 
 /** OutlinedTextField 统一取 [AppColors]，避免各输入框各自拼一套颜色。 */

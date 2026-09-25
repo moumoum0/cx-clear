@@ -22,6 +22,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
@@ -40,9 +41,11 @@ import dev.cxclear.ui.components.AppTitleBar
 import dev.cxclear.ui.components.MainContent
 import dev.cxclear.ui.components.Sidebar
 import dev.cxclear.ui.theme.AppColors
+import dev.cxclear.ui.theme.AppColorScheme
 import dev.cxclear.ui.theme.AppDimensions
 import dev.cxclear.ui.theme.AppTheme
 import dev.cxclear.ui.theme.Motion
+import dev.cxclear.ui.theme.ThemeMode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -61,6 +64,18 @@ fun screenFromPrefId(id: String): Screen = when (id) {
     "chats" -> Screen.CHATS
     "settings" -> Screen.SETTINGS
     else -> Screen.SCAN
+}
+
+/** 设置页改主题时写回偏好，由 [App] 根部持有状态并驱动 [AppTheme]。 */
+data class ThemeController(
+    val themeMode: ThemeMode,
+    val colorScheme: AppColorScheme,
+    val setThemeMode: (ThemeMode) -> Unit,
+    val setColorScheme: (AppColorScheme) -> Unit,
+)
+
+val LocalThemeController = staticCompositionLocalOf<ThemeController> {
+    error("LocalThemeController 未提供：确认内容包在 App 的 CompositionLocalProvider 里")
 }
 
 @Composable
@@ -100,7 +115,14 @@ fun WindowScope.App(
 
     val overlayHost = remember { OverlayHostState() }
     val hazeState = rememberHazeState()
-    
+    var themeMode by remember { mutableStateOf(initialPrefs.themeMode) }
+    var colorScheme by remember { mutableStateOf(initialPrefs.colorScheme) }
+    LaunchedEffect(prefs) {
+        val loaded = prefs ?: return@LaunchedEffect
+        themeMode = loaded.themeMode
+        colorScheme = loaded.colorScheme
+    }
+
     // 全局预热 Haze 渲染
     var isWarmingUp by remember { mutableStateOf(true) }
     LaunchedEffect(Unit) {
@@ -108,8 +130,30 @@ fun WindowScope.App(
         isWarmingUp = false
     }
 
-    AppTheme {
-    CompositionLocalProvider(LocalOverlayHost provides overlayHost) {
+    AppTheme(themeMode = themeMode, colorScheme = colorScheme) {
+    CompositionLocalProvider(
+        LocalOverlayHost provides overlayHost,
+        LocalThemeController provides ThemeController(
+            themeMode = themeMode,
+            colorScheme = colorScheme,
+            setThemeMode = { mode ->
+                themeMode = mode
+                scope.launch {
+                    withContext(Dispatchers.IO) {
+                        AppPreferences.update { it.copy(themeMode = mode) }
+                    }
+                }
+            },
+            setColorScheme = { scheme ->
+                colorScheme = scheme
+                scope.launch {
+                    withContext(Dispatchers.IO) {
+                        AppPreferences.update { it.copy(colorScheme = scheme) }
+                    }
+                }
+            },
+        ),
+    ) {
     // clip 最外层，scrim/浮层才跟窗口圆角。
     Box(
         modifier = Modifier
