@@ -1,6 +1,5 @@
 package dev.cxclear.storage
 
-import dev.cxclear.profiles.homeDir
 import java.nio.file.Path
 
 /**

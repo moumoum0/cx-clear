@@ -1,8 +1,5 @@
 package dev.cxclear.cli
 
-import dev.cxclear.AppMeta
-import dev.cxclear.chats.ChatConditionType
-import dev.cxclear.chats.ChatSessionSummary
 import dev.cxclear.chats.ChatTool
 import dev.cxclear.chats.MiniJson
 import dev.cxclear.chats.RetentionConfig
@@ -22,10 +19,10 @@ import dev.cxclear.model.ScanResult
 import dev.cxclear.profiles.ALL_PROFILES
 import dev.cxclear.scan.ScanEvent
 import dev.cxclear.scan.ToolSpaceResult
-import dev.cxclear.scan.formatBytes
 import dev.cxclear.scan.scanStream
 import dev.cxclear.storage.AppPreferences
 import dev.cxclear.storage.CleanHistory
+import dev.cxclear.util.formatBytes
 import kotlinx.coroutines.runBlocking
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
@@ -58,11 +55,11 @@ object Cli {
 
     private fun dispatch(args: ParsedArgs): Int = when (args.command) {
         listOf("help") -> {
-            printJson(helpPayload())
+            printJson(CliSchema.helpPayload())
             EXIT_OK
         }
         listOf("schema") -> {
-            printJson(schemaPayload())
+            printJson(CliSchema.schemaPayload())
             EXIT_OK
         }
         listOf("scan") -> cmdScan(args)
@@ -99,16 +96,14 @@ object Cli {
         val snapshot = runBlocking { scanOnce(tools) }
         val selected = snapshot.results.filter { result ->
             if (!result.exists || result.bytes <= 0L || result.deletionPlan == null) return@filter false
-            val profile = ALL_PROFILES.first { it.id == result.toolId }
-            val target = profile.targets.first { it.id == result.targetId }
+            val (_, target) = profileAndTarget(result.toolId, result.targetId)
             when (risk) {
                 null -> target.defaultSelected
                 else -> target.risk == risk
             }
         }
         val requests = selected.mapNotNull { result ->
-            val profile = ALL_PROFILES.first { it.id == result.toolId }
-            val target = profile.targets.first { it.id == result.targetId }
+            val (profile, target) = profileAndTarget(result.toolId, result.targetId)
             val plan = result.deletionPlan ?: return@mapNotNull null
             CleanRequest(profile, target, plan)
         }
@@ -387,91 +382,6 @@ object Cli {
         return tool to sessionId
     }
 
-    private fun spaceJson(space: ToolSpaceResult) = mapOf(
-        "tool" to space.toolId,
-        "bytes" to space.bytes,
-        "files" to space.fileCount,
-        "bytes_label" to formatBytes(space.bytes),
-    )
-
-    private fun targetJson(result: ScanResult): Map<String, Any?> {
-        val profile = ALL_PROFILES.first { it.id == result.toolId }
-        val target = profile.targets.first { it.id == result.targetId }
-        return mapOf(
-            "tool" to result.toolId,
-            "target_id" to result.targetId,
-            "label" to target.label,
-            "risk" to target.risk.name.lowercase(),
-            "default_selected" to target.defaultSelected,
-            "bytes" to result.bytes,
-            "files" to result.fileCount,
-            "bytes_label" to formatBytes(result.bytes),
-        )
-    }
-
-    private fun sessionJson(session: ChatSessionSummary) = mapOf(
-        "id" to "${session.tool.id}:${session.id}",
-        "tool" to session.tool.id,
-        "session_id" to session.id,
-        "title" to session.title,
-        "project" to session.project,
-        "updated_millis" to session.updatedMillis,
-        "bytes" to session.sizeBytes,
-        "bytes_label" to formatBytes(session.sizeBytes),
-    )
-
-    private fun schemaPayload(): Map<String, Any?> = mapOf(
-        "name" to AppMeta.NAME,
-        "version" to AppMeta.VERSION,
-        "exit_codes" to mapOf(
-            "0" to "成功",
-            "1" to "执行失败",
-            "2" to "目标工具仍在运行，未删除",
-            "3" to "参数或规则校验失败",
-        ),
-        "tools" to ALL_PROFILES.map { it.id },
-        "chat_tools" to ChatTool.entries.map { it.id },
-        "risks" to Risk.entries.map { it.name.lowercase() },
-        "condition_types" to ChatConditionType.entries.map {
-            mapOf(
-                "id" to it.id,
-                "label" to it.label,
-                "kind" to it.kind.name.lowercase(),
-                "unit" to it.kind.unit,
-            )
-        },
-        "commands" to listOf(
-            "scan",
-            "clean",
-            "chats list",
-            "chats preview",
-            "chats delete",
-            "rules get",
-            "rules validate",
-            "rules put",
-            "schema",
-        ),
-    )
-
-    private fun helpPayload(): Map<String, Any?> = mapOf(
-        "ok" to true,
-        "usage" to listOf(
-            "cxclear scan [--tool id,id]",
-            "cxclear clean [--tool id,id] [--risk safe|optional|all] [--yes]",
-            "cxclear chats list [--tool id,id]",
-            "cxclear chats preview [--tool id,id]",
-            "cxclear chats delete --id tool:session [--yes]",
-            "cxclear rules get",
-            "cxclear rules validate [--file path]",
-            "cxclear rules put [--file path] [--yes]",
-            "cxclear schema",
-        ),
-        "notes" to listOf(
-            "无 --yes 只预览，不删文件、不写规则",
-            "stdout 为 JSON，人话走 stderr",
-        ),
-    )
-
     private fun printJson(value: Any?) {
         println(MiniJson.stringify(value))
     }
@@ -482,68 +392,8 @@ object Cli {
     }
 }
 
-internal class CliUsageException(message: String) : RuntimeException(message)
-
 private data class ScanSnapshot(
     val spaces: List<ToolSpaceResult>,
     val results: List<ScanResult>,
 )
 
-internal data class ParsedArgs(
-    val command: List<String>,
-    val flags: Map<String, List<String>>,
-    val switches: Set<String>,
-) {
-    val yes: Boolean get() = "yes" in switches || "y" in switches
-
-    fun value(name: String): String? = flags[name]?.last()
-
-    fun values(name: String): List<String> = flags[name].orEmpty()
-}
-
-internal fun parseArgs(args: Array<String>): ParsedArgs? {
-    if (args.isEmpty()) return null
-    val command = mutableListOf<String>()
-    val flags = linkedMapOf<String, MutableList<String>>()
-    val switches = linkedSetOf<String>()
-    var i = 0
-    fun takeValue(flag: String): String {
-        if (i >= args.size) throw CliUsageException("缺少 $flag 的值")
-        return args[i++]
-    }
-    while (i < args.size) {
-        val token = args[i++]
-        when {
-            token == "--" -> {
-                command += args.drop(i)
-                break
-            }
-            token == "-h" || token == "--help" -> return ParsedArgs(listOf("help"), emptyMap(), emptySet())
-            token.startsWith("--") -> {
-                val eq = token.indexOf('=')
-                val name: String
-                val value: String?
-                if (eq > 2) {
-                    name = token.substring(2, eq)
-                    value = token.substring(eq + 1)
-                } else {
-                    name = token.substring(2)
-                    value = null
-                }
-                if (name.isEmpty()) throw CliUsageException("空的选项")
-                when (name) {
-                    "yes", "y" -> switches += name
-                    "tool", "risk", "id", "file" -> {
-                        val v = value ?: takeValue("--$name")
-                        flags.getOrPut(name) { mutableListOf() }.add(v)
-                    }
-                    else -> throw CliUsageException("未知选项：--$name")
-                }
-            }
-            token.startsWith("-") && token != "-" -> throw CliUsageException("未知选项：$token")
-            else -> command += token
-        }
-    }
-    if (command.isEmpty()) return ParsedArgs(listOf("help"), flags, switches)
-    return ParsedArgs(command, flags, switches)
-}

@@ -20,7 +20,10 @@ repositories {
 dependencies {
     implementation(compose.desktop.currentOs)
     implementation(compose.components.resources)
-    implementation("org.jetbrains.compose.material3:material3:1.11.0-alpha07")
+    // 必须跟 foundation 走同一发布列车：compose.desktop 1.11.1 把 foundation 拉到 1.12.0，
+    // 而 material3 1.11.0-alpha07 是针对 foundation 1.11.0-beta03 编译的，
+    // 运行期会因 CustomStyle.applyStyle 签名变化抛 AbstractMethodError（输入框一渲染就崩）。
+    implementation("org.jetbrains.compose.material3:material3:1.12.0-alpha03")
     implementation("org.jetbrains.compose.material:material-icons-extended:1.7.3")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")
     implementation("net.java.dev.jna:jna:5.19.1")

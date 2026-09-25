@@ -59,7 +59,6 @@ import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
 import dev.cxclear.AppMeta
 import dev.cxclear.chats.RetentionAiPrompt
-import dev.cxclear.scan.formatBytes
 import dev.cxclear.storage.AppDir
 import dev.cxclear.storage.AppPreferences
 import dev.cxclear.storage.AppPrefs
@@ -70,6 +69,7 @@ import dev.cxclear.ui.theme.AppColors
 import dev.cxclear.ui.theme.AppDimensions
 import dev.cxclear.ui.theme.Motion
 import dev.cxclear.ui.theme.ThemeMode
+import dev.cxclear.util.formatBytes
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch

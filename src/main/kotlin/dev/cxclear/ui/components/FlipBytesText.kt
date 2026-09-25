@@ -33,8 +33,8 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
-import dev.cxclear.scan.formatBytes
 import dev.cxclear.ui.theme.Motion
+import dev.cxclear.util.formatBytes
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 
