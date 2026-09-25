@@ -24,7 +24,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.layout.size
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.WindowPlacement
 import androidx.compose.ui.window.WindowScope
@@ -115,19 +117,18 @@ fun WindowScope.App(
 
     val overlayHost = remember { OverlayHostState() }
     val hazeState = rememberHazeState()
+    // 让 Haze 在窗口显示后立即完成一次渲染管线初始化，但不影响首屏内容,屁用没有，首次模糊会卡顿,目前没有任何办法能够解决了
+    var isWarmingUp by remember { mutableStateOf(true) }
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.delay(50)
+        isWarmingUp = false
+    }
     var themeMode by remember { mutableStateOf(initialPrefs.themeMode) }
     var colorScheme by remember { mutableStateOf(initialPrefs.colorScheme) }
     LaunchedEffect(prefs) {
         val loaded = prefs ?: return@LaunchedEffect
         themeMode = loaded.themeMode
         colorScheme = loaded.colorScheme
-    }
-
-    // 全局预热 Haze 渲染
-    var isWarmingUp by remember { mutableStateOf(true) }
-    LaunchedEffect(Unit) {
-        kotlinx.coroutines.delay(50)
-        isWarmingUp = false
     }
 
     AppTheme(themeMode = themeMode, colorScheme = colorScheme) {
@@ -160,12 +161,25 @@ fun WindowScope.App(
             .fillMaxSize()
             .clip(windowShape),
     ) {
+        if (isWarmingUp) {
+            Box(
+                modifier = Modifier
+                    .size(1.dp)
+                    .alpha(0f)
+                    .hazeSource(hazeState)
+                    .hazeBlur(
+                        input = HazeInput.Content,
+                        style = HazeBlurStyle { blurRadius(12.dp) },
+                        performanceMode = HazePerformanceMode.Performance,
+                    ),
+            )
+        }
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .hazeSource(hazeState)
                 .then(
-                    if (overlayHost.content != null || isWarmingUp) {
+                    if (overlayHost.content != null) {
                         Modifier.hazeBlur(
                             input = HazeInput.Content,
                             style = HazeBlurStyle { blurRadius(12.dp) },
