@@ -1,5 +1,6 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include <shellapi.h>
 #include <string>
 
 static std::wstring parent_dir(const std::wstring& path) {
@@ -73,6 +74,15 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
         + L" -Djava.library.path=" + quote(app_dir)
         + L" -cp " + quote(app_dir + L"\\*")
         + L" dev.cxclear.MainKt";
+
+    int argc = 0;
+    LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc);
+    if (argv != nullptr) {
+        for (int i = 1; i < argc; ++i) {
+            cmd += L" " + quote(argv[i]);
+        }
+        LocalFree(argv);
+    }
 
     STARTUPINFOW si{};
     si.cb = sizeof(si);

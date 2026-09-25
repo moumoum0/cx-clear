@@ -1,19 +1,7 @@
 @echo off
 setlocal
-rem 走 java.exe 才能把 stdout 交给 AI；CX Clear.exe 是 GUI 子系统，管道经常是空的。
-set "APP_HOME=%~dp0"
-set "APP_DIR=%APP_HOME%app"
-if exist "%APP_HOME%runtime\bin\java.exe" (
-  set "JAVA_EXE=%APP_HOME%runtime\bin\java.exe"
-) else if defined JAVA_HOME if exist "%JAVA_HOME%\bin\java.exe" (
-  set "JAVA_EXE=%JAVA_HOME%\bin\java.exe"
-) else (
-  set "JAVA_EXE=java"
-)
-set "JAVA_OPTS=-Dfile.encoding=UTF-8 -Dstdout.encoding=UTF-8 -Dstderr.encoding=UTF-8"
-if "%~1"=="" (
-  "%JAVA_EXE%" %JAVA_OPTS% "-Dskiko.library.path=%APP_DIR%" "-Djava.library.path=%APP_DIR%" -cp "%APP_DIR%\*" dev.cxclear.MainKt help
-) else (
-  "%JAVA_EXE%" %JAVA_OPTS% "-Dskiko.library.path=%APP_DIR%" "-Djava.library.path=%APP_DIR%" -cp "%APP_DIR%\*" dev.cxclear.MainKt %*
-)
+rem 命令行参数交给对应的桌面启动器处理。
+rem 与桌面启动器使用同一套 Java 查找逻辑；带 Java 包由 jpackage 启动器使用内置 runtime，
+rem 不含 Java 包由自定义启动器回退到 JAVA_HOME / PATH。
+"%~dp0CX Clear.exe" %*
 exit /b %ERRORLEVEL%

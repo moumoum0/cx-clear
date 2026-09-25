@@ -171,6 +171,7 @@ fun compileGuiLauncher(): File {
             "-static",
             "launcher.cpp",
             resObj.absolutePath,
+            "-lshell32",
             "-o",
             exe.absolutePath,
         ),
@@ -203,13 +204,15 @@ fun prepareWindowsImage(includeJre: Boolean, launcher: File): File {
         from(src)
         into(dest)
         includeEmptyDirs = false
-        exclude("CX Clear.exe")
         if (!includeJre) {
+            exclude("CX Clear.exe")
             exclude("runtime/**")
         }
     }
     copy {
-        from(launcher)
+        if (!includeJre) {
+            from(launcher)
+        }
         from(project.file("packaging/cxclear.cmd"))
         from(project.file("packaging/app_icon.ico"))
         into(dest)
