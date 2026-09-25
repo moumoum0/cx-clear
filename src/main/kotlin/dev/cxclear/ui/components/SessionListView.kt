@@ -38,7 +38,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.cxclear.chats.ChatGroup
-import dev.cxclear.chats.ChatSessionSummary
+import dev.cxclear.model.ChatSessionSummary
 import dev.cxclear.chats.formatUpdatedAt
 import dev.cxclear.chats.projectLabel
 import dev.cxclear.ui.theme.AppColors

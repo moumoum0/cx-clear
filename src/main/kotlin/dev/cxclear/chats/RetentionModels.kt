@@ -1,5 +1,9 @@
 package dev.cxclear.chats
 
+import dev.cxclear.model.ChatSessionSummary
+import dev.cxclear.model.ChatTool
+import dev.cxclear.tools.chatTools
+
 /**
  * 自动清理策略模型与匹配引擎。
  *
@@ -94,7 +98,7 @@ data class RetentionConfig(val rules: List<RetentionRule> = emptyList())
  */
 fun ChatCondition.isComplete(): Boolean = when (type.kind) {
     ConditionValueKind.DAYS, ConditionValueKind.MEGABYTES -> number >= 1
-    ConditionValueKind.TOOL -> ChatTool.entries.any { it.id == text }
+    ConditionValueKind.TOOL -> chatTools().any { it.id == text }
     ConditionValueKind.TEXT -> text.isNotBlank()
 }
 

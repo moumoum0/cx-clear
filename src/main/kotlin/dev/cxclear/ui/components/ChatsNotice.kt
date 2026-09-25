@@ -31,7 +31,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import dev.cxclear.chats.ChatDeleteResult
+import dev.cxclear.model.ChatDeleteResult
 import dev.cxclear.ui.theme.AppColors
 import dev.cxclear.ui.theme.AppDimensions
 import dev.cxclear.ui.theme.Motion

@@ -13,12 +13,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
-import dev.cxclear.resources.Res
-import dev.cxclear.resources.claude
-import dev.cxclear.resources.codex
-import dev.cxclear.resources.cursor
-import dev.cxclear.resources.deepseek
-import dev.cxclear.resources.opencode
+import dev.cxclear.tools.tools
 import dev.cxclear.ui.theme.AppColors
 import dev.cxclear.ui.theme.AppDimensions
 import dev.cxclear.ui.theme.Motion
@@ -26,8 +21,7 @@ import org.jetbrains.compose.resources.DrawableResource
 import org.jetbrains.compose.resources.painterResource
 
 /**
- * 工具图标按钮，以及全应用唯一的工具清单 [ToolEntries]。
- * 扫描页与对话页的工具条都从这里取列表，别再各写一份硬编码。
+ * 工具图标按钮。清单来自 [tools]，不要在这里再写一份 id。
  */
 
 internal data class ToolEntry(
@@ -36,14 +30,9 @@ internal data class ToolEntry(
     val resource: DrawableResource,
 )
 
-/** [id] 必须与 `profiles/` 下各 `<Tool>Profile.kt` 里 `ToolProfile.id` 的字符串完全一致。 */
-internal val ToolEntries: List<ToolEntry> = listOf(
-    ToolEntry(id = "codex", name = "Codex", resource = Res.drawable.codex),
-    ToolEntry(id = "claude", name = "Claude", resource = Res.drawable.claude),
-    ToolEntry(id = "cursor", name = "Cursor", resource = Res.drawable.cursor),
-    ToolEntry(id = "opencode", name = "Open Code", resource = Res.drawable.opencode),
-    ToolEntry(id = "deepseek-hermes", name = "DeepSeek", resource = Res.drawable.deepseek),
-)
+internal val ToolEntries: List<ToolEntry> get() = tools().map { plugin ->
+    ToolEntry(id = plugin.profile.id, name = plugin.shortName, resource = plugin.icon)
+}
 
 @Composable
 internal fun ToolIcon(

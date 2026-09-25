@@ -1,5 +1,6 @@
 package dev.cxclear.chats
 
+import dev.cxclear.model.ChatSessionSummary
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -77,20 +78,8 @@ private val TIME_BUCKETS = listOf(
 /** 项目为空时的归档名。Codex 未记录 cwd、Claude 目录名缺失时落到这里。 */
 private const val NO_PROJECT_LABEL = "未归属项目"
 
-/**
- * Claude 的项目目录名是把绝对路径整条编码进来的（`d--project-cxclear`），
- * 直接显示太长且看不出重点，取最后一段作为标签。Codex 记的已经是目录名，原样返回。
- */
-fun projectLabel(session: ChatSessionSummary): String {
-    val raw = session.project?.takeIf { it.isNotBlank() } ?: return NO_PROJECT_LABEL
-    return when (session.tool) {
-        ChatTool.CLAUDE -> raw.trimEnd('-').substringAfterLast('-').ifBlank { raw }
-        ChatTool.CODEX -> raw
-        ChatTool.CURSOR -> raw
-        ChatTool.OPENCODE -> raw
-        ChatTool.DEEPSEEK_HERMES -> raw
-    }
-}
+/** 展示用项目名。编码规则在各工具自己的 [ChatTool.projectLabel] 里。 */
+fun projectLabel(session: ChatSessionSummary): String = session.tool.projectLabel(session.project)
 
 fun filterSessions(
     sessions: List<ChatSessionSummary>,

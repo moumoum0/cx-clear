@@ -1,5 +1,7 @@
 package dev.cxclear.chats
 
+import dev.cxclear.model.ChatSessionSummary
+
 /**
  * 对话扫描结果的进程内缓存。
  *

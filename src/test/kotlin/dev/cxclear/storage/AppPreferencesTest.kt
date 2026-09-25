@@ -27,7 +27,7 @@ class AppPreferencesTest {
     @Test
     fun `defaults when file missing`() {
         val prefs = AppPreferences.read()
-        assertEquals(setOf("codex", "claude", "cursor", "opencode"), prefs.defaultTools)
+        assertEquals(setOf("codex", "claude", "cursor", "opencode", "deepseek-hermes"), prefs.defaultTools)
         assertFalse(prefs.rememberLastScreen)
         assertEquals("scan", prefs.lastScreenId)
         assertEquals("manual", prefs.defaultChatsMode)

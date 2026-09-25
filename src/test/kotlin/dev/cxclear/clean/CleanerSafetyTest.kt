@@ -5,6 +5,8 @@ import dev.cxclear.model.CleanTarget
 import dev.cxclear.model.MatchKind
 import dev.cxclear.model.Risk
 import dev.cxclear.model.ToolProfile
+import dev.cxclear.platform.HostOs
+import dev.cxclear.platform.currentOs
 import dev.cxclear.scan.resolveTarget
 import dev.cxclear.scan.scanResolved
 import kotlinx.coroutines.flow.toList
@@ -225,7 +227,7 @@ class CleanerSafetyTest {
 
     private fun createDirectoryLink(link: Path, target: Path): Boolean {
         if (runCatching { Files.createSymbolicLink(link, target) }.isSuccess) return true
-        if (!System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) return false
+        if (currentOs() != HostOs.WINDOWS) return false
         return runCatching {
             ProcessBuilder("cmd", "/c", "mklink", "/J", link.toString(), target.toString())
                 .redirectErrorStream(true)

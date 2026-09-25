@@ -1,15 +1,24 @@
 package dev.cxclear.chats
 
+import dev.cxclear.model.ChatSessionSummary
+import dev.cxclear.model.ChatTool
 import dev.cxclear.model.PathSnapshotKind
 import dev.cxclear.scan.readPathSnapshot
+import dev.cxclear.tools.chatToolById
+import dev.cxclear.tools.cursor.cursorStateDbOverride
 import kotlinx.coroutines.runBlocking
 import java.nio.file.Files
 import java.nio.file.Path
 import java.sql.DriverManager
+import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+
+private val cursorTool = chatToolById("cursor")!!
+private val claudeTool = chatToolById("claude")!!
+private val codexTool = chatToolById("codex")!!
 
 /**
  * 会话删除的安全边界。
@@ -20,13 +29,18 @@ import kotlin.test.assertTrue
 class ChatDeleterTest {
     private val neverRunning: (ChatTool) -> Boolean = { false }
 
+    @AfterTest
+    fun clearCursorDbOverride() {
+        cursorStateDbOverride = null
+    }
+
     private fun tempDir(): Path = Files.createTempDirectory("cxclear-chat")
 
     /** 用 [mainFile] 及其冻结快照构造一条会话；[extra] 为同级 `<uuid>/` 之类的附带条目。 */
     private fun session(
         mainFile: Path,
         root: Path,
-        tool: ChatTool = ChatTool.CLAUDE,
+        tool: ChatTool = chatToolById("claude")!!,
         extra: List<Path> = emptyList(),
     ): ChatSessionSummary {
         val entries = (listOf(mainFile) + extra).mapNotNull { readPathSnapshot(it) }
@@ -153,17 +167,17 @@ class ChatDeleterTest {
         val root = tempDir()
         val main = Files.writeString(root.resolve("cursor.jsonl"), "data")
         val other = Files.writeString(root.resolve("keep.jsonl"), "keep")
-        val s = session(main, root, tool = ChatTool.CURSOR)
+        val s = session(main, root, tool = cursorTool)
         val db = writeCursorStateDb(
             root.resolve("state.vscdb"),
             composerId = s.id,
             otherComposerId = "keep-composer",
         )
 
+        cursorStateDbOverride = db
         val result = deleteSessions(
             sessions = listOf(s),
             toolIsRunning = neverRunning,
-            cursorStateDb = db,
         )
 
         assertFalse(Files.exists(main))
@@ -188,17 +202,17 @@ class ChatDeleterTest {
     fun `Cursor delete also removes nested subcomposers`() = runBlocking {
         val root = tempDir()
         val main = Files.writeString(root.resolve("cursor.jsonl"), "x")
-        val s = session(main, root, tool = ChatTool.CURSOR)
+        val s = session(main, root, tool = cursorTool)
         val db = writeCursorStateDb(
             root.resolve("state.vscdb"),
             composerId = s.id,
             subComposerId = "child-composer",
         )
 
+        cursorStateDbOverride = db
         val result = deleteSessions(
             sessions = listOf(s),
             toolIsRunning = neverRunning,
-            cursorStateDb = db,
         )
 
         assertEquals(1, result.deletedSessions)
@@ -212,12 +226,12 @@ class ChatDeleterTest {
     fun `missing Cursor state db reports an error and leaves transcript`() = runBlocking {
         val root = tempDir()
         val main = Files.writeString(root.resolve("cursor.jsonl"), "keep")
-        val s = session(main, root, tool = ChatTool.CURSOR)
+        val s = session(main, root, tool = cursorTool)
 
+        cursorStateDbOverride = root.resolve("missing.vscdb")
         val result = deleteSessions(
             sessions = listOf(s),
             toolIsRunning = neverRunning,
-            cursorStateDb = null,
         )
 
         assertTrue(Files.exists(main))
@@ -230,18 +244,18 @@ class ChatDeleterTest {
     fun `running Cursor blocks its sessions and leaves state db untouched`() = runBlocking {
         val root = tempDir()
         val main = Files.writeString(root.resolve("cursor.jsonl"), "keep")
-        val s = session(main, root, tool = ChatTool.CURSOR)
+        val s = session(main, root, tool = cursorTool)
         val db = writeCursorStateDb(root.resolve("state.vscdb"), composerId = s.id)
 
+        cursorStateDbOverride = db
         val result = deleteSessions(
             sessions = listOf(s),
-            toolIsRunning = { it == ChatTool.CURSOR },
-            cursorStateDb = db,
+            toolIsRunning = { it == cursorTool },
         )
 
         assertTrue(Files.exists(main))
         assertEquals(0, result.deletedSessions)
-        assertEquals(listOf(ChatTool.CURSOR.displayName), result.blockedTools)
+        assertEquals(listOf(cursorTool.displayName), result.blockedTools)
         assertEquals(1, kvCount(db, "composerData:${s.id}"))
         assertEquals(1, headerCount(db, s.id))
     }
@@ -256,15 +270,15 @@ class ChatDeleterTest {
         val claudeFile = Files.writeString(root.resolve("c.jsonl"), "keep")
         val codexFile = Files.writeString(root.resolve("x.jsonl"), "gone")
         val sessions = listOf(
-            session(claudeFile, root, tool = ChatTool.CLAUDE),
-            session(codexFile, root, tool = ChatTool.CODEX),
+            session(claudeFile, root, tool = claudeTool),
+            session(codexFile, root, tool = codexTool),
         )
 
-        val result = deleteSessions(sessions) { it == ChatTool.CLAUDE }
+        val result = deleteSessions(sessions) { it == claudeTool }
 
         assertTrue(Files.exists(claudeFile))
         assertFalse(Files.exists(codexFile))
-        assertEquals(listOf(ChatTool.CLAUDE.displayName), result.blockedTools)
+        assertEquals(listOf(claudeTool.displayName), result.blockedTools)
         assertEquals(1, result.deletedSessions)
     }
 
@@ -272,20 +286,20 @@ class ChatDeleterTest {
     fun `single session delete is blocked while its tool runs`() = runBlocking {
         val root = tempDir()
         val main = Files.writeString(root.resolve("a.jsonl"), "keep")
-        val s = session(main, root, tool = ChatTool.CODEX)
+        val s = session(main, root, tool = codexTool)
 
         val result = deleteSession(s) { true }
 
         assertTrue(Files.exists(main))
         assertEquals(0, result.deletedSessions)
-        assertEquals(listOf(ChatTool.CODEX.displayName), result.blockedTools)
+        assertEquals(listOf(codexTool.displayName), result.blockedTools)
     }
 
     @Test
     fun `tool is checked once per batch`() = runBlocking {
         val root = tempDir()
         val sessions = (1..3).map {
-            session(Files.writeString(root.resolve("$it.jsonl"), "x"), root, tool = ChatTool.CODEX)
+            session(Files.writeString(root.resolve("$it.jsonl"), "x"), root, tool = codexTool)
         }
         var checks = 0
 

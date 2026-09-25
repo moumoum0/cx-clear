@@ -26,9 +26,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import dev.cxclear.chats.ChatAxis
-import dev.cxclear.chats.ChatDeleteResult
+import dev.cxclear.model.ChatDeleteResult
+import dev.cxclear.model.ChatSessionSummary
 import dev.cxclear.chats.ChatGroupDimension
-import dev.cxclear.chats.ChatSessionSummary
 import dev.cxclear.chats.deleteSessions
 import dev.cxclear.chats.filterSessions
 import dev.cxclear.chats.groupSessions

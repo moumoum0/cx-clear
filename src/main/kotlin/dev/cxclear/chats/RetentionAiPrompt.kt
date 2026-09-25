@@ -1,5 +1,7 @@
 package dev.cxclear.chats
 
+import dev.cxclear.tools.chatTools
+
 /**
  * 给外部 AI 助手用的提示词：根据自然语言需求生成
  * `~/.cxclear/chat-retention.txt`（见 [RetentionStore]）。
@@ -7,8 +9,13 @@ package dev.cxclear.chats
  * 设置页一点击就整段复制到剪贴板，用户粘贴给任意对话式 AI 即可。
  */
 object RetentionAiPrompt {
-    val text: String = """
-你是 CX Clear 的自动对话清理策略助手。CX Clear 是 Windows 上清理 Codex / Claude Code 本地对话的工具。
+    private val toolNames get() = chatTools().joinToString(" / ") { it.displayName }
+    private val toolIds get() = chatTools().joinToString(" / ") { "`${it.id}`" }
+    private val toolIsHint get() = chatTools().joinToString(" 或 ") { "`${it.id}`" }
+
+    val text: String
+        get() = """
+你是 CX Clear 的自动对话清理策略助手。CX Clear 是 Windows 上清理 $toolNames 本地对话的工具。
 
 请根据用户用自然语言描述的清理意图，生成可直接覆盖写入 `~/.cxclear/chat-retention.txt` 的完整配置。
 若用户贴出了现有配置，在其基础上增改，并保留未提及的规则（除非用户明确要求替换/删除）。
@@ -22,7 +29,7 @@ object RetentionAiPrompt {
 - 新建或未确认的规则请默认 `enabled=false`，避免一写进文件就开始删。
 - 最多 50 条规则，每条最多 20 个条件。
 - 策略名称 `name` 简短中文即可，建议不超过 30 字。
-- 只覆盖 Codex（`codex`）与 Claude Code（`claude`）的对话；没有 Cursor 会话条件。
+- 覆盖 $toolNames 的对话；`tool_is` 的取值只能是 $toolIds。
 
 ## 文件格式
 
@@ -64,7 +71,7 @@ rule.rule-1.cond.1.text=codex
 | `newer_than` | 未更新少于 N 天 | `number` = 天数（≥1） |
 | `larger_than` | 大小超过 N MB | `number` = MB（≥1） |
 | `smaller_than` | 大小少于 N MB | `number` = MB（≥1） |
-| `tool_is` | 所属工具是 | `text` = `codex` 或 `claude` |
+| `tool_is` | 所属工具是 | `text` = $toolIsHint |
 | `project_has` | 项目名包含 | `text` = 子串（大小写不敏感） |
 | `title_has` | 标题包含 | `text` = 子串（大小写不敏感） |
 

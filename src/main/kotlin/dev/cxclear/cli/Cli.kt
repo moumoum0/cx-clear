@@ -1,7 +1,5 @@
 package dev.cxclear.cli
 
-import dev.cxclear.chats.ChatTool
-import dev.cxclear.chats.MiniJson
 import dev.cxclear.chats.RetentionConfig
 import dev.cxclear.chats.RetentionJson
 import dev.cxclear.chats.RetentionParseResult
@@ -13,15 +11,19 @@ import dev.cxclear.chats.match
 import dev.cxclear.chats.scanAllChatSessions
 import dev.cxclear.clean.CleanRequest
 import dev.cxclear.clean.clean
+import dev.cxclear.model.ChatTool
 import dev.cxclear.model.CleanEvent
 import dev.cxclear.model.Risk
 import dev.cxclear.model.ScanResult
-import dev.cxclear.profiles.ALL_PROFILES
+import dev.cxclear.tools.ALL_PROFILES
+import dev.cxclear.tools.chatToolById
+import dev.cxclear.tools.chatTools
 import dev.cxclear.scan.ScanEvent
 import dev.cxclear.scan.ToolSpaceResult
 import dev.cxclear.scan.scanStream
 import dev.cxclear.storage.AppPreferences
 import dev.cxclear.storage.CleanHistory
+import dev.cxclear.util.MiniJson
 import dev.cxclear.util.formatBytes
 import kotlinx.coroutines.runBlocking
 import java.nio.charset.StandardCharsets
@@ -354,11 +356,10 @@ object Cli {
 
     private fun resolveChatTools(args: ParsedArgs): Set<ChatTool> {
         val raw = args.values("tool")
-        if (raw.isEmpty()) return ChatTool.entries.toSet()
+        if (raw.isEmpty()) return chatTools().toSet()
         val ids = raw.flatMap { it.split(',') }.map { it.trim() }.filter { it.isNotEmpty() }
         val tools = ids.map { id ->
-            ChatTool.entries.firstOrNull { it.id == id }
-                ?: throw CliUsageException("未知工具：$id")
+            chatToolById(id) ?: throw CliUsageException("未知工具：$id")
         }
         return tools.toSet()
     }
@@ -377,8 +378,7 @@ object Cli {
         }
         val toolId = raw.substring(0, split)
         val sessionId = raw.substring(split + 1)
-        val tool = ChatTool.entries.firstOrNull { it.id == toolId }
-            ?: throw CliUsageException("未知工具：$toolId")
+        val tool = chatToolById(toolId) ?: throw CliUsageException("未知工具：$toolId")
         return tool to sessionId
     }
 

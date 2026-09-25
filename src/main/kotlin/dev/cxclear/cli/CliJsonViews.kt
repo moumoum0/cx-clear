@@ -1,10 +1,10 @@
 package dev.cxclear.cli
 
-import dev.cxclear.chats.ChatSessionSummary
+import dev.cxclear.model.ChatSessionSummary
 import dev.cxclear.model.CleanTarget
 import dev.cxclear.model.ScanResult
 import dev.cxclear.model.ToolProfile
-import dev.cxclear.profiles.ALL_PROFILES
+import dev.cxclear.tools.ALL_PROFILES
 import dev.cxclear.scan.ToolSpaceResult
 import dev.cxclear.util.formatBytes
 

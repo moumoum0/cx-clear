@@ -1,16 +1,14 @@
 package dev.cxclear.chats
 
-/**
- * 会话扫描总调度：把各工具的 scanXxxSessions 串起来，汇总进度后按更新时间倒序。
- */
+import dev.cxclear.model.ChatMessage
+import dev.cxclear.model.ChatSessionSummary
+import dev.cxclear.model.ChatTool
+import dev.cxclear.tools.chatTools
+import dev.cxclear.tools.toolPlugin
+import dev.cxclear.tools.tools as registeredTools
 
-/**
- * 枚举本机所有 [ChatTool.CODEX] + [ChatTool.CLAUDE] + [ChatTool.CURSOR] + [ChatTool.OPENCODE] 会话，按更新时间倒序。运行在 IO 线程。
- *
- * [onProgress] 每找到一条会话回调累计数量与字节，供 UI 实时展示「已找到」。
- */
 fun scanAllChatSessions(
-    tools: Set<ChatTool> = ChatTool.entries.toSet(),
+    tools: Set<ChatTool> = chatTools().toSet(),
     onProgress: (count: Int, bytes: Long) -> Unit = { _, _ -> },
 ): List<ChatSessionSummary> {
     val result = mutableListOf<ChatSessionSummary>()
@@ -21,9 +19,12 @@ fun scanAllChatSessions(
         bytes += session.sizeBytes
         onProgress(count, bytes)
     }
-    if (ChatTool.CODEX in tools) result += scanCodexSessions(onFound)
-    if (ChatTool.CLAUDE in tools) result += scanClaudeSessions(onFound)
-    if (ChatTool.CURSOR in tools) result += scanCursorSessions(onFound)
-    if (ChatTool.OPENCODE in tools) result += scanOpenCodeSessions(onFound)
+    for (plugin in registeredTools()) {
+        if (plugin.chat in tools) result += plugin.scan(onFound)
+    }
     return result.sortedByDescending { it.updatedMillis }
 }
+
+fun loadChatMessages(session: ChatSessionSummary): List<ChatMessage> = runCatching {
+    toolPlugin(session)?.load?.invoke(session).orEmpty()
+}.getOrDefault(emptyList())

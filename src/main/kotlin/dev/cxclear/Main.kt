@@ -7,6 +7,8 @@ import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import dev.cxclear.cli.Cli
+import dev.cxclear.platform.HostOs
+import dev.cxclear.platform.currentOs
 import dev.cxclear.resources.Res
 import dev.cxclear.resources.hex_knot_arrow
 import dev.cxclear.ui.App
@@ -14,7 +16,7 @@ import org.jetbrains.compose.resources.painterResource
 import java.awt.Dimension
 
 private fun configureHighDpiRendering() {
-    if (System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) {
+    if (currentOs() == HostOs.WINDOWS) {
         WindowsDpi.enablePerMonitorV2()
         System.setProperty("sun.java2d.uiScale.enabled", "true")
     }

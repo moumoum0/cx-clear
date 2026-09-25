@@ -33,7 +33,7 @@ import dev.cxclear.model.DeletionPlan
 import dev.cxclear.model.Risk
 import dev.cxclear.model.ScanResult
 import dev.cxclear.model.TargetKey
-import dev.cxclear.profiles.ALL_PROFILES
+import dev.cxclear.tools.ALL_PROFILES
 import dev.cxclear.scan.ScanEvent
 import dev.cxclear.scan.ToolSpaceResult
 import dev.cxclear.scan.scanStream
@@ -64,7 +64,7 @@ fun MainContent(
     }
     val initialPrefs = prefs ?: AppPrefs()
     var selectedTools by remember(initialPrefs) {
-        mutableStateOf(initialPrefs.defaultTools.ifEmpty { setOf("codex", "claude", "cursor", "opencode") })
+        mutableStateOf(initialPrefs.defaultTools.ifEmpty { ALL_PROFILES.map { it.id }.toSet() })
     }
     var scanPhase by remember { mutableStateOf(ScanPhase.IDLE) }
     var scanCategories by remember { mutableStateOf(emptyList<ScanCategory>()) }

@@ -6,6 +6,7 @@ import dev.cxclear.model.DeletionPlan
 import dev.cxclear.model.PathSnapshot
 import dev.cxclear.model.PathSnapshotKind
 import dev.cxclear.model.ToolProfile
+import dev.cxclear.platform.executableStem
 import dev.cxclear.scan.isSafeDeletionPath
 import dev.cxclear.scan.readPathSnapshot
 import dev.cxclear.scan.resolveBase
@@ -143,9 +144,9 @@ private fun deletePlan(request: CleanRequest, outcome: DeleteOutcome) {
     }
 }
 
-/** 可执行文件名去 .exe 后与 [ToolProfile.processNamePrefixes] 精确比对。 */
+/** 可执行文件名去掉平台后缀后与 [ToolProfile.processNamePrefixes] 精确比对。 */
 internal fun processMatchesTool(profile: ToolProfile, executableName: String): Boolean {
-    val stem = executableName.lowercase().removeSuffix(".exe")
+    val stem = executableStem(executableName)
     return profile.processNamePrefixes.any { stem == it.lowercase() }
 }
 

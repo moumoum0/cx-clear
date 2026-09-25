@@ -23,10 +23,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import dev.cxclear.chats.ChatDeleteResult
+import dev.cxclear.model.ChatDeleteResult
+import dev.cxclear.model.ChatSessionSummary
+import dev.cxclear.model.ChatTool
+import dev.cxclear.tools.chatTools
 import dev.cxclear.chats.ChatScanCache
-import dev.cxclear.chats.ChatSessionSummary
-import dev.cxclear.chats.ChatTool
 import dev.cxclear.chats.RetentionConfig
 import dev.cxclear.chats.RetentionRunner
 import dev.cxclear.chats.RetentionStore
@@ -53,8 +54,8 @@ internal const val TOOL_FILTER_ALL = "all"
 private const val SCAN_SNAPSHOT_INTERVAL_MS = 500L
 
 private fun resolveTools(filter: String): Set<ChatTool> = when (filter) {
-    TOOL_FILTER_ALL -> ChatTool.entries.toSet()
-    else -> ChatTool.entries.filter { it.id == filter }.toSet()
+    TOOL_FILTER_ALL -> chatTools().toSet()
+    else -> chatTools().filter { it.id == filter }.toSet()
 }
 
 private fun filterCachedSessions(
@@ -62,7 +63,7 @@ private fun filterCachedSessions(
     filter: String,
 ): List<ChatSessionSummary> {
     val tools = resolveTools(filter)
-    if (tools.size == ChatTool.entries.size) return sessions
+    if (tools.size == chatTools().size) return sessions
     return sessions.filter { it.tool in tools }
 }
 
@@ -117,7 +118,7 @@ fun ChatsView(modifier: Modifier = Modifier) {
             val latestCount = AtomicInteger(0)
             val sessions = coroutineScope {
                 val job = async(Dispatchers.IO) {
-                    scanAllChatSessions(ChatTool.entries.toSet()) { count, _ ->
+                    scanAllChatSessions(chatTools().toSet()) { count, _ ->
                         latestCount.set(count)
                     }
                 }

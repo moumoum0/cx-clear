@@ -1,0 +1,97 @@
+package dev.cxclear.tools
+
+import dev.cxclear.model.Risk
+import dev.cxclear.tools.codex.CodexProfile
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
+
+class ProfileRiskTest {
+    @Test
+    fun `user session data is optional and never selected by default`() {
+        val protectedIds = setOf(
+            "claude.shell-snapshots",
+            "claude.session-env",
+            "claude.paste-cache",
+            "claude.image-cache",
+            "claude.feedback-bundles",
+            "claude.todos-legacy",
+            "claude.tasks",
+            "claude.plans",
+            "cursor.state-backup",
+            "cursor.cached-profiles",
+            "cursor.service-worker",
+            "cursor.blob-storage",
+            "cursor.partition-blob",
+            "cursor.agent-tools",
+            "cursor.project-terminals",
+        )
+        val targets = ALL_PROFILES.flatMap { it.targets }.filter { it.id in protectedIds }
+
+        assertFalse(targets.isEmpty())
+        targets.forEach { target ->
+            assertEquals(Risk.OPTIONAL, target.risk, "${target.id} must remain OPTIONAL")
+            assertFalse(target.defaultSelected, "${target.id} must not be selected by default")
+        }
+    }
+
+    @Test
+    fun `every optional target is unselected by default`() {
+        ALL_PROFILES.flatMap { it.targets }
+            .filter { it.risk == Risk.OPTIONAL }
+            .forEach { assertFalse(it.defaultSelected, "${it.id} must not be selected by default") }
+    }
+
+    @Test
+    fun `logs diagnostics and claude downloads are safe and selected by default`() {
+        val defaultCleanIds = setOf(
+            "codex.logs-db",
+            "codex.sandbox-logs",
+            "claude.cli-nodejs-cache",
+            "claude.debug",
+            "claude.downloads",
+            "claude.logs-legacy",
+            "cursor.app-logs",
+            "cursor.crashpad",
+            "cursor.process-monitor",
+            "cursor.home-logs",
+        )
+        val targetsById = ALL_PROFILES.flatMap { it.targets }.associateBy { it.id }
+
+        defaultCleanIds.forEach { id ->
+            val target = targetsById.getValue(id)
+            assertEquals(Risk.SAFE, target.risk, "$id must be safe")
+            assertTrue(target.defaultSelected, "$id must be selected by default")
+        }
+    }
+
+    @Test
+    fun `target ids are globally unique`() {
+        val ids = TOOLS.flatMap { it.profile.targets }.map { it.id }
+        assertEquals(ids.size, ids.toSet().size)
+    }
+
+    @Test
+    fun `profile ids are unique`() {
+        val ids = TOOLS.map { it.profile.id }
+        assertEquals(ids.size, ids.toSet().size)
+    }
+
+    @Test
+    fun `every profile declares running process prefixes`() {
+        TOOLS.forEach {
+            assertTrue(it.profile.processNamePrefixes.isNotEmpty(), "${it.profile.id} must block cleaning while running")
+        }
+    }
+
+    @Test
+    fun `active codex sqlite database is never a clean target`() {
+        assertTrue(CodexProfile.targets.none { it.relPath == "sqlite" || it.id == "codex.sqlite-legacy" })
+        val codexRoot = CodexProfile.baseDir() ?: return
+        assertTrue(
+            CodexProfile.protectedPaths().any { it.toAbsolutePath().normalize() == codexRoot.resolve("sqlite").toAbsolutePath().normalize() },
+            "active Codex sqlite directory must be permanently protected",
+        )
+    }
+}

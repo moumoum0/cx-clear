@@ -37,7 +37,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.cxclear.chats.ChatCondition
 import dev.cxclear.chats.ChatConditionType
-import dev.cxclear.chats.ChatTool
+import dev.cxclear.tools.chatTools
 import dev.cxclear.chats.ConditionJoin
 import dev.cxclear.chats.ConditionValueKind
 import dev.cxclear.ui.theme.AppColors
@@ -627,7 +627,7 @@ internal fun RoundValueColumn(
             }
 
             ConditionValueKind.TOOL -> WizSegmented(
-                options = ChatTool.entries.map { tool ->
+                options = chatTools().map { tool ->
                     WizOption(
                         tool.displayName,
                         selected = chosen?.text == tool.id,

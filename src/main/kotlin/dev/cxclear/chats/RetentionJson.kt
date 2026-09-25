@@ -1,5 +1,12 @@
 package dev.cxclear.chats
 
+import dev.cxclear.util.MiniJson
+import dev.cxclear.util.jsonBool
+import dev.cxclear.util.jsonInt
+import dev.cxclear.util.jsonList
+import dev.cxclear.util.jsonMap
+import dev.cxclear.util.jsonStr
+
 /** 策略 JSON 合同。落盘仍走 [RetentionStore] 的 kv 文件，命令行不让 AI 手搓 txt。 */
 object RetentionJson {
     const val VERSION = 2

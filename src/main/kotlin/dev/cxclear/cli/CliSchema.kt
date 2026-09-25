@@ -2,9 +2,9 @@ package dev.cxclear.cli
 
 import dev.cxclear.AppMeta
 import dev.cxclear.chats.ChatConditionType
-import dev.cxclear.chats.ChatTool
+import dev.cxclear.tools.chatTools
 import dev.cxclear.model.Risk
-import dev.cxclear.profiles.ALL_PROFILES
+import dev.cxclear.tools.ALL_PROFILES
 
 /**
  * CLI 的自描述数据：`schema` 与 `help` 两个命令的 JSON 负载。
@@ -24,7 +24,7 @@ internal object CliSchema {
             "3" to "参数或规则校验失败",
         ),
         "tools" to ALL_PROFILES.map { it.id },
-        "chat_tools" to ChatTool.entries.map { it.id },
+        "chat_tools" to chatTools().map { it.id },
         "risks" to Risk.entries.map { it.name.lowercase() },
         "condition_types" to ChatConditionType.entries.map {
             mapOf(

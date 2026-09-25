@@ -1,15 +1,18 @@
 package dev.cxclear.storage
 
+import dev.cxclear.tools.tools
 import dev.cxclear.ui.theme.AppColorScheme
 import dev.cxclear.ui.theme.ThemeMode
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption
 
+private fun knownToolIds(): Set<String> = tools().map { it.profile.id }.toSet()
+
 // 偏好设置
 data class AppPrefs(
-    // 扫描页默认勾选的工具 id（codex / claude / cursor / opencode）。空则回退到全部。
-    val defaultTools: Set<String> = setOf("codex", "claude", "cursor", "opencode"),
+    // 扫描页默认勾选的工具 id。空则回退到 ChatTool 全量。
+    val defaultTools: Set<String> = knownToolIds(),
     // 启动时是否恢复 [lastScreenId]。
     val rememberLastScreen: Boolean = false,
     // 上次打开的页面：scan / chats / settings。
@@ -29,7 +32,7 @@ data class AppPrefs(
 object AppPreferences {
     private const val FILE_NAME = "preferences.txt"
 
-    private val knownTools = setOf("codex", "claude", "cursor", "opencode")
+    private val knownTools get() = knownToolIds()
     private val knownScreens = setOf("scan", "chats", "settings")
     private val knownChatsModes = setOf("manual", "auto")
 
@@ -58,8 +61,8 @@ object AppPreferences {
             ?.map { it.trim() }
             ?.filter { it in knownTools }
             ?.toSet()
-            ?.ifEmpty { setOf("codex", "claude", "cursor", "opencode") }
-            ?: setOf("codex", "claude", "cursor", "opencode")
+            ?.ifEmpty { knownTools }
+            ?: knownTools
 
         val screen = props["last_screen"]?.takeIf { it in knownScreens } ?: "scan"
         val chatsMode = props["default_chats_mode"]?.takeIf { it in knownChatsModes } ?: "manual"
@@ -78,7 +81,7 @@ object AppPreferences {
 
     fun write(prefs: AppPrefs) {
         val path = file() ?: return
-        val tools = prefs.defaultTools.filter { it in knownTools }.ifEmpty { listOf("codex", "claude", "cursor", "opencode") }
+        val tools = prefs.defaultTools.filter { it in knownTools }.ifEmpty { knownTools.toList() }
         val screen = prefs.lastScreenId.takeIf { it in knownScreens } ?: "scan"
         val chatsMode = prefs.defaultChatsMode.takeIf { it in knownChatsModes } ?: "manual"
         val lines = listOf(

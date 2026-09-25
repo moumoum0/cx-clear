@@ -1,5 +1,8 @@
 package dev.cxclear.chats
 
+import dev.cxclear.model.ChatSessionSummary
+import dev.cxclear.model.ChatTool
+import dev.cxclear.tools.chatToolById
 import java.nio.file.Paths
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -18,7 +21,7 @@ class RetentionMatchTest {
 
     private fun session(
         id: String,
-        tool: ChatTool = ChatTool.CODEX,
+        tool: ChatTool = chatToolById("codex")!!,
         title: String = "会话 $id",
         project: String? = "demo",
         agoDays: Long = 0L,
@@ -138,9 +141,9 @@ class RetentionMatchTest {
 
     @Test
     fun `tool condition matches by tool id`() {
-        val r = rule(ChatCondition(ChatConditionType.TOOL_IS, text = ChatTool.CLAUDE.id))
-        assertTrue(r.matches(session("a", tool = ChatTool.CLAUDE), now))
-        assertFalse(r.matches(session("b", tool = ChatTool.CODEX), now))
+        val r = rule(ChatCondition(ChatConditionType.TOOL_IS, text = chatToolById("claude")!!.id))
+        assertTrue(r.matches(session("a", tool = chatToolById("claude")!!), now))
+        assertFalse(r.matches(session("b", tool = chatToolById("codex")!!), now))
     }
 
     @Test
@@ -156,7 +159,7 @@ class RetentionMatchTest {
     fun `project condition matches the displayed label`() {
         // Claude 的目录名是整条路径编码，projectLabel 取末段；条件应按展示值匹配。
         val r = rule(ChatCondition(ChatConditionType.PROJECT_CONTAINS, text = "cxclear"))
-        assertTrue(r.matches(session("a", tool = ChatTool.CLAUDE, project = "d--project-cxclear"), now))
+        assertTrue(r.matches(session("a", tool = chatToolById("claude")!!, project = "d--project-cxclear"), now))
     }
 
     // ─────────────────────────────────────────
@@ -201,11 +204,11 @@ class RetentionMatchTest {
         )
         val byTool = RetentionRule(
             "rule-2", enabled = true, join = ConditionJoin.AND,
-            conditions = listOf(ChatCondition(ChatConditionType.TOOL_IS, text = ChatTool.CLAUDE.id)),
+            conditions = listOf(ChatCondition(ChatConditionType.TOOL_IS, text = chatToolById("claude")!!.id)),
         )
         val sessions = listOf(
             session("old", agoDays = 60L),
-            session("claude", tool = ChatTool.CLAUDE, agoDays = 1L),
+            session("claude", tool = chatToolById("claude")!!, agoDays = 1L),
             session("keep", agoDays = 1L),
         )
         val matched = RetentionConfig(listOf(byAge, byTool)).match(sessions, now).map { it.id }

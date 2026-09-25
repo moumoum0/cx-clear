@@ -1,7 +1,7 @@
 package dev.cxclear.ui.components
 
 import dev.cxclear.chats.ChatCondition
-import dev.cxclear.chats.ChatTool
+import dev.cxclear.tools.chatTools
 import dev.cxclear.chats.ConditionValueKind
 import dev.cxclear.chats.RetentionRule
 
@@ -18,7 +18,7 @@ internal fun ruleSentence(rule: RetentionRule): String {
 internal fun readableCondition(c: ChatCondition): String = when (c.type.kind) {
     ConditionValueKind.DAYS, ConditionValueKind.MEGABYTES -> "${c.type.label} ${c.number} ${c.type.kind.unit}"
     ConditionValueKind.TOOL ->
-        "${c.type.label} ${ChatTool.entries.firstOrNull { it.id == c.text }?.displayName ?: c.text}"
+        "${c.type.label} ${chatTools().firstOrNull { it.id == c.text }?.displayName ?: c.text}"
     ConditionValueKind.TEXT -> "${c.type.label}「${c.text}」"
 }
 
@@ -49,7 +49,7 @@ internal fun pendingFragment(attr: AttrSpec?, larger: Boolean?, valuePreview: St
             else type.label
         }
         ConditionValueKind.TOOL -> {
-            val tool = ChatTool.entries.firstOrNull { it.id == preview || it.displayName == preview }
+            val tool = chatTools().firstOrNull { it.id == preview || it.displayName == preview }
             if (tool != null) "${type.label} ${tool.displayName}" else type.label
         }
         ConditionValueKind.TEXT -> {

@@ -1,5 +1,7 @@
 package dev.cxclear.chats
 
+import dev.cxclear.model.ChatDeleteResult
+import dev.cxclear.model.ChatSessionSummary
 import dev.cxclear.storage.AppPreferences
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
