@@ -9,6 +9,7 @@ enum class ChatTool(val id: String, val displayName: String) {
     CLAUDE("claude", "Claude Code"),
     CURSOR("cursor", "Cursor"),
     OPENCODE("opencode", "Open Code"),
+    DEEPSEEK_HERMES("deepseek-hermes", "DeepSeek Hermes"),
 }
 
 enum class ChatRole { USER, ASSISTANT }

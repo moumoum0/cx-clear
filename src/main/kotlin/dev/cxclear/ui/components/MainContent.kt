@@ -60,6 +60,7 @@ import dev.cxclear.resources.Res
 import dev.cxclear.resources.claude
 import dev.cxclear.resources.codex
 import dev.cxclear.resources.cursor
+import dev.cxclear.resources.deepseek
 import dev.cxclear.resources.opencode
 import org.jetbrains.compose.resources.DrawableResource
 import org.jetbrains.compose.resources.painterResource
@@ -1125,6 +1126,7 @@ private fun ToolSelector(
         AnimatedVisibility(visible = expanded) {
             Row(horizontalArrangement = Arrangement.spacedBy(AppDimensions.SpacingSmall.dp)) {
                 ToolIcon("Open Code", Res.drawable.opencode, "opencode" in selectedTools) { onToolToggle("opencode") }
+                ToolIcon("DeepSeek", Res.drawable.deepseek, "deepseek-hermes" in selectedTools) { onToolToggle("deepseek-hermes") }
             }
         }
 

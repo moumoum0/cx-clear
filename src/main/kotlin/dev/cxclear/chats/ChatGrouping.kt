@@ -88,6 +88,7 @@ fun projectLabel(session: ChatSessionSummary): String {
         ChatTool.CODEX -> raw
         ChatTool.CURSOR -> raw
         ChatTool.OPENCODE -> raw
+        ChatTool.DEEPSEEK_HERMES -> raw
     }
 }
 

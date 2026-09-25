@@ -650,6 +650,7 @@ fun loadChatMessages(session: ChatSessionSummary): List<ChatMessage> = runCatchi
         ChatTool.CODEX -> loadCodexMessages(session.mainFile)
         ChatTool.CURSOR -> loadCursorMessages(session)
         ChatTool.OPENCODE -> loadOpenCodeMessages(session)
+        ChatTool.DEEPSEEK_HERMES -> emptyList() // DeepSeek Hermes 暂不支持读取会话内容
     }
 }.getOrDefault(emptyList())
 

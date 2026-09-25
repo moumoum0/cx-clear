@@ -78,7 +78,7 @@ class RetentionMatchTest {
 
     @Test
     fun `unknown tool id is treated as incomplete`() {
-        val cond = ChatCondition(ChatConditionType.TOOL_IS, text = "cursor")
+        val cond = ChatCondition(ChatConditionType.TOOL_IS, text = "nonexistent")
         assertFalse(cond.isComplete())
         assertFalse(rule(cond).matches(session("a"), now))
     }
