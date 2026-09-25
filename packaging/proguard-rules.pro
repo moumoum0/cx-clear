@@ -10,6 +10,10 @@
 -keep class * implements com.sun.jna.** { *; }
 -dontwarn com.sun.jna.**
 
+# zstd-jni 按平台名加载 dll，收缩时不能改类名。
+-keep class com.github.luben.zstd.** { *; }
+-dontwarn com.github.luben.zstd.**
+
 # Compose / Skiko 反射与 native 绑定
 -keep class org.jetbrains.skia.** { *; }
 -keep class org.jetbrains.skiko.** { *; }

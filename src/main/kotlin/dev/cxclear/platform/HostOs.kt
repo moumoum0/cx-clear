@@ -1,7 +1,7 @@
 package dev.cxclear.platform
 
 /** 宿主系统。路径、进程名、磁盘都从这里分发，不要再各写一份 os.name。 */
-internal enum class HostOs { WINDOWS, MACOS, LINUX, OTHER }
+enum class HostOs { WINDOWS, MACOS, LINUX, OTHER }
 
 internal fun currentOs(): HostOs {
     val name = System.getProperty("os.name").orEmpty()

@@ -15,7 +15,7 @@ import dev.cxclear.tools.opencode.OpenCodePlugin
  *
  * [tools] 按当前系统过滤。某个软件只在部分系统上有数据时，给 Plugin 填 supportedOs。
  */
-val TOOLS: List<ToolPlugin> = listOf(
+internal val TOOLS: List<ToolPlugin> = listOf(
     CodexPlugin,
     ClaudePlugin,
     CursorPlugin,
