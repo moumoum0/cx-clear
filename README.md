@@ -19,7 +19,7 @@
     <img alt="License" src="https://img.shields.io/badge/license-GPL--3.0-blue?style=flat"></a>
 
   CX-Clear 是面向 AI 编程工具的本地缓存清理工具。支持 Codex、Claude Code、Cursor等软件
-
+  官网:cx.xnncsj.xyz
 </div>
 
 ## 主要功能
