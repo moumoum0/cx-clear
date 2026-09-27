@@ -14,6 +14,9 @@ internal data class ParsedArgs(
     val switches: Set<String>,
 ) {
     val yes: Boolean get() = "yes" in switches || "y" in switches
+    val preview: Boolean get() = "preview" in switches
+    val json: Boolean get() = "json" in switches
+    val safeOnly: Boolean get() = "safe-only" in switches
 
     fun value(name: String): String? = flags[name]?.last()
 
@@ -51,8 +54,10 @@ internal fun parseArgs(args: Array<String>): ParsedArgs? {
                 }
                 if (name.isEmpty()) throw CliUsageException("空的选项")
                 when (name) {
-                    "yes", "y" -> switches += name
-                    "tool", "risk", "id", "file" -> {
+                    "yes", "y", "preview", "json", "safe-only" -> switches += name
+                    "tool", "type", "older-than", "newer-than", "size-gt", "size-lt",
+                    "keep-recent", "keep-days",
+                    "risk", "id", "file", "targets" -> {
                         val v = value ?: takeValue("--$name")
                         flags.getOrPut(name) { mutableListOf() }.add(v)
                     }

@@ -31,7 +31,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.system.exitProcess
 
-/** 给 AI 调的无头入口。stdout 只出 JSON；破坏性操作默认预览。 */
+/** 给 AI 调的无头入口。统一查找-删除模型，stdout 只出 JSON。 */
 object Cli {
     const val EXIT_OK = 0
     const val EXIT_FAIL = 1
@@ -56,19 +56,16 @@ object Cli {
     }
 
     private fun dispatch(args: ParsedArgs): Int = when (args.command) {
-        listOf("help") -> {
-            printJson(CliSchema.helpPayload())
-            EXIT_OK
-        }
-        listOf("schema") -> {
-            printJson(CliSchema.schemaPayload())
-            EXIT_OK
-        }
+        listOf("help") -> cmdHelp()
+        listOf("schema") -> cmdSchema()
+        listOf("find", "chats") -> cmdFindChats(args)
+        listOf("find", "files") -> cmdFindFiles(args)
+        listOf("delete", "chats") -> cmdDeleteChats(args)
+        listOf("delete", "files") -> cmdDeleteFiles(args)
         listOf("scan") -> cmdScan(args)
         listOf("clean") -> cmdClean(args)
-        listOf("chats", "list") -> cmdChatsList(args)
-        listOf("chats", "preview") -> cmdChatsPreview(args)
-        listOf("chats", "delete") -> cmdChatsDelete(args)
+        listOf("status") -> cmdStatus(args)
+        listOf("history") -> cmdHistory(args)
         listOf("rules", "get") -> cmdRulesGet()
         listOf("rules", "validate") -> cmdRulesValidate(args)
         listOf("rules", "put") -> cmdRulesPut(args)
@@ -78,53 +75,174 @@ object Cli {
         }
     }
 
-    private fun cmdScan(args: ParsedArgs): Int {
-        val tools = resolveTools(args)
-        val snapshot = runBlocking { scanOnce(tools) }
+    // === 核心：find / delete ===
+
+    private fun cmdFindChats(args: ParsedArgs): Int {
+        val tools = resolveChatTools(args)
+        val sessions = scanAllChatSessions(tools)
+        val filters = parseChatFilters(args)
+        val filtered = filters.apply(sessions, System.currentTimeMillis())
+        
         printJson(
             mapOf(
                 "ok" to true,
-                "tools" to tools.toList(),
-                "spaces" to snapshot.spaces.map { spaceJson(it) },
-                "targets" to snapshot.results.filter { it.exists && it.bytes > 0L }.map { targetJson(it) },
+                "command" to "find chats",
+                "total" to filtered.size,
+                "bytes" to filtered.sumOf { it.sizeBytes },
+                "sessions" to filtered.map { sessionJson(it) },
             )
         )
         return EXIT_OK
     }
 
-    private fun cmdClean(args: ParsedArgs): Int {
+    private fun cmdFindFiles(args: ParsedArgs): Int {
         val tools = resolveTools(args)
-        val risk = parseRisk(args)
+        val typeFilter = args.value("type")
+        val sizeGt = args.value("size-gt")?.let { parseSize(it) }
+        val sizeLt = args.value("size-lt")?.let { parseSize(it) }
+        
         val snapshot = runBlocking { scanOnce(tools) }
-        val selected = snapshot.results.filter { result ->
-            if (!result.exists || result.bytes <= 0L || result.deletionPlan == null) return@filter false
-            val (_, target) = profileAndTarget(result.toolId, result.targetId)
-            when (risk) {
-                null -> target.defaultSelected
-                else -> target.risk == risk
-            }
+        var results = snapshot.results.filter { it.exists && it.bytes > 0L }
+        
+        // 按 type 过滤（匹配清理项 id 关键字）
+        if (typeFilter != null) {
+            results = results.filter { it.targetId.contains(typeFilter, ignoreCase = true) }
         }
-        val requests = selected.mapNotNull { result ->
-            val (profile, target) = profileAndTarget(result.toolId, result.targetId)
-            val plan = result.deletionPlan ?: return@mapNotNull null
-            CleanRequest(profile, target, plan)
+        
+        // 按大小过滤
+        if (sizeGt != null) {
+            results = results.filter { it.bytes > sizeGt }
         }
-        val planned = selected.map { targetJson(it) }
-        if (!args.yes) {
+        if (sizeLt != null) {
+            results = results.filter { it.bytes < sizeLt }
+        }
+        
+        printJson(
+            mapOf(
+                "ok" to true,
+                "command" to "find files",
+                "total" to results.size,
+                "bytes" to results.sumOf { it.bytes },
+                "targets" to results.map { targetJson(it) },
+            )
+        )
+        return EXIT_OK
+    }
+
+    private fun cmdDeleteChats(args: ParsedArgs): Int {
+        val tools = resolveChatTools(args)
+        val sessions = scanAllChatSessions(tools)
+        val filters = parseChatFilters(args)
+        val filtered = filters.apply(sessions, System.currentTimeMillis())
+        
+        if (filtered.isEmpty()) {
             printJson(
                 mapOf(
                     "ok" to true,
-                    "dry_run" to true,
-                    "planned" to planned,
-                    "bytes" to selected.sumOf { it.bytes },
+                    "command" to "delete chats",
+                    "preview" to true,
+                    "matched" to 0,
+                    "bytes" to 0L,
                 )
             )
             return EXIT_OK
         }
-        if (requests.isEmpty()) {
-            printJson(mapOf("ok" to true, "dry_run" to false, "freed_bytes" to 0L, "targets" to emptyList<Any>()))
+        
+        if (args.preview || !args.yes) {
+            printJson(
+                mapOf(
+                    "ok" to true,
+                    "command" to "delete chats",
+                    "preview" to true,
+                    "matched" to filtered.size,
+                    "bytes" to filtered.sumOf { it.sizeBytes },
+                    "sessions" to filtered.map { sessionJson(it) },
+                )
+            )
             return EXIT_OK
         }
+        
+        val result = runBlocking { deleteSessions(filtered) }
+        val blocked = result.blockedTools.isNotEmpty()
+        printJson(
+            mapOf(
+                "ok" to (!blocked && result.errors.isEmpty()),
+                "command" to "delete chats",
+                "preview" to false,
+                "deleted" to result.deletedSessions,
+                "freed_bytes" to result.freedBytes,
+                "blocked_tools" to result.blockedTools,
+                "errors" to result.errors,
+            )
+        )
+        return when {
+            blocked -> EXIT_BLOCKED
+            result.errors.isNotEmpty() -> EXIT_FAIL
+            else -> EXIT_OK
+        }
+    }
+
+    private fun cmdDeleteFiles(args: ParsedArgs): Int {
+        val tools = resolveTools(args)
+        val typeFilter = args.value("type")
+        val sizeGt = args.value("size-gt")?.let { parseSize(it) }
+        val sizeLt = args.value("size-lt")?.let { parseSize(it) }
+        val targetIds = args.value("targets")?.split(',')?.map { it.trim() }?.filter { it.isNotEmpty() }
+        
+        val snapshot = runBlocking { scanOnce(tools) }
+        var results = snapshot.results.filter { it.exists && it.bytes > 0L && it.deletionPlan != null }
+        
+        // 按 targets 过滤（精确匹配）
+        if (targetIds != null) {
+            results = results.filter { it.targetId in targetIds }
+        }
+        
+        // 按 type 过滤（关键字匹配）
+        if (typeFilter != null) {
+            results = results.filter { it.targetId.contains(typeFilter, ignoreCase = true) }
+        }
+        
+        // 按大小过滤
+        if (sizeGt != null) {
+            results = results.filter { it.bytes > sizeGt }
+        }
+        if (sizeLt != null) {
+            results = results.filter { it.bytes < sizeLt }
+        }
+        
+        val requests = results.mapNotNull { result ->
+            val (profile, target) = profileAndTarget(result.toolId, result.targetId)
+            val plan = result.deletionPlan ?: return@mapNotNull null
+            CleanRequest(profile, target, plan)
+        }
+        
+        if (results.isEmpty()) {
+            printJson(
+                mapOf(
+                    "ok" to true,
+                    "command" to "delete files",
+                    "preview" to true,
+                    "matched" to 0,
+                    "bytes" to 0L,
+                )
+            )
+            return EXIT_OK
+        }
+        
+        if (args.preview || !args.yes) {
+            printJson(
+                mapOf(
+                    "ok" to true,
+                    "command" to "delete files",
+                    "preview" to true,
+                    "matched" to results.size,
+                    "bytes" to results.sumOf { it.bytes },
+                    "targets" to results.map { targetJson(it) },
+                )
+            )
+            return EXIT_OK
+        }
+        
         return runBlocking {
             var blocked: List<String> = emptyList()
             var freed = 0L
@@ -153,6 +271,8 @@ object Cli {
                 printJson(
                     mapOf(
                         "ok" to false,
+                        "command" to "delete files",
+                        "preview" to false,
                         "blocked_tools" to blocked,
                         "error" to "检测到 ${blocked.joinToString("、")} 仍在运行",
                     )
@@ -162,7 +282,8 @@ object Cli {
             printJson(
                 mapOf(
                     "ok" to errors.isEmpty(),
-                    "dry_run" to false,
+                    "command" to "delete files",
+                    "preview" to false,
                     "freed_bytes" to freed,
                     "targets" to done,
                     "errors" to errors,
@@ -172,78 +293,173 @@ object Cli {
         }
     }
 
-    private fun cmdChatsList(args: ParsedArgs): Int {
-        val chatTools = resolveChatTools(args)
-        val sessions = scanAllChatSessions(chatTools)
-        printJson(mapOf("ok" to true, "sessions" to sessions.map { sessionJson(it) }))
-        return EXIT_OK
-    }
+    // === 独立命令：scan / clean（首页扫描） ===
 
-    private fun cmdChatsPreview(args: ParsedArgs): Int {
-        val chatTools = resolveChatTools(args)
-        val sessions = scanAllChatSessions(chatTools)
-        val config = RetentionStore.read()
-        val matched = config.match(sessions, System.currentTimeMillis())
+    private fun cmdScan(args: ParsedArgs): Int {
+        val tools = resolveTools(args)
+        val snapshot = runBlocking { scanOnce(tools) }
+        var results = snapshot.results.filter { it.exists && it.bytes > 0L }
+        
+        if (args.safeOnly) {
+            results = results.filter {
+                val (_, target) = profileAndTarget(it.toolId, it.targetId)
+                target.risk == Risk.SAFE
+            }
+        }
+        
         printJson(
             mapOf(
                 "ok" to true,
-                "dry_run" to true,
-                "active" to config.isActive(),
-                "matched" to matched.map { sessionJson(it) },
-                "bytes" to matched.sumOf { it.sizeBytes },
+                "command" to "scan",
+                "tools" to tools.toList(),
+                "spaces" to snapshot.spaces.map { spaceJson(it) },
+                "targets" to results.map { targetJson(it) },
             )
         )
         return EXIT_OK
     }
 
-    private fun cmdChatsDelete(args: ParsedArgs): Int {
-        val ids = args.values("id")
-        if (ids.isEmpty()) throw CliUsageException("chats delete 需要 --id tool:session")
-        val wanted = ids.map { parseSessionRef(it) }
-        val tools = wanted.map { it.first }.toSet()
-        val sessions = scanAllChatSessions(tools)
-        val byRef = sessions.associateBy { it.tool to it.id }
-        val missing = wanted.filter { it !in byRef }
-        if (missing.isNotEmpty()) {
-            printJson(
-                mapOf(
-                    "ok" to false,
-                    "error" to "找不到会话",
-                    "missing" to missing.map { "${it.first.id}:${it.second}" },
-                )
-            )
-            return EXIT_USAGE
+    private fun cmdClean(args: ParsedArgs): Int {
+        val tools = resolveTools(args)
+        val targetIds = args.value("targets")?.split(',')?.map { it.trim() }?.filter { it.isNotEmpty() }
+        val snapshot = runBlocking { scanOnce(tools) }
+        
+        val selected = snapshot.results.filter { result ->
+            if (!result.exists || result.bytes <= 0L || result.deletionPlan == null) return@filter false
+            val (_, target) = profileAndTarget(result.toolId, result.targetId)
+            
+            when {
+                targetIds != null -> result.targetId in targetIds
+                args.safeOnly -> target.risk == Risk.SAFE && target.defaultSelected
+                else -> target.defaultSelected
+            }
         }
-        val targets = wanted.map { byRef.getValue(it) }
-        if (!args.yes) {
+        
+        val requests = selected.mapNotNull { result ->
+            val (profile, target) = profileAndTarget(result.toolId, result.targetId)
+            val plan = result.deletionPlan ?: return@mapNotNull null
+            CleanRequest(profile, target, plan)
+        }
+        
+        val planned = selected.map { targetJson(it) }
+        if (args.preview || !args.yes) {
             printJson(
                 mapOf(
                     "ok" to true,
-                    "dry_run" to true,
-                    "planned" to targets.map { sessionJson(it) },
-                    "bytes" to targets.sumOf { it.sizeBytes },
+                    "command" to "clean",
+                    "preview" to true,
+                    "matched" to planned.size,
+                    "bytes" to selected.sumOf { it.bytes },
+                    "targets" to planned,
                 )
             )
             return EXIT_OK
         }
-        val result = runBlocking { deleteSessions(targets) }
-        val blocked = result.blockedTools.isNotEmpty()
-        printJson(
-            mapOf(
-                "ok" to (!blocked && result.errors.isEmpty()),
-                "dry_run" to false,
-                "deleted_sessions" to result.deletedSessions,
-                "freed_bytes" to result.freedBytes,
-                "blocked_tools" to result.blockedTools,
-                "errors" to result.errors,
+        
+        if (requests.isEmpty()) {
+            printJson(mapOf("ok" to true, "command" to "clean", "preview" to false, "freed_bytes" to 0L, "targets" to emptyList<Any>()))
+            return EXIT_OK
+        }
+        
+        return runBlocking {
+            var blocked: List<String> = emptyList()
+            var freed = 0L
+            val done = mutableListOf<Map<String, Any?>>()
+            val errors = mutableListOf<String>()
+            clean(requests).collect { event ->
+                when (event) {
+                    is CleanEvent.Blocked -> blocked = event.tools
+                    is CleanEvent.TargetDone -> {
+                        done += mapOf(
+                            "target_id" to event.targetId,
+                            "label" to event.label,
+                            "freed_bytes" to event.freedBytes,
+                            "error" to event.error,
+                        )
+                        event.error?.let { errors += "${event.label}：$it" }
+                    }
+                    is CleanEvent.AllDone -> {
+                        freed = event.totalFreedBytes
+                        if (event.totalFreedBytes > 0L) CleanHistory.append(event.totalFreedBytes)
+                    }
+                    is CleanEvent.Started -> Unit
+                }
+            }
+            if (blocked.isNotEmpty()) {
+                printJson(
+                    mapOf(
+                        "ok" to false,
+                        "command" to "clean",
+                        "preview" to false,
+                        "blocked_tools" to blocked,
+                        "error" to "检测到 ${blocked.joinToString("、")} 仍在运行",
+                    )
+                )
+                return@runBlocking EXIT_BLOCKED
+            }
+            printJson(
+                mapOf(
+                    "ok" to errors.isEmpty(),
+                    "command" to "clean",
+                    "preview" to false,
+                    "freed_bytes" to freed,
+                    "targets" to done,
+                    "errors" to errors,
+                )
             )
-        )
-        return when {
-            blocked -> EXIT_BLOCKED
-            result.errors.isNotEmpty() -> EXIT_FAIL
-            else -> EXIT_OK
+            if (errors.isEmpty()) EXIT_OK else EXIT_FAIL
         }
     }
+
+    // === 状态与历史 ===
+
+    private fun cmdStatus(args: ParsedArgs): Int {
+        val tools = resolveTools(args)
+        val snapshot = runBlocking { scanOnce(tools) }
+        val chatTools = chatTools().filter { it.id in tools }
+        val chatCounts = chatTools.associate { tool ->
+            val sessions = scanAllChatSessions(setOf(tool))
+            tool.id to sessions.size
+        }
+        
+        printJson(
+            mapOf(
+                "ok" to true,
+                "command" to "status",
+                "spaces" to snapshot.spaces.map { space ->
+                    mapOf(
+                        "tool" to space.toolId,
+                        "bytes" to space.bytes,
+                        "files" to space.fileCount,
+                        "bytes_label" to formatBytes(space.bytes),
+                        "chats" to (chatCounts[space.toolId] ?: 0),
+                    )
+                },
+            )
+        )
+        return EXIT_OK
+    }
+
+    private fun cmdHistory(args: ParsedArgs): Int {
+        val limit = args.value("limit")?.toIntOrNull() ?: 10
+        val records = CleanHistory.readAll().takeLast(limit)
+        printJson(
+            mapOf(
+                "ok" to true,
+                "command" to "history",
+                "records" to records.map {
+                    mapOf(
+                        "timestamp" to it.epochMillis,
+                        "bytes" to it.freedBytes,
+                        "bytes_label" to formatBytes(it.freedBytes),
+                    )
+                },
+            )
+        )
+        return EXIT_OK
+    }
+
+    // === 自动策略（保留旧命令，兼容性） ===
 
     private fun cmdRulesGet(): Int {
         printJson(mapOf("ok" to true, "config" to RetentionJson.toMap(RetentionStore.read())))
@@ -277,11 +493,11 @@ object Cli {
             return EXIT_USAGE
         }
         val config = (parsed as RetentionParseResult.Ok).config
-        if (!args.yes) {
+        if (args.preview || !args.yes) {
             printJson(
                 mapOf(
                     "ok" to true,
-                    "dry_run" to true,
+                    "preview" to true,
                     "config" to RetentionJson.toMap(config),
                     "warnings" to ruleWarnings(config),
                 )
@@ -292,13 +508,27 @@ object Cli {
         printJson(
             mapOf(
                 "ok" to true,
-                "dry_run" to false,
+                "preview" to false,
                 "config" to RetentionJson.toMap(RetentionStore.read()),
                 "warnings" to ruleWarnings(config),
             )
         )
         return EXIT_OK
     }
+
+    // === Help / Schema ===
+
+    private fun cmdHelp(): Int {
+        printJson(CliSchema.helpPayload())
+        return EXIT_OK
+    }
+
+    private fun cmdSchema(): Int {
+        printJson(CliSchema.schemaPayload())
+        return EXIT_OK
+    }
+
+    // === 工具函数 ===
 
     private fun readConfigJson(args: ParsedArgs): RetentionParseResult {
         val text = readInputText(args)
@@ -364,24 +594,6 @@ object Cli {
         return tools.toSet()
     }
 
-    private fun parseRisk(args: ParsedArgs): Risk? = when (val raw = args.value("risk")) {
-        null, "all" -> null
-        "safe" -> Risk.SAFE
-        "optional" -> Risk.OPTIONAL
-        else -> throw CliUsageException("--risk 只能是 safe / optional / all")
-    }
-
-    private fun parseSessionRef(raw: String): Pair<ChatTool, String> {
-        val split = raw.indexOf(':')
-        if (split <= 0 || split == raw.lastIndex) {
-            throw CliUsageException("--id 格式为 tool:session，例如 cursor:abc")
-        }
-        val toolId = raw.substring(0, split)
-        val sessionId = raw.substring(split + 1)
-        val tool = chatToolById(toolId) ?: throw CliUsageException("未知工具：$toolId")
-        return tool to sessionId
-    }
-
     private fun printJson(value: Any?) {
         println(MiniJson.stringify(value))
     }
@@ -396,4 +608,3 @@ private data class ScanSnapshot(
     val spaces: List<ToolSpaceResult>,
     val results: List<ScanResult>,
 )
-
