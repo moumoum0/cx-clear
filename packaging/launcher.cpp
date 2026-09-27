@@ -73,7 +73,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
         + L" -Dskiko.library.path=" + quote(app_dir)
         + L" -Djava.library.path=" + quote(app_dir)
         + L" -cp " + quote(app_dir + L"\\*")
-        + L" dev.cxclear.MainKt";
+        + L" dev.cxclear.ui.MainKt";
 
     int argc = 0;
     LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc);

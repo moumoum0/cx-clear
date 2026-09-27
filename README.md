@@ -46,6 +46,22 @@
 
 从 [GitHub Releases](https://github.com/moumoum0/cx-clear/releases) 下载
 
+发布包有纯 CLI 包 `CXClear-<version>-cli.zip` 和同时包含 GUI、CLI 的安装器及免安装包。CLI 解压后运行 `cxclear <命令>`，例如 `cxclear schema` 或 `cxclear find chats --tool codex`。无 Java 的发布包需要 JDK 21 和 `JAVA_HOME`；带 Java 的完整包可直接运行。
+
+安装器提供将安装目录加入用户 `PATH` 的选项。使用纯 CLI zip 或免安装包时，将解压后的 `cxclear.exe` 所在目录加入 `PATH`，再从新终端运行 `cxclear <命令>`。
+
+## 本地构建
+
+```powershell
+.\gradlew.bat build
+.\gradlew.bat :gui:run
+.\gradlew.bat :cli:run --args="schema"
+.\gradlew.bat :cli:packageCli
+.\gradlew.bat :gui:packageInnoSetup
+```
+
+Windows 发布打包需要 MinGW-w64；完整包还需要 Inno Setup 6。
+
 
 ## 贡献
 

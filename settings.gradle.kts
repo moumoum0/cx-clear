@@ -1,4 +1,5 @@
 rootProject.name = "cxclear"
+include(":core", ":cli", ":gui")
 
 pluginManagement {
     repositories {

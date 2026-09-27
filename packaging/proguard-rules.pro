@@ -1,9 +1,7 @@
 # Compose Desktop release 收缩规则。主要目标：砍掉 material-icons-extended 里未用的图标。
 
 # 入口
--keep class dev.cxclear.MainKt { *; }
--keep class dev.cxclear.cli.Cli { *; }
--keep class dev.cxclear.cli.CliKt { *; }
+-keep class dev.cxclear.ui.MainKt { *; }
 
 # JNA 走反射调用 native，必须整体保留。
 -keep class com.sun.jna.** { *; }

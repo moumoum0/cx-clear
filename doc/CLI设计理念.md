@@ -76,14 +76,14 @@ cxclear delete files --type downloads
 ---
 
 #### `--older-than <duration>`
-只匹配早于指定时间的目标（会话用 `updatedMillis`，文件用修改时间）。
+只匹配早于指定时间的会话（使用 `updatedMillis`）。文件扫描结果不提供修改时间，文件命令会拒绝此选项。
 
 **格式**：数字 + 单位（`d` 天 / `h` 小时 / `m` 分钟）
 
 **示例**：
 ```bash
 cxclear find chats --older-than 30d      # 30 天前的对话
-cxclear delete files --older-than 7d     # 7 天前修改的文件
+cxclear delete chats --older-than 7d     # 7 天前更新的对话
 ```
 
 ---

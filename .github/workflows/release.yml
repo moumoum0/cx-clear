@@ -76,8 +76,11 @@ jobs:
           )
           Write-Host "已截取 $($notes.Length) 字更新说明"
 
+      - name: Build CLI distribution
+        run: .\gradlew.bat :cli:packageCli --no-daemon --stacktrace
+
       - name: Build Inno Setup installer
-        run: .\gradlew.bat packageInnoSetup --no-daemon --stacktrace
+        run: .\gradlew.bat :gui:packageInnoSetup --no-daemon --stacktrace
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
@@ -86,10 +89,11 @@ jobs:
           name: CX Clear v${{ env.APP_VERSION }}
           body_path: release-notes.md
           files: |
-            build/compose/binaries/main/dist/CXClear-${{ env.APP_VERSION }}-setup.exe
-            build/compose/binaries/main/dist/CXClear-${{ env.APP_VERSION }}-setup-no-jre.exe
-            build/compose/binaries/main/dist/CXClear-${{ env.APP_VERSION }}-portable.zip
-            build/compose/binaries/main/dist/CXClear-${{ env.APP_VERSION }}-portable-no-jre.zip
+            cli/build/distributions/CXClear-${{ env.APP_VERSION }}-cli.zip
+            gui/build/compose/binaries/main/dist/CXClear-${{ env.APP_VERSION }}-setup.exe
+            gui/build/compose/binaries/main/dist/CXClear-${{ env.APP_VERSION }}-setup-no-jre.exe
+            gui/build/compose/binaries/main/dist/CXClear-${{ env.APP_VERSION }}-portable.zip
+            gui/build/compose/binaries/main/dist/CXClear-${{ env.APP_VERSION }}-portable-no-jre.zip
           prerelease: ${{ contains(env.APP_VERSION, '-') }}
           fail_on_unmatched_files: true
           make_latest: ${{ !contains(env.APP_VERSION, '-') }}
