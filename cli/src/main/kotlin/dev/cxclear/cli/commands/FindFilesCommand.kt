@@ -13,7 +13,7 @@ import kotlinx.coroutines.runBlocking
 
 internal object FindFilesCommand : Command {
     override val name = listOf("find", "files")
-    override val description = "查找可清理文件"
+    override val description = "find cleanable files"
     override val flags = FILE_FILTER_FLAGS
     override val switches = setOf("json", "safe-only")
 

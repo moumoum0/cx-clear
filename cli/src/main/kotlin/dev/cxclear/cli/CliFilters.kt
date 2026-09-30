@@ -12,25 +12,25 @@ import java.math.BigDecimal
 // 解析时长（支持 30d, 7d, 1h, 30m 等）
 internal fun parseDuration(raw: String): Long {
     val pattern = Regex("""^(\d+)([dhms])$""")
-    val match = pattern.matchEntire(raw) ?: throw CliUsageException("时长格式错误：$raw（示例：30d, 7h, 30m）")
+    val match = pattern.matchEntire(raw) ?: throw CliUsageException("invalid duration: $raw (examples: 30d, 7h, 30m)")
     val num = match.groupValues[1].toLongOrNull()
-        ?: throw CliUsageException("时长超出范围：$raw")
+        ?: throw CliUsageException("duration out of range: $raw")
     val unit = match.groupValues[2]
     val multiplier = when (unit) {
         "d" -> 24L * 3600 * 1000
         "h" -> 3600L * 1000
         "m" -> 60L * 1000
         "s" -> 1000L
-        else -> throw CliUsageException("未知时长单位：$unit")
+        else -> throw CliUsageException("unknown duration unit: $unit")
     }
-    if (num > Long.MAX_VALUE / multiplier) throw CliUsageException("时长超出范围：$raw")
+    if (num > Long.MAX_VALUE / multiplier) throw CliUsageException("duration out of range: $raw")
     return num * multiplier
 }
 
 // 解析大小（支持 100MB, 1GB, 500KB 等）
 internal fun parseSize(raw: String): Long {
     val pattern = Regex("""^(\d+(?:\.\d+)?)\s*(B|KB|MB|GB|TB)?$""", RegexOption.IGNORE_CASE)
-    val match = pattern.matchEntire(raw) ?: throw CliUsageException("大小格式错误：$raw（示例：100MB, 1GB）")
+    val match = pattern.matchEntire(raw) ?: throw CliUsageException("invalid size: $raw (examples: 100MB, 1GB)")
     val num = match.groupValues[1].toBigDecimal()
     val unit = match.groupValues[2].uppercase().ifEmpty { "B" }
     val multiplier = when (unit) {
@@ -39,10 +39,10 @@ internal fun parseSize(raw: String): Long {
         "MB" -> 1024L * 1024L
         "GB" -> 1024L * 1024L * 1024L
         "TB" -> 1024L * 1024L * 1024L * 1024L
-        else -> throw CliUsageException("未知大小单位：$unit")
+        else -> throw CliUsageException("unknown size unit: $unit")
     }
     val bytes = num.multiply(BigDecimal.valueOf(multiplier))
-    if (bytes > BigDecimal.valueOf(Long.MAX_VALUE)) throw CliUsageException("大小超出范围：$raw")
+    if (bytes > BigDecimal.valueOf(Long.MAX_VALUE)) throw CliUsageException("size out of range: $raw")
     return bytes.toLong()
 }
 
@@ -89,11 +89,11 @@ internal fun ChatFilters.apply(sessions: List<ChatSessionSummary>, nowMillis: Lo
 internal fun parseChatFilters(args: ParsedArgs): ChatFilters {
     val keepRecent = args.value("keep-recent")?.let {
         it.toIntOrNull()?.takeIf { count -> count >= 0 }
-            ?: throw CliUsageException("--keep-recent 必须是非负整数")
+            ?: throw CliUsageException("--keep-recent must be a non-negative integer")
     }
     val keepDays = args.value("keep-days")?.let {
         it.toIntOrNull()?.takeIf { days -> days >= 0 }
-            ?: throw CliUsageException("--keep-days 必须是非负整数")
+            ?: throw CliUsageException("--keep-days must be a non-negative integer")
     }
     return ChatFilters(
         olderThan = args.value("older-than")?.let { parseDuration(it) },

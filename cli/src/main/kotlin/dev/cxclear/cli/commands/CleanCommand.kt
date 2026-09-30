@@ -18,7 +18,7 @@ import kotlinx.coroutines.runBlocking
 
 internal object CleanCommand : Command {
     override val name = listOf("clean")
-    override val description = "按默认勾选或指定项清理"
+    override val description = "clean default or named targets"
     override val flags = FILE_FILTER_FLAGS + "targets"
     override val switches = setOf("json", "yes", "y", "preview", "safe-only")
 
@@ -93,7 +93,7 @@ internal object CleanCommand : Command {
                         "command" to "clean",
                         "preview" to false,
                         "blocked_tools" to blocked,
-                        "error" to "检测到 ${blocked.joinToString("、")} 仍在运行",
+                        "error" to "${blocked.joinToString(", ")} is still running",
                     )
                 )
                 return@runBlocking Cli.EXIT_BLOCKED

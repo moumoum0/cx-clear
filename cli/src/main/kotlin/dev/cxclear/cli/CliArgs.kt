@@ -30,7 +30,7 @@ internal fun parseArgs(args: Array<String>): ParsedArgs? {
     val switches = linkedSetOf<String>()
     var i = 0
     fun takeValue(flag: String): String {
-        if (i >= args.size) throw CliUsageException("缺少 $flag 的值")
+        if (i >= args.size) throw CliUsageException("missing value for $flag")
         return args[i++]
     }
     while (i < args.size) {
@@ -52,10 +52,10 @@ internal fun parseArgs(args: Array<String>): ParsedArgs? {
                     name = token.substring(2)
                     value = null
                 }
-                if (name.isEmpty()) throw CliUsageException("空的选项")
+                if (name.isEmpty()) throw CliUsageException("empty option")
                 when (name) {
                     "yes", "y", "preview", "json", "safe-only" -> {
-                        if (value != null) throw CliUsageException("--$name 不接受值")
+                        if (value != null) throw CliUsageException("--$name does not take a value")
                         switches += name
                     }
                     "tool", "type", "older-than", "newer-than", "size-gt", "size-lt",
@@ -64,10 +64,10 @@ internal fun parseArgs(args: Array<String>): ParsedArgs? {
                         val v = value ?: takeValue("--$name")
                         flags.getOrPut(name) { mutableListOf() }.add(v)
                     }
-                    else -> throw CliUsageException("未知选项：--$name")
+                    else -> throw CliUsageException("unknown option: --$name")
                 }
             }
-            token.startsWith("-") && token != "-" -> throw CliUsageException("未知选项：$token")
+            token.startsWith("-") && token != "-" -> throw CliUsageException("unknown option: $token")
             else -> command += token
         }
     }

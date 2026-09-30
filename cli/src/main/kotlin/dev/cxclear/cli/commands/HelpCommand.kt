@@ -7,7 +7,7 @@ import dev.cxclear.cli.ParsedArgs
 
 internal object HelpCommand : Command {
     override val name = listOf("help")
-    override val description = "打印用法说明"
+    override val description = "print usage"
 
     override fun execute(args: ParsedArgs): Int {
         Cli.printJson(CliSchema.helpPayload())

@@ -18,7 +18,7 @@ import kotlinx.coroutines.runBlocking
 
 internal object DeleteFilesCommand : Command {
     override val name = listOf("delete", "files")
-    override val description = "删除匹配的文件"
+    override val description = "delete matching files"
     override val flags = FILE_FILTER_FLAGS + "targets"
     override val switches = setOf("json", "yes", "y", "preview", "safe-only")
 
@@ -101,7 +101,7 @@ internal object DeleteFilesCommand : Command {
                         "command" to "delete files",
                         "preview" to false,
                         "blocked_tools" to blocked,
-                        "error" to "检测到 ${blocked.joinToString("、")} 仍在运行",
+                        "error" to "${blocked.joinToString(", ")} is still running",
                     )
                 )
                 return@runBlocking Cli.EXIT_BLOCKED

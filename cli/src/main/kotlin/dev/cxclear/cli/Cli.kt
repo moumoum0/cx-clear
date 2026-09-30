@@ -31,10 +31,10 @@ object Cli {
             val parsed = parseArgs(args) ?: ParsedArgs(listOf("help"), emptyMap(), emptySet())
             dispatch(parsed)
         } catch (e: CliUsageException) {
-            printError(e.message ?: "参数错误")
+            printError(e.message ?: "invalid arguments")
             EXIT_USAGE
         } catch (e: Exception) {
-            printError(e.message ?: e::class.simpleName ?: "未知错误")
+            printError(e.message ?: e::class.simpleName ?: "unknown error")
             EXIT_FAIL
         }
     }
@@ -49,7 +49,7 @@ object Cli {
             command.validate(args)
             command.execute(args)
         } else {
-            printError("未知命令：${args.command.joinToString(" ").ifBlank { "(空)" }}")
+            printError("unknown command: ${args.command.joinToString(" ").ifBlank { "(empty)" }}")
             EXIT_USAGE
         }
     }
@@ -92,7 +92,7 @@ internal fun resolveTools(args: ParsedArgs): Set<String> {
     val known = ALL_PROFILES.map { it.id }.toSet()
     val ids = raw.flatMap { it.split(',') }.map { it.trim() }.filter { it.isNotEmpty() }
     val unknown = ids.filter { it !in known }
-    if (unknown.isNotEmpty()) throw CliUsageException("未知工具：${unknown.joinToString(",")}")
+    if (unknown.isNotEmpty()) throw CliUsageException("unknown tool: ${unknown.joinToString(",")}")
     return ids.toSet()
 }
 
@@ -101,14 +101,14 @@ internal fun resolveChatTools(args: ParsedArgs): Set<ChatTool> {
     if (raw.isEmpty()) return chatTools().toSet()
     val ids = raw.flatMap { it.split(',') }.map { it.trim() }.filter { it.isNotEmpty() }
     val tools = ids.map { id ->
-        chatToolById(id) ?: throw CliUsageException("未知工具：$id")
+        chatToolById(id) ?: throw CliUsageException("unknown tool: $id")
     }
     return tools.toSet()
 }
 
 internal fun readConfigJson(args: ParsedArgs): RetentionParseResult {
     val text = readInputText(args)
-    if (text.isBlank()) return RetentionParseResult.Fail(listOf("规则 JSON 为空"))
+    if (text.isBlank()) return RetentionParseResult.Fail(listOf("rule JSON is empty"))
     return RetentionJson.parse(text)
 }
 
@@ -116,7 +116,7 @@ internal fun readInputText(args: ParsedArgs): String {
     val file = args.value("file")
     return if (file != null && file != "-") {
         val path = Path.of(file)
-        if (!Files.isRegularFile(path)) throw CliUsageException("找不到文件：$file")
+        if (!Files.isRegularFile(path)) throw CliUsageException("file not found: $file")
         Files.readString(path)
     } else {
         System.`in`.readBytes().toString(StandardCharsets.UTF_8)
@@ -127,7 +127,7 @@ internal fun ruleWarnings(config: RetentionConfig): List<String> {
     val warnings = mutableListOf<String>()
     for (rule in config.rules) {
         if (rule.enabled && rule.effectiveConditions().isEmpty()) {
-            warnings += "${rule.id} 已启用但没有完整条件，不会命中任何会话"
+            warnings += "${rule.id} is enabled but has no complete condition, so it matches nothing"
         }
     }
     return warnings

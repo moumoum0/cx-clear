@@ -2,6 +2,7 @@ package dev.cxclear.cli
 
 import dev.cxclear.AppMeta
 import dev.cxclear.chats.ChatConditionType
+import dev.cxclear.chats.ConditionValueKind
 import dev.cxclear.tools.chatTools
 import dev.cxclear.model.Risk
 import dev.cxclear.tools.ALL_PROFILES
@@ -14,14 +15,31 @@ import dev.cxclear.tools.ALL_PROFILES
  * 的提示词正文是几份平行副本。改落盘格式必须同时改这几处，编译器不会拦。
  */
 internal object CliSchema {
+    private fun conditionLabel(type: ChatConditionType) = when (type) {
+        ChatConditionType.UPDATED_BEFORE_DAYS -> "not updated for more than"
+        ChatConditionType.UPDATED_WITHIN_DAYS -> "updated within"
+        ChatConditionType.SIZE_LARGER_MB -> "larger than"
+        ChatConditionType.SIZE_SMALLER_MB -> "smaller than"
+        ChatConditionType.TOOL_IS -> "tool is"
+        ChatConditionType.PROJECT_CONTAINS -> "project contains"
+        ChatConditionType.TITLE_CONTAINS -> "title contains"
+    }
+
+    private fun conditionUnit(kind: ConditionValueKind) = when (kind) {
+        ConditionValueKind.DAYS -> "days"
+        ConditionValueKind.MEGABYTES -> "MB"
+        ConditionValueKind.TOOL,
+        ConditionValueKind.TEXT -> ""
+    }
+
     fun schemaPayload(): Map<String, Any?> = mapOf(
         "name" to AppMeta.NAME,
         "version" to AppMeta.VERSION,
         "exit_codes" to mapOf(
-            "0" to "成功",
-            "1" to "执行失败",
-            "2" to "目标工具仍在运行，未删除",
-            "3" to "参数或规则校验失败",
+            "0" to "success",
+            "1" to "execution failed",
+            "2" to "target tool is still running; nothing was deleted",
+            "3" to "invalid arguments or rule validation failed",
         ),
         "tools" to ALL_PROFILES.map { it.id },
         "chat_tools" to chatTools().map { it.id },
@@ -29,9 +47,9 @@ internal object CliSchema {
         "condition_types" to ChatConditionType.entries.map {
             mapOf(
                 "id" to it.id,
-                "label" to it.label,
+                "label" to conditionLabel(it),
                 "kind" to it.kind.name.lowercase(),
-                "unit" to it.kind.unit,
+                "unit" to conditionUnit(it.kind),
             )
         },
         "commands" to ALL_COMMANDS.map { it.name.joinToString(" ") },
@@ -47,51 +65,51 @@ internal object CliSchema {
         "ok" to true,
         "usage" to ALL_COMMANDS.map { "cxclear ${it.name.joinToString(" ")} - ${it.description}" },
         "common_filters" to listOf(
-            "--tool <id>             指定工具（逗号分隔，如 cursor,codex）",
-            "--type <type>           文件类型（如 cache, logs, downloads）",
-            "--older-than <duration> 会话更新时间或文件修改时间（如 30d, 7h, 30m）",
-            "--newer-than <duration> 相反的时间范围",
-            "--size-gt <size>        会话或清理项总大小大于指定值（如 100MB, 1GB）",
-            "--size-lt <size>        小于指定大小",
-            "--keep-recent <n>       保留最近 N 条（会话专用）",
-            "--keep-days <n>         保留 N 天内的（会话专用）",
-            "--preview               预览不执行（delete / clean）",
-            "--yes                   执行删除；省略时只预览",
-            "--json                  兼容选项，所有命令始终输出 JSON",
-            "--safe-only             只包含 SAFE 风险的清理项",
+            "--tool <id>             tool ids, comma-separated (cursor,codex)",
+            "--type <type>           file type substring (cache, logs, downloads)",
+            "--older-than <duration> session update time or file mtime (30d, 7h, 30m)",
+            "--newer-than <duration> the opposite time window",
+            "--size-gt <size>        session or target total size greater than (100MB, 1GB)",
+            "--size-lt <size>        smaller than the given size",
+            "--keep-recent <n>       keep the N most recently updated chats",
+            "--keep-days <n>         keep chats updated within N days",
+            "--preview               preview only (delete / clean)",
+            "--yes                   delete; omitted means preview only",
+            "--json                  accepted for compatibility; every command prints JSON",
+            "--safe-only             include only SAFE clean targets",
         ),
         "examples" to listOf(
-            "# 查找 Cursor 30 天前的对话",
+            "# find Cursor chats older than 30 days",
             "cxclear find chats --tool cursor --older-than 30d",
             "",
-            "# 删除 90 天前的对话，但保留最近 10 条",
+            "# delete chats older than 90 days, keeping the 10 newest",
             "cxclear delete chats --older-than 90d --keep-recent 10 --preview",
             "",
-            "# 查找缓存文件",
+            "# find cache files",
             "cxclear find files --type cache",
             "",
-            "# 删除大于 1GB 的下载缓存",
+            "# delete download caches larger than 1GB",
             "cxclear delete files --type downloads --size-gt 1GB --yes",
             "",
-            "# 扫描并清理安全项",
+            "# scan and clean safe items",
             "cxclear scan --safe-only",
             "cxclear clean --safe-only --yes",
             "",
-            "# 查看状态和历史",
+            "# status and history",
             "cxclear status",
             "cxclear history --limit 20",
         ),
         "retention_policy" to listOf(
-            "自动清理策略配置文件：%USERPROFILE%\\.cxclear\\chat-retention.txt",
-            "可以用 delete chats 的筛选条件测试策略效果",
-            "按设置页提供的规则提示词直接编辑配置文件，CLI 不提供规则写入命令",
+            "Auto-clean policy file: %USERPROFILE%\\.cxclear\\chat-retention.txt",
+            "Use delete chats filters to test what a policy would match",
+            "Edit the file with the prompt from Settings; the CLI has no rule-write command",
         ),
         "notes" to listOf(
-            "删除命令无 --yes 或带 --preview 只预览，不删文件",
-            "stdout 为 JSON，人类可读的消息走 stderr",
-            "find 输出包含列表和统计（总数、总占用）",
-            "文件时间筛选只删除命中的文件，保留目录和链接；大小按时间筛选后的清理项合计计算",
-            "keep-recent 从匹配结果中保留最近 N 条，数量不足 N 时全部保留",
+            "delete and clean preview only unless --yes is set; --preview never deletes",
+            "stdout is JSON; human-readable messages go to stderr",
+            "find output includes the list plus count and total bytes",
+            "file time filters delete matching files only and keep directories and links; size is the remaining target total",
+            "keep-recent drops the N newest matches; if fewer than N match, nothing is deleted",
         ),
     )
 }

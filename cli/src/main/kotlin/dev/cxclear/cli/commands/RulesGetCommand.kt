@@ -8,7 +8,7 @@ import dev.cxclear.cli.ParsedArgs
 
 internal object RulesGetCommand : Command {
     override val name = listOf("rules", "get")
-    override val description = "读取自动清理策略"
+    override val description = "read the auto-clean policy"
 
     override fun execute(args: ParsedArgs): Int {
         Cli.printJson(mapOf("ok" to true, "config" to RetentionJson.toMap(RetentionStore.read())))

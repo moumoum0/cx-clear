@@ -7,7 +7,7 @@ import dev.cxclear.cli.ParsedArgs
 
 internal object SchemaCommand : Command {
     override val name = listOf("schema")
-    override val description = "打印机器可读的命令与字段说明"
+    override val description = "print the machine-readable command schema"
 
     override fun execute(args: ParsedArgs): Int {
         Cli.printJson(CliSchema.schemaPayload())

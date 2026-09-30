@@ -9,13 +9,13 @@ import dev.cxclear.util.formatBytes
 
 internal object HistoryCommand : Command {
     override val name = listOf("history")
-    override val description = "查看清理历史"
+    override val description = "show clean history"
     override val flags = setOf("limit")
 
     override fun execute(args: ParsedArgs): Int {
         val limit = args.value("limit")?.let {
             it.toIntOrNull()?.takeIf { value -> value >= 0 }
-                ?: throw CliUsageException("--limit 必须是非负整数")
+                ?: throw CliUsageException("--limit must be a non-negative integer")
         } ?: 10
         val records = CleanHistory.readAll().takeLast(limit)
         Cli.printJson(

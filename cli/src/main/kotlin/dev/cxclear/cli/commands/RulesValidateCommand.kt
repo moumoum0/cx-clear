@@ -10,7 +10,7 @@ import dev.cxclear.cli.ruleWarnings
 
 internal object RulesValidateCommand : Command {
     override val name = listOf("rules", "validate")
-    override val description = "校验策略 JSON，不写入"
+    override val description = "validate policy JSON without writing it"
     override val flags = setOf("file")
 
     override fun execute(args: ParsedArgs): Int {

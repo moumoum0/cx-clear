@@ -12,7 +12,7 @@ import kotlinx.coroutines.runBlocking
 
 internal object StatusCommand : Command {
     override val name = listOf("status")
-    override val description = "查看各工具占用与对话数量"
+    override val description = "show tool disk usage and chat counts"
     override val flags = setOf("tool")
 
     override fun execute(args: ParsedArgs): Int {

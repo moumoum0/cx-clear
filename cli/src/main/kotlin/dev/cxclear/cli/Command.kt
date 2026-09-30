@@ -23,7 +23,7 @@ internal interface Command {
     fun validate(args: ParsedArgs) {
         val unsupported = (args.flags.keys - flags) + (args.switches - switches)
         if (unsupported.isNotEmpty()) {
-            throw CliUsageException("${name.joinToString(" ")} 不支持 --${unsupported.first()}")
+            throw CliUsageException("${name.joinToString(" ")} does not support --${unsupported.first()}")
         }
     }
 }

@@ -14,7 +14,7 @@ import kotlinx.coroutines.runBlocking
 
 internal object DeleteChatsCommand : Command {
     override val name = listOf("delete", "chats")
-    override val description = "删除匹配的对话"
+    override val description = "delete matching chats"
     override val flags = CHAT_FILTER_FLAGS
     override val switches = setOf("json", "yes", "y", "preview")
 

@@ -15,7 +15,7 @@ import kotlinx.coroutines.runBlocking
 
 internal object ScanCommand : Command {
     override val name = listOf("scan")
-    override val description = "扫描各工具占用与可清理项"
+    override val description = "scan tool disk usage and clean targets"
     override val flags = FILE_FILTER_FLAGS
     override val switches = setOf("json", "safe-only")
 

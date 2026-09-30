@@ -12,7 +12,7 @@ import dev.cxclear.cli.sessionJson
 
 internal object FindChatsCommand : Command {
     override val name = listOf("find", "chats")
-    override val description = "查找对话记录"
+    override val description = "find chat sessions"
     override val flags = CHAT_FILTER_FLAGS
 
     override fun execute(args: ParsedArgs): Int {
