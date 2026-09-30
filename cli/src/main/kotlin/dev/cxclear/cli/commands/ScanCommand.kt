@@ -2,6 +2,8 @@ package dev.cxclear.cli.commands
 
 import dev.cxclear.cli.Cli
 import dev.cxclear.cli.Command
+import dev.cxclear.cli.FILE_FILTER_FLAGS
+import dev.cxclear.cli.parseFileFilters
 import dev.cxclear.cli.ParsedArgs
 import dev.cxclear.cli.profileAndTarget
 import dev.cxclear.cli.resolveTools
@@ -14,13 +16,14 @@ import kotlinx.coroutines.runBlocking
 internal object ScanCommand : Command {
     override val name = listOf("scan")
     override val description = "扫描各工具占用与可清理项"
-    override val flags = setOf("tool")
+    override val flags = FILE_FILTER_FLAGS
     override val switches = setOf("json", "safe-only")
 
     override fun execute(args: ParsedArgs): Int {
         val tools = resolveTools(args)
+        val filters = parseFileFilters(args)
         val snapshot = runBlocking { scanOnce(tools) }
-        var results = snapshot.results.filter { it.exists && it.bytes > 0L }
+        var results = filters.apply(snapshot.results, System.currentTimeMillis())
 
         if (args.safeOnly) {
             results = results.filter {

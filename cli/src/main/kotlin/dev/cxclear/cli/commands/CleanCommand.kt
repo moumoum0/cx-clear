@@ -4,6 +4,8 @@ import dev.cxclear.clean.CleanRequest
 import dev.cxclear.clean.clean
 import dev.cxclear.cli.Cli
 import dev.cxclear.cli.Command
+import dev.cxclear.cli.FILE_FILTER_FLAGS
+import dev.cxclear.cli.parseFileFilters
 import dev.cxclear.cli.ParsedArgs
 import dev.cxclear.cli.profileAndTarget
 import dev.cxclear.cli.resolveTools
@@ -17,15 +19,16 @@ import kotlinx.coroutines.runBlocking
 internal object CleanCommand : Command {
     override val name = listOf("clean")
     override val description = "按默认勾选或指定项清理"
-    override val flags = setOf("tool", "targets")
+    override val flags = FILE_FILTER_FLAGS + "targets"
     override val switches = setOf("json", "yes", "y", "preview", "safe-only")
 
     override fun execute(args: ParsedArgs): Int {
         val tools = resolveTools(args)
+        val filters = parseFileFilters(args)
         val targetIds = args.value("targets")?.split(',')?.map { it.trim() }?.filter { it.isNotEmpty() }
         val snapshot = runBlocking { scanOnce(tools) }
 
-        val selected = snapshot.results.filter { result ->
+        val selected = filters.apply(snapshot.results, System.currentTimeMillis()).filter { result ->
             if (!result.exists || result.bytes <= 0L || result.deletionPlan == null) return@filter false
             val (_, target) = profileAndTarget(result.toolId, result.targetId)
 

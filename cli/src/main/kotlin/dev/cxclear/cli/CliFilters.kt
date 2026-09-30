@@ -1,6 +1,8 @@
 package dev.cxclear.cli
 
 import dev.cxclear.model.ChatSessionSummary
+import dev.cxclear.model.ScanResult
+import dev.cxclear.model.PathSnapshotKind
 import java.math.BigDecimal
 
 /**
@@ -50,10 +52,14 @@ internal data class ChatFilters(
     val newerThan: Long? = null,
     val keepRecent: Int? = null,
     val keepDays: Int? = null,
+    val sizeGt: Long? = null,
+    val sizeLt: Long? = null,
 )
 
 internal fun ChatFilters.apply(sessions: List<ChatSessionSummary>, nowMillis: Long): List<ChatSessionSummary> {
     var result = sessions
+    if (sizeGt != null) result = result.filter { it.sizeBytes > sizeGt }
+    if (sizeLt != null) result = result.filter { it.sizeBytes < sizeLt }
     
     // 时间筛选
     if (olderThan != null) {
@@ -67,12 +73,12 @@ internal fun ChatFilters.apply(sessions: List<ChatSessionSummary>, nowMillis: Lo
     
     // keep-days：保留 N 天内的（从筛选结果中排除）
     if (keepDays != null) {
-        val keepThreshold = nowMillis - keepDays * 24 * 3600 * 1000L
+        val keepThreshold = nowMillis - keepDays * 24L * 3600 * 1000
         result = result.filter { it.updatedMillis < keepThreshold }
     }
     
     // keep-recent：保留最近 N 条（从筛选结果中排除）
-    if (keepRecent != null && result.size > keepRecent) {
+    if (keepRecent != null && keepRecent > 0) {
         val sorted = result.sortedByDescending { it.updatedMillis }
         result = sorted.drop(keepRecent)
     }
@@ -94,5 +100,48 @@ internal fun parseChatFilters(args: ParsedArgs): ChatFilters {
         newerThan = args.value("newer-than")?.let { parseDuration(it) },
         keepRecent = keepRecent,
         keepDays = keepDays,
+        sizeGt = args.value("size-gt")?.let { parseSize(it) },
+        sizeLt = args.value("size-lt")?.let { parseSize(it) },
     )
 }
+
+internal val FILE_FILTER_FLAGS = setOf("tool", "type", "older-than", "newer-than", "size-gt", "size-lt")
+internal val CHAT_FILTER_FLAGS = setOf("tool", "older-than", "newer-than", "size-gt", "size-lt", "keep-recent", "keep-days")
+
+internal data class FileFilters(
+    val type: String? = null,
+    val olderThan: Long? = null,
+    val newerThan: Long? = null,
+    val sizeGt: Long? = null,
+    val sizeLt: Long? = null,
+) {
+    fun apply(results: List<ScanResult>, nowMillis: Long): List<ScanResult> = results.mapNotNull { original ->
+        if (type != null && !original.targetId.contains(type, ignoreCase = true)) return@mapNotNull null
+        var result = original
+        if (olderThan != null || newerThan != null) {
+            val plan = original.deletionPlan ?: return@mapNotNull null
+            // A directory's mtime does not describe its descendants. Keep directories intact.
+            val entries = plan.entries.filter {
+                it.kind == PathSnapshotKind.FILE &&
+                    (olderThan == null || it.lastModifiedMillis < nowMillis - olderThan) &&
+                    (newerThan == null || it.lastModifiedMillis >= nowMillis - newerThan)
+            }
+            result = original.copy(
+                bytes = entries.sumOf { it.size }, fileCount = entries.size,
+                exists = entries.isNotEmpty(), deletionPlan = plan.copy(entries = entries),
+            )
+        }
+        result.takeIf {
+            it.exists && it.bytes > 0L &&
+                (sizeGt == null || it.bytes > sizeGt) && (sizeLt == null || it.bytes < sizeLt)
+        }
+    }
+}
+
+internal fun parseFileFilters(args: ParsedArgs) = FileFilters(
+    type = args.value("type"),
+    olderThan = args.value("older-than")?.let { parseDuration(it) },
+    newerThan = args.value("newer-than")?.let { parseDuration(it) },
+    sizeGt = args.value("size-gt")?.let { parseSize(it) },
+    sizeLt = args.value("size-lt")?.let { parseSize(it) },
+)

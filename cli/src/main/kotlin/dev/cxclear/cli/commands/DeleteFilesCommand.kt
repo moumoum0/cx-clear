@@ -6,7 +6,8 @@ import dev.cxclear.cli.Cli
 import dev.cxclear.cli.Command
 import dev.cxclear.cli.ParsedArgs
 import dev.cxclear.cli.isSafeTarget
-import dev.cxclear.cli.parseSize
+import dev.cxclear.cli.parseFileFilters
+import dev.cxclear.cli.FILE_FILTER_FLAGS
 import dev.cxclear.cli.profileAndTarget
 import dev.cxclear.cli.resolveTools
 import dev.cxclear.cli.scanOnce
@@ -18,18 +19,16 @@ import kotlinx.coroutines.runBlocking
 internal object DeleteFilesCommand : Command {
     override val name = listOf("delete", "files")
     override val description = "删除匹配的文件"
-    override val flags = setOf("tool", "type", "size-gt", "size-lt", "targets")
+    override val flags = FILE_FILTER_FLAGS + "targets"
     override val switches = setOf("json", "yes", "y", "preview", "safe-only")
 
     override fun execute(args: ParsedArgs): Int {
         val tools = resolveTools(args)
-        val typeFilter = args.value("type")
-        val sizeGt = args.value("size-gt")?.let { parseSize(it) }
-        val sizeLt = args.value("size-lt")?.let { parseSize(it) }
+        val filters = parseFileFilters(args)
         val targetIds = args.value("targets")?.split(',')?.map { it.trim() }?.filter { it.isNotEmpty() }
 
         val snapshot = runBlocking { scanOnce(tools) }
-        var results = snapshot.results.filter { it.exists && it.bytes > 0L && it.deletionPlan != null }
+        var results = filters.apply(snapshot.results, System.currentTimeMillis()).filter { it.deletionPlan != null }
 
         if (args.safeOnly) results = results.filter(::isSafeTarget)
 
@@ -37,16 +36,6 @@ internal object DeleteFilesCommand : Command {
             results = results.filter { it.targetId in targetIds }
         }
 
-        if (typeFilter != null) {
-            results = results.filter { it.targetId.contains(typeFilter, ignoreCase = true) }
-        }
-
-        if (sizeGt != null) {
-            results = results.filter { it.bytes > sizeGt }
-        }
-        if (sizeLt != null) {
-            results = results.filter { it.bytes < sizeLt }
-        }
 
         val requests = results.mapNotNull { result ->
             val (profile, target) = profileAndTarget(result.toolId, result.targetId)

@@ -24,6 +24,11 @@ class CliArgsTest {
     }
 
     @Test
+    fun `cli does not expose rule writes`() {
+        assertEquals(Cli.EXIT_USAGE, Cli.run(arrayOf("rules", "put", "--yes")))
+    }
+
+    @Test
     fun `parses nested command flags and yes`() {
         val parsed = parseArgs(arrayOf("delete", "chats", "--tool", "cursor", "--tool=claude", "--yes"))!!
         assertEquals(listOf("delete", "chats"), parsed.command)
@@ -53,8 +58,8 @@ class CliArgsTest {
 
     @Test
     fun `destructive commands reject ignored filters`() {
-        assertEquals(Cli.EXIT_USAGE, Cli.run(arrayOf("delete", "files", "--older-than", "7d", "--yes")))
-        assertEquals(Cli.EXIT_USAGE, Cli.run(arrayOf("delete", "chats", "--size-gt", "1GB", "--yes")))
+        assertEquals(Cli.EXIT_USAGE, Cli.run(arrayOf("delete", "files", "--keep-recent", "7", "--yes")))
+        assertEquals(Cli.EXIT_USAGE, Cli.run(arrayOf("delete", "chats", "--type", "cache", "--yes")))
     }
 
     @Test

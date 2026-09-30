@@ -8,7 +8,6 @@ import dev.cxclear.cli.commands.FindFilesCommand
 import dev.cxclear.cli.commands.HelpCommand
 import dev.cxclear.cli.commands.HistoryCommand
 import dev.cxclear.cli.commands.RulesGetCommand
-import dev.cxclear.cli.commands.RulesPutCommand
 import dev.cxclear.cli.commands.RulesValidateCommand
 import dev.cxclear.cli.commands.ScanCommand
 import dev.cxclear.cli.commands.SchemaCommand
@@ -42,5 +41,4 @@ internal val ALL_COMMANDS: List<Command> = listOf(
     HistoryCommand,
     RulesGetCommand,
     RulesValidateCommand,
-    RulesPutCommand,
 )

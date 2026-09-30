@@ -4,6 +4,7 @@ import dev.cxclear.chats.deleteSessions
 import dev.cxclear.chats.scanAllChatSessions
 import dev.cxclear.cli.Cli
 import dev.cxclear.cli.Command
+import dev.cxclear.cli.CHAT_FILTER_FLAGS
 import dev.cxclear.cli.apply
 import dev.cxclear.cli.ParsedArgs
 import dev.cxclear.cli.parseChatFilters
@@ -14,7 +15,7 @@ import kotlinx.coroutines.runBlocking
 internal object DeleteChatsCommand : Command {
     override val name = listOf("delete", "chats")
     override val description = "删除匹配的对话"
-    override val flags = setOf("tool", "older-than", "newer-than", "keep-recent", "keep-days")
+    override val flags = CHAT_FILTER_FLAGS
     override val switches = setOf("json", "yes", "y", "preview")
 
     override fun execute(args: ParsedArgs): Int {

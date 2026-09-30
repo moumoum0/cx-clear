@@ -45,7 +45,8 @@ cxclear history [筛选条件]           # 显示清理历史
 
 ### 通用筛选参数
 
-所有 `find` / `delete` / `scan` / `clean` 命令都支持这些参数。
+`--tool`、时间和大小筛选在 `find` / `delete` / `scan` / `clean` 中互通。
+`--type` 适用于文件命令（包括 `scan` / `clean`），会话保留参数只适用于 `chats`。
 
 #### `--tool <id>`
 指定工具，多个用逗号分隔。
@@ -61,7 +62,7 @@ cxclear delete files --tool cursor,codex
 ---
 
 #### `--type <type>`
-文件类型关键字（只对 `files` 目标有效）。
+文件类型关键字（适用于 `find files` / `delete files` / `scan` / `clean`）。
 
 匹配 `CleanTarget.id` 包含该关键字的清理项。例如 `--type cache` 会匹配 `codex_cache`、`cursor_cache_runtimes` 等。
 
@@ -76,9 +77,11 @@ cxclear delete files --type downloads
 ---
 
 #### `--older-than <duration>`
-只匹配早于指定时间的会话（使用 `updatedMillis`）。文件扫描结果不提供修改时间，文件命令会拒绝此选项。
+只匹配早于指定时间的会话（使用 `updatedMillis`）或文件（使用扫描快照的修改时间）。
 
-**格式**：数字 + 单位（`d` 天 / `h` 小时 / `m` 分钟）
+文件时间筛选逐文件作用于冻结的删除计划，不以目录修改时间判断整个目录；未命中的文件、目录和链接均保留。
+
+**格式**：数字 + 单位（`d` 天 / `h` 小时 / `m` 分钟 / `s` 秒）
 
 **示例**：
 ```bash
@@ -99,9 +102,9 @@ cxclear find chats --newer-than 7d       # 最近 7 天的对话
 ---
 
 #### `--size-gt <size>`
-只匹配大于指定大小的目标。
+只匹配大于指定大小的目标。会话按每条会话的总大小筛选；文件命令按每个清理项的总大小筛选，并非按单个文件大小。若同时指定时间范围，先筛选文件时间，再按命中文件的合计大小筛选清理项。
 
-**格式**：数字 + 单位（`KB` / `MB` / `GB`）
+**格式**：数字 + 单位（`B` / `KB` / `MB` / `GB` / `TB`），支持小数；省略单位时按字节计算。
 
 **示例**：
 ```bash
@@ -126,7 +129,7 @@ cxclear find files --size-lt 10MB        # 小于 10MB 的文件
 只对 `chats` 目标有效。这些参数在匹配后再排除一部分结果，用于"删除旧对话但保留最近的"场景。
 
 #### `--keep-recent <n>`
-从匹配结果中排除最近的 N 条会话。
+从匹配结果中排除最近的 N 条会话。匹配数量小于或等于 N 时全部保留；N 为 0 时不保留。保留数量在所选工具的匹配结果中合并计算。
 
 **示例**：
 ```bash
@@ -150,7 +153,7 @@ cxclear delete chats --keep-days 7 --preview
 ### 执行控制参数
 
 #### `--preview`
-只显示删除计划，不实际删除（只对 `delete` / `clean` 有效）。
+只显示计划，不实际删除（适用于 `delete` / `clean`）。
 
 **示例**：
 ```bash
@@ -160,7 +163,7 @@ cxclear delete chats --older-than 30d --preview
 ---
 
 #### `--yes`
-跳过确认直接执行（默认删除前会要求确认）。
+执行删除。默认只返回预览，不等待交互确认；同时指定 `--preview` 时仍只预览。
 
 **示例**：
 ```bash
@@ -171,7 +174,7 @@ cxclear delete chats --older-than 90d --yes
 ---
 
 #### `--json`
-输出 JSON 格式（默认是人类可读的表格）。
+兼容选项。所有命令始终输出 JSON，不带此参数时输出格式相同。
 
 **示例**：
 ```bash
@@ -183,7 +186,7 @@ cxclear find chats --older-than 30d --json
 ### 特定命令的参数
 
 #### `--safe-only`
-只包含 `Risk.SAFE` 的清理项（`scan` / `clean` 专用）。
+只包含 `Risk.SAFE` 的清理项（适用于 `find files` / `delete files` / `scan` / `clean`）。
 
 **示例**：
 ```bash
@@ -194,7 +197,7 @@ cxclear clean --safe-only --yes
 ---
 
 #### `--targets <id,id>`
-精确指定清理项 ID（`clean` 专用）。
+精确指定清理项 ID（适用于 `clean` / `delete files`）。
 
 **示例**：
 ```bash
@@ -282,10 +285,16 @@ cxclear delete files --tool cursor --type downloads --size-gt 500MB --yes
 
 1. **参数尽量互通**：同一个筛选条件在 `find` / `delete` / `scan` / `clean` 里都能用，AI 可以无缝切换命令而不改参数。
 
-2. **默认安全**：删除命令默认要确认（除非 `--yes`），`--preview` 只显示计划不执行。
+2. **默认安全**：删除命令默认只返回预览，只有显式指定 `--yes` 才执行；`--preview` 始终只显示计划。
 
 3. **输出分离**：JSON 结果走 `stdout`，人类消息（进度、警告）走 `stderr`，方便 AI 解析。
 
 4. **无状态**：每次调用都是独立的，不依赖上次扫描结果（`clean` 内部会自动重新扫描）。
 
 5. **复用 GUI 逻辑**：`find` / `delete` 复用 `Scanner` / `Cleaner` / `ChatDeleter`，不重复实现路径展开和删除校验。
+
+## 自动清理策略
+
+AI 按设置页提供的规则提示词直接修改 `%USERPROFILE%\.cxclear\chat-retention.txt`，新建规则默认关闭，在 GUI 中核对后启用。CLI 不提供规则写入命令。
+
+`rules get` 读取现有配置并输出 JSON；`rules validate --file <path>` 校验规则 JSON，也可从标准输入读取，不修改配置。JSON 是读取和校验接口的格式，不是配置文件的落盘格式。
