@@ -54,6 +54,19 @@ static std::wstring find_java(const std::wstring& home) {
     return L"";
 }
 
+// GUI 包的启动器在 cli/，jar 和 runtime 在上一级；独立包就在当前目录
+static std::wstring app_home() {
+    const std::wstring dir = module_dir();
+    if (is_dir(dir + L"\\app") || is_dir(dir + L"\\lib") || is_dir(dir + L"\\runtime")) {
+        return dir;
+    }
+    const std::wstring parent = parent_dir(dir);
+    if (is_dir(parent + L"\\app") || is_dir(parent + L"\\lib") || is_dir(parent + L"\\runtime")) {
+        return parent;
+    }
+    return dir;
+}
+
 // 安装包里 jar 在 app/；installDist 里 jar 在 lib/
 static std::wstring classpath_dir(const std::wstring& home) {
     const std::wstring app = home + L"\\app";
@@ -106,7 +119,7 @@ static void fail(const wchar_t* message) {
 }
 
 int wmain(int argc, wchar_t** argv) {
-    const std::wstring home = module_dir();
+    const std::wstring home = app_home();
     const std::wstring java = find_java(home);
     if (java.empty()) {
         fail(L"找不到 Java 21。请安装 JDK 21 并设置 JAVA_HOME，或使用带 Java 的安装包。");

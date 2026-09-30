@@ -73,7 +73,7 @@ tasks.register("packageCli") {
         val zip = File(output, "CXClear-${version}-cli.zip")
         ZipOutputStream(zip.outputStream().buffered()).use { stream ->
             dist.walkTopDown().filter { it.isFile }.forEach { file ->
-                val name = "cxclear/${file.relativeTo(dist).path.replace(File.separatorChar, '/')}"
+                val name = file.relativeTo(dist).path.replace(File.separatorChar, '/')
                 stream.putNextEntry(ZipEntry(name))
                 file.inputStream().use { it.copyTo(stream) }
                 stream.closeEntry()

@@ -199,9 +199,12 @@ fun prepareWindowsImage(includeJre: Boolean, launcher: File, cliLauncher: File):
         if (!includeJre) {
             from(launcher)
         }
-        from(cliLauncher)
         from(rootProject.file("packaging/app_icon.ico"))
         into(dest)
+    }
+    copy {
+        from(cliLauncher)
+        into(File(dest, "cli"))
     }
     if (includeJre) {
         val javaExe = javaToolchains.launcherFor {

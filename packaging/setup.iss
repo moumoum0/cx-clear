@@ -121,24 +121,28 @@ end;
 procedure CurStepChanged(CurStep: TSetupStep);
 var
   PathValue: string;
-  AppPath: string;
+  CliPath: string;
 begin
   if (CurStep <> ssPostInstall) or (not WizardIsTaskSelected('addtopath')) then Exit;
-  AppPath := ExpandConstant('{app}');
+  CliPath := ExpandConstant('{app}\cli');
   if not RegQueryStringValue(HKCU, 'Environment', 'Path', PathValue) then PathValue := '';
-  if HasPathEntry(PathValue, AppPath) then Exit;
+  if HasPathEntry(PathValue, CliPath) then Exit;
   if PathValue <> '' then PathValue := PathValue + ';';
-  RegWriteExpandStringValue(HKCU, 'Environment', 'Path', PathValue + AppPath);
+  RegWriteExpandStringValue(HKCU, 'Environment', 'Path', PathValue + CliPath);
 end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
   PathValue: string;
   AppPath: string;
+  CliPath: string;
+  NextPath: string;
 begin
   if CurUninstallStep <> usPostUninstall then Exit;
   AppPath := ExpandConstant('{app}');
+  CliPath := AppPath + '\cli';
   if not RegQueryStringValue(HKCU, 'Environment', 'Path', PathValue) then Exit;
-  if HasPathEntry(PathValue, AppPath) then
-    RegWriteExpandStringValue(HKCU, 'Environment', 'Path', WithoutPathEntry(PathValue, AppPath));
+  NextPath := WithoutPathEntry(WithoutPathEntry(PathValue, CliPath), AppPath);
+  if NextPath <> PathValue then
+    RegWriteExpandStringValue(HKCU, 'Environment', 'Path', NextPath);
 end;
