@@ -23,7 +23,7 @@ data class AppPrefs(
     val autoCleanNotify: Boolean = true,
     // 亮 / 暗 / 跟随系统。
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
-    // 配色：应用默认 / 云野。
+    // 配色方案。
     val colorScheme: AppColorScheme = AppColorScheme.APP_DEFAULT,
 )
 

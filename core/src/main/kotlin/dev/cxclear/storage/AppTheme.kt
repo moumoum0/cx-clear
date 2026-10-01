@@ -11,5 +11,6 @@ enum class AppColorScheme(
     val description: String,
 ) {
     APP_DEFAULT("应用默认", "使用应用默认配色方案"),
-    CLOUD_FIELD("云野", "云野 - 自然清新的绿色主题"),
+    CLOUD_FIELD("云野", "自然清新的绿色主题"),
+    GLAZED_GOLD("琉璃金", "暖白配色"),
 }

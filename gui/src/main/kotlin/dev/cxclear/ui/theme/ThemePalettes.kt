@@ -2,7 +2,7 @@ package dev.cxclear.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-/** 四套 M3 色板数据：默认 / 云野 各一套浅色与深色。 */
+/** 每个配色方案各有一套浅色与深色 M3 色板。 */
 // 默认配色
 val M3DefaultLight = M3Tokens(
     primary = Color(0xFF475D92),

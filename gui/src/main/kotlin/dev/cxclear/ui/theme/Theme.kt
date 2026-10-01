@@ -26,6 +26,7 @@ val AppColors: AppColorTokens
 private fun resolveM3Tokens(scheme: AppColorScheme, dark: Boolean): M3Tokens = when (scheme) {
     AppColorScheme.APP_DEFAULT -> if (dark) M3DefaultDark else M3DefaultLight
     AppColorScheme.CLOUD_FIELD -> if (dark) M3CloudFieldDark else M3CloudFieldLight
+    AppColorScheme.GLAZED_GOLD -> if (dark) M3GlazedGoldDark else M3GlazedGoldLight
 }
 
 // 35 个具名参数与 M3Tokens 的 35 个字段逐一硬对应，与 ThemeTokens.kt 保持同步
@@ -122,7 +123,12 @@ fun AppTheme(
 ) {
     val dark = shouldUseDarkTheme(themeMode)
     val tokens = resolveM3Tokens(colorScheme, dark)
-    CompositionLocalProvider(LocalAppColors provides appColorTokensOf(tokens)) {
+    val appColors = if (colorScheme == AppColorScheme.GLAZED_GOLD) {
+        if (dark) GlazedGoldDarkAppColors else GlazedGoldLightAppColors
+    } else {
+        appColorTokensOf(tokens)
+    }
+    CompositionLocalProvider(LocalAppColors provides appColors) {
         MaterialTheme(
             colorScheme = tokens.toMaterialColorScheme(dark),
             content = content,
