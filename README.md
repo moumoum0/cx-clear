@@ -48,7 +48,6 @@
 
 命令行下载脚本
 
-```powershell
 irm https://raw.githubusercontent.com/moumoum0/cx-clear/main/install.ps1 | iex
 
 ## 贡献

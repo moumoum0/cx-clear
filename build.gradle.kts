@@ -5,7 +5,7 @@ plugins {
 }
 
 group = "dev.cxclear"
-version = "1.2.1"
+version = "1.3.0"
 
 apply(from = "packaging/windows-native-jars.gradle.kts")
 
