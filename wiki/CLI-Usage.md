@@ -7,7 +7,7 @@
 需要 Node.js 22 或以上：
 
 ```powershell
-npm install -g cxclear
+npm install -g @moumoum/cxclear
 cxclear --version
 ```
 

@@ -30,7 +30,7 @@ function run(args, { input, expected = 0, executable = process.execPath, shell =
 const npmArgs = ['--cache', resolve('build', 'npm-smoke', 'npm-cache'), '--no-audit', '--no-fund'];
 const prefix = join(root, 'global');
 run([npmCli, ...npmArgs, 'install', '--global', '--prefix', prefix, '--foreground-scripts', tarball]);
-const installed = join(prefix, 'node_modules', 'cxclear');
+const installed = join(prefix, 'node_modules', '@moumoum', 'cxclear');
 const manifest = JSON.parse(await readFile(join(installed, 'package.json'), 'utf8'));
 const source = JSON.parse(await readFile(join(installed, 'source.json'), 'utf8'));
 assert.equal(manifest.version, source.version);
@@ -65,7 +65,7 @@ assert.equal(JSON.parse(run(['/d', '/c', 'call', asciiCommandShim, 'schema'], { 
 // A skipped postinstall must invoke the same Java installer on first launch.
 const skippedPrefix = join(root, 'ignored scripts');
 run([npmCli, ...npmArgs, 'install', '--global', '--prefix', skippedPrefix, '--ignore-scripts', tarball]);
-const skipped = join(skippedPrefix, 'node_modules', 'cxclear');
+const skipped = join(skippedPrefix, 'node_modules', '@moumoum', 'cxclear');
 const skippedKey = createHash('sha256').update(skipped).digest('hex');
 const skippedRecord = join(env.CXCLEAR_RUNTIME_DIR, 'installs', `${skippedKey}.json`);
 await assert.rejects(access(skippedRecord));

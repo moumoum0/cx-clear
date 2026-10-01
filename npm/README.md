@@ -10,7 +10,7 @@
 ## 安装
 
 ```powershell
-npm install -g cxclear
+npm install -g @moumoum/cxclear
 cxclear --version
 ```
 

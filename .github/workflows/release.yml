@@ -97,13 +97,13 @@ jobs:
 
       - name: Verify npm installation and automatic Java download
         shell: pwsh
-        run: node npm/test/install-smoke.mjs "cli/build/distributions/cxclear-$env:APP_VERSION.tgz" --download-java
+        run: node npm/test/install-smoke.mjs "cli/build/distributions/moumoum-cxclear-$env:APP_VERSION.tgz" --download-java
 
       - name: Save verified npm package
         uses: actions/upload-artifact@v4
         with:
           name: npm-cli
-          path: cli/build/distributions/cxclear-${{ env.APP_VERSION }}.tgz
+          path: cli/build/distributions/moumoum-cxclear-${{ env.APP_VERSION }}.tgz
           if-no-files-found: error
 
       - name: Build Inno Setup installer
@@ -117,7 +117,7 @@ jobs:
           body_path: release-notes.md
           files: |
             cli/build/distributions/CXClear-${{ env.APP_VERSION }}-cli.zip
-            cli/build/distributions/cxclear-${{ env.APP_VERSION }}.tgz
+            cli/build/distributions/moumoum-cxclear-${{ env.APP_VERSION }}.tgz
             gui/build/compose/binaries/main/dist/CXClear-${{ env.APP_VERSION }}-setup.exe
             gui/build/compose/binaries/main/dist/CXClear-${{ env.APP_VERSION }}-setup-no-jre.exe
             gui/build/compose/binaries/main/dist/CXClear-${{ env.APP_VERSION }}-portable.zip
@@ -151,7 +151,7 @@ jobs:
       - name: Publish with trusted publishing
         shell: pwsh
         run: |
-          $package = @(Get-ChildItem npm-artifact -Filter 'cxclear-*.tgz')
+          $package = @(Get-ChildItem npm-artifact -Filter 'moumoum-cxclear-*.tgz')
           if ($package.Count -ne 1) { throw 'Expected one verified npm package' }
-          $tag = if ($package[0].BaseName -match '^cxclear-\d+\.\d+\.\d+-') { 'next' } else { 'latest' }
+          $tag = if ($package[0].BaseName -match '^moumoum-cxclear-\d+\.\d+\.\d+-') { 'next' } else { 'latest' }
           npm publish $package[0].FullName --access public --provenance --tag $tag

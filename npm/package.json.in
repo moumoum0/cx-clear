@@ -1,5 +1,5 @@
 {
-  "name": "cxclear",
+  "name": "@moumoum/cxclear",
   "description": "Windows CLI for cleaning local AI coding tool caches and chat history",
   "license": "GPL-3.0-only",
   "author": "moumoum",

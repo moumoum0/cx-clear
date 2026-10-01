@@ -8,7 +8,7 @@
 
 ### 新增
 
-- 命令行提供NPM安装 `npm install -g cxclear`。
+- 命令行提供 NPM 安装 `npm install -g @moumoum/cxclear`。
 
 ## v1.3.0
 
