@@ -7,6 +7,8 @@ plugins {
 group = "dev.cxclear"
 version = "1.2.1"
 
+apply(from = "packaging/windows-native-jars.gradle.kts")
+
 // 入口已经拆到 :gui / :cli。kt run 按任务名会匹配所有子模块的 run，
 // 根项目不再自己起进程，只把这次运行转给 GUI。
 tasks.register("run") {

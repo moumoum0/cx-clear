@@ -222,6 +222,9 @@ fun prepareWindowsImage(includeJre: Boolean, launcher: File, cliLauncher: File):
         from(cliJar)
         into(File(dest, "app"))
     }
+    @Suppress("UNCHECKED_CAST")
+    val trimNativeJars = rootProject.extra["trimWindowsNativeJars"] as (File) -> Unit
+    trimNativeJars(File(dest, "app"))
     return dest
 }
 

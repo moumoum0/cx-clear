@@ -55,11 +55,30 @@ val compileCliLauncher = tasks.register("compileCliLauncher") {
 
 tasks.named<Sync>("installDist") {
     dependsOn(tasks.jar, compileCliLauncher)
+    inputs.file(rootProject.file("packaging/windows-native-jars.gradle.kts"))
     from(launcher)
     doFirst {
         val expected = layout.buildDirectory.dir("install/cxclear").get().asFile.canonicalFile
         check(destinationDir.canonicalFile == expected) { "拒绝清理非默认安装目录：$destinationDir" }
         check(expected.deleteRecursively()) { "无法更新 CLI 构建目录：$expected" }
+    }
+    doLast {
+        @Suppress("UNCHECKED_CAST")
+        val trimNativeJars = rootProject.extra["trimWindowsNativeJars"] as (File) -> Unit
+        trimNativeJars(File(destinationDir, "lib"))
+    }
+}
+
+tasks.register<JavaExec>("verifyWindowsNativeJars") {
+    group = "verification"
+    description = "Verify SQLite, concatenated Zstd frames and Windows DPI using trimmed distribution JARs"
+    dependsOn("installDist")
+    javaLauncher.set(javaToolchains.launcherFor {
+        languageVersion.set(JavaLanguageVersion.of(21))
+    })
+    mainClass.set(rootProject.file("packaging/NativeLibrariesSmokeTest.java").absolutePath)
+    classpath = fileTree(layout.buildDirectory.dir("install/cxclear/lib")) {
+        include("*.jar")
     }
 }
 

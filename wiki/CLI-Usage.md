@@ -2,6 +2,22 @@
 
 命令行工具为 AI 和脚本提供 JSON 接口，输出走 `stdout`，消息走 `stderr`。
 
+## 安装
+
+Windows 下一行命令安装到 `%LOCALAPPDATA%\cxclear`，并写入用户 PATH：
+
+```powershell
+irm https://raw.githubusercontent.com/moumoum0/cx-clear/main/install.ps1 | iex
+```
+
+没有可用的 Java 21 时会询问是否下载 [Eclipse Temurin 21 JRE](https://adoptium.net/)，确认后放到安装目录的 `runtime`，不改已有的 `JAVA_HOME`。拒绝则只装好 CLI，此时 `cxclear` 起不来。
+
+静默安装不问，缺 Java 21 就直接下载：
+
+```powershell
+$env:CXCLEAR_SILENT = '1'; irm https://raw.githubusercontent.com/moumoum0/cx-clear/main/install.ps1 | iex
+```
+
 ## 设计理念
 
 - **查询→统计→删除**：先 `find` 看匹配什么，再 `delete --preview` 确认计划，最后 `--yes` 执行

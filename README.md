@@ -46,6 +46,11 @@
 
 从 [GitHub Releases](https://github.com/moumoum0/cx-clear/releases) 下载
 
+命令行下载脚本
+
+```powershell
+irm https://raw.githubusercontent.com/moumoum0/cx-clear/main/install.ps1 | iex
+
 ## 贡献
 
 目前需要 macOS 上的清理路径，以及更多软件的名单。补名单按照哦 [doc/清理名单完善流程.md](doc/清理名单完善流程.md) 
