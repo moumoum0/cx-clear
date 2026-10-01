@@ -45,7 +45,7 @@ val compileCliLauncher = tasks.register("compileCliLauncher") {
         val executable = launcher.get().asFile
         executable.parentFile.mkdirs()
         val process = ProcessBuilder(
-            compiler.absolutePath, "-O2", "-municode", "-static",
+            compiler.absolutePath, "-O2", "-s", "-municode", "-static",
             rootProject.file("packaging/cli_launcher.cpp").absolutePath,
             "-o", executable.absolutePath,
         ).inheritIO().start()
@@ -71,7 +71,7 @@ tasks.named<Sync>("installDist") {
 
 tasks.register<JavaExec>("verifyWindowsNativeJars") {
     group = "verification"
-    description = "Verify SQLite, concatenated Zstd frames and Windows DPI using trimmed distribution JARs"
+    description = "Verify SQLite and concatenated Zstd frames using trimmed distribution JARs"
     dependsOn("installDist")
     javaLauncher.set(javaToolchains.launcherFor {
         languageVersion.set(JavaLanguageVersion.of(21))

@@ -11,19 +11,57 @@ plugins {
 group = "dev.cxclear"
 version = rootProject.version
 
+val materialIconsVersion = "1.7.3"
+val materialIconsArchive = configurations.create("materialIconsArchive") {
+    isCanBeConsumed = false
+    isTransitive = false
+}
+val iconSources = fileTree("src") { include("**/*.kt") }
+val usedIconClasses = providers.provider {
+    val iconImport = Regex("""^import (androidx\.compose\.material\.icons\.(?:automirrored\.)?\w+)\.(\w+)(?: as \w+)?$""")
+    iconSources.files.flatMap { source ->
+        source.readLines().mapNotNull { line ->
+            check(!line.trim().startsWith("import androidx.compose.material.icons.") || !line.contains("*")) {
+                "Use explicit Material icon imports in $source"
+            }
+            iconImport.matchEntire(line.trim())?.let { match ->
+                "${match.groupValues[1].replace('.', '/')}/${match.groupValues[2]}Kt"
+            }
+        }
+    }.toSet()
+}
+val packageUsedMaterialIcons = tasks.register<Zip>("packageUsedMaterialIcons") {
+    group = "build"
+    description = "Package only explicitly imported Material extended icons"
+    archiveFileName.set("material-icons-used-$materialIconsVersion.jar")
+    destinationDirectory.set(layout.buildDirectory.dir("icons"))
+    inputs.files(iconSources)
+    from(providers.provider {
+        zipTree(materialIconsArchive.singleFile).matching {
+            include("META-INF/**")
+            for (iconClass in usedIconClasses.get()) {
+                include("$iconClass.class", "$iconClass\$*.class")
+            }
+        }
+    })
+    isPreserveFileTimestamps = false
+    isReproducibleFileOrder = true
+}
+
 dependencies {
     implementation(project(":core"))
+    implementation("net.java.dev.jna:jna:5.19.1")
     implementation(compose.desktop.currentOs)
     implementation(compose.components.resources)
     // 必须跟 foundation 走同一发布列车：compose.desktop 1.11.1 把 foundation 拉到 1.12.0，
     // 而 material3 1.11.0-alpha07 是针对 foundation 1.11.0-beta03 编译的，
     // 运行期会因 CustomStyle.applyStyle 签名变化抛 AbstractMethodError（输入框一渲染就崩）。
     implementation("org.jetbrains.compose.material3:material3:1.12.0-alpha03")
-    implementation("org.jetbrains.compose.material:material-icons-extended:1.7.3")
+    add(materialIconsArchive.name, "org.jetbrains.compose.material:material-icons-extended-desktop:$materialIconsVersion")
+    implementation("org.jetbrains.compose.material:material-icons-core:$materialIconsVersion")
+    implementation(files(packageUsedMaterialIcons.flatMap { it.archiveFile }))
     implementation("dev.chrisbanes.haze:haze:2.0.0")
     implementation("dev.chrisbanes.haze:haze-blur:2.0.0")
-    // 视频录制临时用
-    implementation("org.jcodec:jcodec-javase:0.2.5")
     testImplementation(kotlin("test"))
 }
 
@@ -71,6 +109,27 @@ compose.desktop {
 
 kotlin {
     jvmToolchain(21)
+}
+
+tasks.register<JavaExec>("verifyMaterialIcons") {
+    group = "verification"
+    description = "Initialize every imported Material icon using the reduced runtime dependencies"
+    javaLauncher.set(javaToolchains.launcherFor {
+        languageVersion.set(JavaLanguageVersion.of(21))
+    })
+    mainClass.set(rootProject.file("packaging/MaterialIconsSmokeTest.java").absolutePath)
+    classpath = configurations.runtimeClasspath.get()
+    args(file("src").absolutePath)
+}
+
+tasks.register<JavaExec>("verifyWindowsDpi") {
+    group = "verification"
+    description = "Verify Windows DPI calls using the GUI native dependency"
+    javaLauncher.set(javaToolchains.launcherFor {
+        languageVersion.set(JavaLanguageVersion.of(21))
+    })
+    mainClass.set(rootProject.file("packaging/WindowsDpiSmokeTest.java").absolutePath)
+    classpath = configurations.runtimeClasspath.get()
 }
 
 fun findIscc(): File {
@@ -124,6 +183,7 @@ fun compileCliLauncher(): File {
         listOf(
             gxx.absolutePath,
             "-O2",
+            "-s",
             "-municode",
             "-static",
             "cli_launcher.cpp",
@@ -152,6 +212,7 @@ fun compileGuiLauncher(): File {
         listOf(
             gxx.absolutePath,
             "-O2",
+            "-s",
             "-municode",
             "-mwindows",
             "-static",
@@ -295,6 +356,8 @@ tasks.register("packageInnoSetup") {
     description = "打 Windows 安装器与免安装包（带 Java / 不带 Java）"
     dependsOn("createReleaseDistributable")
     dependsOn(":cli:jar")
+    dependsOn("verifyMaterialIcons")
+    dependsOn("verifyWindowsDpi")
     doLast {
         val iscc = findIscc()
         killStuckIscc()

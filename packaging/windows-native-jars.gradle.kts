@@ -12,9 +12,11 @@ extra["trimWindowsNativeJars"] = { directory: File ->
         "jna" to "com/sun/jna/win32-x86-64/jnidispatch.dll",
     )
     for ((library, nativePath) in libraries) {
-        val jar = directory.listFiles().orEmpty().single {
+        val jars = directory.listFiles().orEmpty().filter {
             it.name.startsWith("$library-") && it.extension == "jar"
         }
+        if (library == "jna" && jars.isEmpty()) continue
+        val jar = jars.single()
         val temporary = File(directory, "${jar.name}.tmp")
         val originalSize = jar.length()
         try {
