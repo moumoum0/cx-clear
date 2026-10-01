@@ -2,6 +2,10 @@
 build/
 out/
 bin/
+!npm/bin/
+!npm/bin/*.js
+node_modules/
+*.tgz
 
 # Packaged installers (may be copied out of build/)
 *.msi
@@ -12,6 +16,7 @@ bin/
 
 # Gradle
 .gradle/
+.gradle-home/
 .gradle-user/
 local.properties
 

@@ -1,0 +1,24 @@
+{
+  "name": "cxclear",
+  "description": "Windows CLI for cleaning local AI coding tool caches and chat history",
+  "license": "GPL-3.0-only",
+  "author": "moumoum",
+  "homepage": "https://github.com/moumoum0/cx-clear",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/moumoum0/cx-clear.git"
+  },
+  "bugs": { "url": "https://github.com/moumoum0/cx-clear/issues" },
+  "keywords": ["cli", "windows", "cleanup", "codex", "claude", "cursor"],
+  "type": "module",
+  "bin": { "cxclear": "bin/cxclear.js" },
+  "os": ["win32"],
+  "cpu": ["x64"],
+  "engines": { "node": ">=22" },
+  "files": ["bin/", "lib/", "native/", "java-runtime.json", "source.json", "NOTICE.md"],
+  "scripts": {
+    "postinstall": "node bin/install.js",
+    "prepack": "node bin/check-package.js"
+  },
+  "publishConfig": { "access": "public" }
+}

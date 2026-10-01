@@ -1,5 +1,7 @@
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
+import groovy.json.JsonOutput
+import groovy.json.JsonSlurper
 
 plugins {
     kotlin("jvm")
@@ -99,5 +101,42 @@ tasks.register("packageCli") {
             }
         }
         logger.lifecycle("CLI 包已生成：$zip")
+    }
+}
+
+tasks.register<Sync>("prepareNpmPackage") {
+    group = "distribution"
+    description = "Prepare the Windows x64 npm package using the Gradle application version"
+    dependsOn("installDist")
+    val target = rootProject.layout.buildDirectory.dir("npm/cxclear")
+    into(target)
+    from(rootProject.file("npm")) {
+        exclude("package.json.in", "test/**")
+    }
+    from(layout.buildDirectory.dir("install/cxclear")) {
+        into("native")
+        include("lib/*.jar")
+    }
+    from(rootProject.file("LICENSE"))
+    inputs.property("appVersion", project.version.toString())
+    inputs.file(rootProject.file("npm/package.json.in"))
+    // Record the source commit even when the application version has not changed.
+    outputs.upToDateWhen { false }
+    doLast {
+        @Suppress("UNCHECKED_CAST")
+        val manifest = JsonSlurper().parse(rootProject.file("npm/package.json.in")) as MutableMap<String, Any?>
+        manifest["version"] = project.version.toString()
+        val directory = target.get().asFile
+        File(directory, "package.json").writeText(JsonOutput.prettyPrint(JsonOutput.toJson(manifest)) + "\n")
+        val git = ProcessBuilder("git", "rev-parse", "HEAD").directory(rootProject.projectDir).start()
+        val commit = git.inputStream.bufferedReader().readText().trim()
+        check(git.waitFor() == 0 && commit.matches(Regex("[a-f0-9]{40}"))) { "Cannot determine source commit for npm package" }
+        val source = mapOf(
+            "version" to project.version.toString(),
+            "commit" to commit,
+            "url" to "https://github.com/moumoum0/cx-clear/tree/$commit",
+        )
+        File(directory, "source.json").writeText(JsonOutput.prettyPrint(JsonOutput.toJson(source)) + "\n")
+        logger.lifecycle("npm package prepared: $directory (${project.version})")
     }
 }

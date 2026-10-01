@@ -1,6 +1,10 @@
 package dev.cxclear.cli
 
 import dev.cxclear.model.ScanResult
+import dev.cxclear.AppMeta
+import dev.cxclear.util.MiniJson
+import java.io.ByteArrayOutputStream
+import java.io.PrintStream
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -54,6 +58,24 @@ class CliArgsTest {
         val parsed = parseArgs(arrayOf("schema"))!!
         assertEquals(listOf("schema"), parsed.command)
         assertTrue(parsed.flags.isEmpty())
+    }
+
+    @Test
+    fun `version aliases print the generated application version`() {
+        for (args in listOf(arrayOf("--version"), arrayOf("-v"), arrayOf("version"))) {
+            val output = ByteArrayOutputStream()
+            val original = System.out
+            try {
+                System.setOut(PrintStream(output, true, "UTF-8"))
+                assertEquals(Cli.EXIT_OK, Cli.run(args))
+            } finally {
+                System.setOut(original)
+            }
+            assertEquals(
+                mapOf("name" to AppMeta.NAME, "version" to AppMeta.VERSION),
+                MiniJson.parse(output.toString("UTF-8")),
+            )
+        }
     }
 
     @Test

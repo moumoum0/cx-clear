@@ -2,6 +2,11 @@ name: Release
 
 on:
   workflow_dispatch:
+    inputs:
+      publish_npm:
+        description: Publish the verified CLI package to npm
+        type: boolean
+        default: false
 
 concurrency:
   group: release-${{ github.ref }}
@@ -26,6 +31,11 @@ jobs:
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
 
       - name: Install Inno Setup
         run: choco install innosetup --no-progress -y
@@ -77,7 +87,24 @@ jobs:
           Write-Host "已截取 $($notes.Length) 字更新说明"
 
       - name: Build CLI distribution
-        run: .\gradlew.bat :cli:packageCli --no-daemon --stacktrace
+        run: .\gradlew.bat :core:test :cli:test :cli:verifyWindowsNativeJars :cli:packageCli :cli:prepareNpmPackage --no-daemon --stacktrace
+
+      - name: Test Java installation support
+        run: node --test npm/test/java.test.mjs
+
+      - name: Pack npm CLI
+        run: npm pack ./build/npm/cxclear --pack-destination cli/build/distributions
+
+      - name: Verify npm installation and automatic Java download
+        shell: pwsh
+        run: node npm/test/install-smoke.mjs "cli/build/distributions/cxclear-$env:APP_VERSION.tgz" --download-java
+
+      - name: Save verified npm package
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-cli
+          path: cli/build/distributions/cxclear-${{ env.APP_VERSION }}.tgz
+          if-no-files-found: error
 
       - name: Build Inno Setup installer
         run: .\gradlew.bat :gui:packageInnoSetup --no-daemon --stacktrace
@@ -90,6 +117,7 @@ jobs:
           body_path: release-notes.md
           files: |
             cli/build/distributions/CXClear-${{ env.APP_VERSION }}-cli.zip
+            cli/build/distributions/cxclear-${{ env.APP_VERSION }}.tgz
             gui/build/compose/binaries/main/dist/CXClear-${{ env.APP_VERSION }}-setup.exe
             gui/build/compose/binaries/main/dist/CXClear-${{ env.APP_VERSION }}-setup-no-jre.exe
             gui/build/compose/binaries/main/dist/CXClear-${{ env.APP_VERSION }}-portable.zip
@@ -97,3 +125,33 @@ jobs:
           prerelease: ${{ contains(env.APP_VERSION, '-') }}
           fail_on_unmatched_files: true
           make_latest: ${{ !contains(env.APP_VERSION, '-') }}
+
+  npm-publish:
+    name: Publish npm CLI
+    if: ${{ inputs.publish_npm }}
+    needs: windows-installer
+    runs-on: windows-latest
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      - name: Download verified npm package
+        uses: actions/download-artifact@v4
+        with:
+          name: npm-cli
+          path: npm-artifact
+
+      - name: Publish with trusted publishing
+        shell: pwsh
+        run: |
+          $package = @(Get-ChildItem npm-artifact -Filter 'cxclear-*.tgz')
+          if ($package.Count -ne 1) { throw 'Expected one verified npm package' }
+          $tag = if ($package[0].BaseName -match '^cxclear-\d+\.\d+\.\d+-') { 'next' } else { 'latest' }
+          npm publish $package[0].FullName --access public --provenance --tag $tag

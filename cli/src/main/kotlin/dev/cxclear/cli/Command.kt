@@ -12,6 +12,7 @@ import dev.cxclear.cli.commands.RulesValidateCommand
 import dev.cxclear.cli.commands.ScanCommand
 import dev.cxclear.cli.commands.SchemaCommand
 import dev.cxclear.cli.commands.StatusCommand
+import dev.cxclear.cli.commands.VersionCommand
 
 internal interface Command {
     val name: List<String>
@@ -30,6 +31,7 @@ internal interface Command {
 
 internal val ALL_COMMANDS: List<Command> = listOf(
     HelpCommand,
+    VersionCommand,
     SchemaCommand,
     FindChatsCommand,
     FindFilesCommand,

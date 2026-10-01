@@ -41,6 +41,7 @@ internal fun parseArgs(args: Array<String>): ParsedArgs? {
                 break
             }
             token == "-h" || token == "--help" -> return ParsedArgs(listOf("help"), emptyMap(), emptySet())
+            token == "-v" || token == "--version" -> return ParsedArgs(listOf("version"), emptyMap(), emptySet())
             token.startsWith("--") -> {
                 val eq = token.indexOf('=')
                 val name: String

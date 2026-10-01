@@ -1,18 +1,21 @@
 # CLI 文档
 
-命令行工具为 AI 和脚本提供 JSON 接口，输出走 `stdout`，消息走 `stderr`。
-
 ## 安装
 
-Windows 下一行命令安装到 `%LOCALAPPDATA%\cxclear`，并写入用户 PATH：
+### npm（Windows x64）
+
+需要 Node.js 22 或以上：
+
+```powershell
+npm install -g cxclear
+cxclear --version
+```
+
+### PowerShell 安装脚本
 
 ```powershell
 irm https://raw.githubusercontent.com/moumoum0/cx-clear/main/install.ps1 | iex
 ```
-
-没有可用的 Java 21 时会询问是否下载 [Eclipse Temurin 21 JRE](https://adoptium.net/)，确认后放到安装目录的 `runtime`，不改已有的 `JAVA_HOME`。拒绝则只装好 CLI，此时 `cxclear` 起不来。
-
-静默安装不问，缺 Java 21 就直接下载：
 
 ```powershell
 $env:CXCLEAR_SILENT = '1'; irm https://raw.githubusercontent.com/moumoum0/cx-clear/main/install.ps1 | iex
@@ -37,6 +40,7 @@ $env:CXCLEAR_SILENT = '1'; irm https://raw.githubusercontent.com/moumoum0/cx-cle
 | `status` / `history` | 查看状态与历史 |
 | `rules get` / `validate` | 管理自动清理策略 |
 | `schema` / `help` | 查看完整定义 |
+| `version` / `--version` / `-v` | 查看版本号 |
 
 ## 常用筛选
 
