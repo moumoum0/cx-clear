@@ -29,6 +29,8 @@ internal interface Command {
     }
 }
 
+internal val DELETE_SWITCHES = setOf("json", "yes", "y", "preview")
+
 internal val ALL_COMMANDS: List<Command> = listOf(
     HelpCommand,
     VersionCommand,

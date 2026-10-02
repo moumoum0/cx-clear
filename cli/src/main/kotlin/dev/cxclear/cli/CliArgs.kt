@@ -17,11 +17,25 @@ internal data class ParsedArgs(
     val preview: Boolean get() = "preview" in switches
     val json: Boolean get() = "json" in switches
     val safeOnly: Boolean get() = "safe-only" in switches
+    val rules: Boolean get() = "rules" in switches
+    val isPreview: Boolean get() = preview || !yes
 
     fun value(name: String): String? = flags[name]?.last()
 
     fun values(name: String): List<String> = flags[name].orEmpty()
+
+    // 逗号分隔且可重复：--tool a,b --tool c
+    fun csv(name: String): List<String> =
+        values(name).flatMap { it.split(',') }.map { it.trim() }.filter { it.isNotEmpty() }
 }
+
+// 全部选项只在这里登记类型；命令各自声明可用子集，CliArgsTest 校验子集不越界
+internal val SWITCH_OPTIONS = setOf("yes", "y", "preview", "json", "safe-only", "rules")
+internal val VALUE_OPTIONS = setOf(
+    "tool", "type", "older-than", "newer-than", "size-gt", "size-lt",
+    "keep-recent", "keep-days",
+    "file", "rules-file", "rule", "targets", "limit",
+)
 
 internal fun parseArgs(args: Array<String>): ParsedArgs? {
     if (args.isEmpty()) return null
@@ -55,13 +69,11 @@ internal fun parseArgs(args: Array<String>): ParsedArgs? {
                 }
                 if (name.isEmpty()) throw CliUsageException("empty option")
                 when (name) {
-                    "yes", "y", "preview", "json", "safe-only" -> {
+                    in SWITCH_OPTIONS -> {
                         if (value != null) throw CliUsageException("--$name does not take a value")
                         switches += name
                     }
-                    "tool", "type", "older-than", "newer-than", "size-gt", "size-lt",
-                    "keep-recent", "keep-days",
-                    "file", "targets", "limit" -> {
+                    in VALUE_OPTIONS -> {
                         val v = value ?: takeValue("--$name")
                         flags.getOrPut(name) { mutableListOf() }.add(v)
                     }

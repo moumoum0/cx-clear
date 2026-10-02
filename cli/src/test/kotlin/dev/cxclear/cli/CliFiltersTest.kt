@@ -1,5 +1,9 @@
 package dev.cxclear.cli
 
+import dev.cxclear.chats.ChatCondition
+import dev.cxclear.chats.ChatConditionType
+import dev.cxclear.chats.RetentionConfig
+import dev.cxclear.chats.RetentionRule
 import dev.cxclear.clean.CleanRequest
 import dev.cxclear.clean.clean
 import dev.cxclear.model.*
@@ -33,6 +37,71 @@ class CliFiltersTest {
         assertEquals(listOf("old"), ChatFilters(sizeGt = 10, sizeLt = 101, olderThan = 1, keepRecent = 1)
             .apply(sessions, 10).map { it.id })
         assertTrue(ChatFilters(keepDays = Int.MAX_VALUE).apply(sessions, 10).isEmpty())
+    }
+
+    @Test
+    fun `rules config filters sessions like the policy engine`() {
+        val sessions = listOf(session("old", 1), session("new", 2))
+        val enabled = RetentionConfig(listOf(
+            RetentionRule(
+                "r1", enabled = true,
+                conditions = listOf(ChatCondition(ChatConditionType.TITLE_CONTAINS, text = "old")),
+            ),
+        ))
+        assertEquals(listOf("old"), ChatFilters(rulesConfig = enabled).apply(sessions, 10).map { it.id })
+
+        val disabled = RetentionConfig(listOf(enabled.rules[0].copy(enabled = false)))
+        assertTrue(ChatFilters(rulesConfig = disabled).apply(sessions, 10).isEmpty())
+    }
+
+    @Test
+    fun `rules flags cannot be combined and file must exist`() {
+        assertFailsWith<CliUsageException> {
+            parseChatFilters(parseArgs(arrayOf("find", "chats", "--rules", "--rules-file", "x.json"))!!)
+        }
+        assertFailsWith<CliUsageException> {
+            parseChatFilters(parseArgs(arrayOf("find", "chats", "--rules-file", "definitely-missing-9z.json"))!!)
+        }
+    }
+
+    @Test
+    fun `rules file loads a valid policy`() {
+        val file = Files.createTempFile("cxclear-rules", ".json")
+        try {
+            Files.writeString(
+                file,
+                """{"version":2,"rules":[{"id":"r1","enabled":true,"conditions":[{"type":"title_has","text":"x"}]}]}""",
+            )
+            val filters = parseChatFilters(
+                parseArgs(arrayOf("find", "chats", "--rules-file", file.toString()))!!
+            )
+            assertEquals(1, filters.rulesConfig?.rules?.size)
+            assertTrue(filters.rulesConfig!!.rules[0].enabled)
+        } finally {
+            Files.deleteIfExists(file)
+        }
+    }
+
+    @Test
+    fun `rule selects rules and force-enables them`() {
+        val file = Files.createTempFile("cxclear-rules", ".json")
+        try {
+            Files.writeString(
+                file,
+                """{"version":2,"rules":[{"id":"r1","enabled":false,"conditions":[{"type":"title_has","text":"x"}]},{"id":"r2","enabled":true,"conditions":[{"type":"title_has","text":"y"}]}]}""",
+            )
+            val args = parseArgs(arrayOf("find", "chats", "--rules-file", file.toString(), "--rule", "r1"))!!
+            val config = parseChatFilters(args).rulesConfig!!
+            // --rule 用于预览单条规则：挑中的规则强制视为启用，其他规则不参与
+            assertEquals(listOf("r1"), config.rules.map { it.id })
+            assertTrue(config.rules[0].enabled)
+
+            assertFailsWith<CliUsageException> {
+                parseChatFilters(parseArgs(arrayOf("find", "chats", "--rules-file", file.toString(), "--rule", "nope"))!!)
+            }
+        } finally {
+            Files.deleteIfExists(file)
+        }
     }
 
     @Test

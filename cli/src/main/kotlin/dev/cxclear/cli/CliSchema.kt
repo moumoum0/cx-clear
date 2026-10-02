@@ -73,6 +73,9 @@ internal object CliSchema {
             "--size-lt <size>        smaller than the given size",
             "--keep-recent <n>       keep the N most recently updated chats",
             "--keep-days <n>         keep chats updated within N days",
+            "--rules                 match chats against the saved auto-clean policy",
+            "--rules-file <path>     match against a policy JSON file ('-' reads stdin)",
+            "--rule <id,id>          use only the named rules (preview ignores enabled)",
             "--preview               preview only (delete / clean)",
             "--yes                   delete; omitted means preview only",
             "--json                  accepted for compatibility; every command prints JSON",
@@ -84,6 +87,9 @@ internal object CliSchema {
             "",
             "# delete chats older than 90 days, keeping the 10 newest",
             "cxclear delete chats --older-than 90d --keep-recent 10 --preview",
+            "",
+            "# preview what the saved auto-clean policy would delete",
+            "cxclear find chats --rules",
             "",
             "# find cache files",
             "cxclear find files --type cache",
@@ -110,6 +116,7 @@ internal object CliSchema {
             "find output includes the list plus count and total bytes",
             "file time filters delete matching files only and keep directories and links; size is the remaining target total",
             "keep-recent drops the N newest matches; if fewer than N match, nothing is deleted",
+            "--rules counts enabled rules only and intersects with other filters",
         ),
     )
 }

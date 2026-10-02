@@ -6,8 +6,8 @@ import dev.cxclear.cli.Command
 import dev.cxclear.cli.ParsedArgs
 import dev.cxclear.cli.resolveTools
 import dev.cxclear.cli.scanOnce
+import dev.cxclear.cli.spaceJson
 import dev.cxclear.tools.chatTools
-import dev.cxclear.util.formatBytes
 import kotlinx.coroutines.runBlocking
 
 internal object StatusCommand : Command {
@@ -29,13 +29,7 @@ internal object StatusCommand : Command {
                 "ok" to true,
                 "command" to "status",
                 "spaces" to snapshot.spaces.map { space ->
-                    mapOf(
-                        "tool" to space.toolId,
-                        "bytes" to space.bytes,
-                        "files" to space.fileCount,
-                        "bytes_label" to formatBytes(space.bytes),
-                        "chats" to (chatCounts[space.toolId] ?: 0),
-                    )
+                    spaceJson(space) + ("chats" to (chatCounts[space.toolId] ?: 0))
                 },
             )
         )

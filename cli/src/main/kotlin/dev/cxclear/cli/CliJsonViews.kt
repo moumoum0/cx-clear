@@ -1,11 +1,7 @@
 package dev.cxclear.cli
 
 import dev.cxclear.model.ChatSessionSummary
-import dev.cxclear.model.CleanTarget
 import dev.cxclear.model.ScanResult
-import dev.cxclear.model.ToolProfile
-import dev.cxclear.model.Risk
-import dev.cxclear.tools.ALL_PROFILES
 import dev.cxclear.scan.ToolSpaceResult
 import dev.cxclear.util.formatBytes
 
@@ -14,13 +10,24 @@ import dev.cxclear.util.formatBytes
  *
  * 字段名（bytes_label / target_id 之类）是外部契约，改名会破坏消费方。
  */
-internal fun profileAndTarget(toolId: String, targetId: String): Pair<ToolProfile, CleanTarget> {
-    val profile = ALL_PROFILES.first { it.id == toolId }
-    return profile to profile.targets.first { it.id == targetId }
-}
 
-internal fun isSafeTarget(result: ScanResult): Boolean =
-    profileAndTarget(result.toolId, result.targetId).second.risk == Risk.SAFE
+// delete / clean 的预览输出；matched / bytes / preview 三个顶层字段所有删除命令共用
+internal fun previewJson(
+    command: String,
+    matched: Int,
+    bytes: Long,
+    listKey: String,
+    items: List<Any?>,
+    extra: Map<String, Any?> = emptyMap(),
+): Map<String, Any?> = buildMap {
+    put("ok", true)
+    put("command", command)
+    put("preview", true)
+    put("matched", matched)
+    put("bytes", bytes)
+    put(listKey, items)
+    putAll(extra)
+}
 
 internal fun spaceJson(space: ToolSpaceResult) = mapOf(
     "tool" to space.toolId,

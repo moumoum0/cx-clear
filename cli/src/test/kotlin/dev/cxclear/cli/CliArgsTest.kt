@@ -85,6 +85,15 @@ class CliArgsTest {
     }
 
     @Test
+    fun `rules switch is chats only`() {
+        val parsed = parseArgs(arrayOf("find", "chats", "--rules"))!!
+        assertTrue(parsed.rules)
+        assertEquals(Cli.EXIT_USAGE, Cli.run(arrayOf("find", "files", "--rules")))
+        assertEquals(Cli.EXIT_USAGE, Cli.run(arrayOf("scan", "--rules")))
+        assertFailsWith<CliUsageException> { parseArgs(arrayOf("find", "chats", "--rules=x")) }
+    }
+
+    @Test
     fun `yes switch cannot take a false value`() {
         assertFailsWith<CliUsageException> { parseArgs(arrayOf("clean", "--yes=false")) }
     }
@@ -96,6 +105,27 @@ class CliArgsTest {
         }
         assertFailsWith<CliUsageException> { parseDuration("999999999999999999999d") }
         assertFailsWith<CliUsageException> { parseSize("999999999999999999999GB") }
+    }
+
+    @Test
+    fun `command options are registered in the parser`() {
+        for (command in ALL_COMMANDS) {
+            assertTrue(VALUE_OPTIONS.containsAll(command.flags), "${command.name}: ${command.flags - VALUE_OPTIONS}")
+            assertTrue(SWITCH_OPTIONS.containsAll(command.switches), "${command.name}: ${command.switches - SWITCH_OPTIONS}")
+        }
+    }
+
+    @Test
+    fun `unknown target ids are usage errors before scanning`() {
+        assertEquals(Cli.EXIT_USAGE, Cli.run(arrayOf("clean", "--tool", "codex", "--targets", "nope", "--yes")))
+        assertEquals(Cli.EXIT_USAGE, Cli.run(arrayOf("delete", "files", "--tool", "codex", "--targets", "codex.logs-db,nope")))
+    }
+
+    @Test
+    fun `csv values split repeated and comma separated flags`() {
+        val parsed = parseArgs(arrayOf("find", "chats", "--tool", "cursor, codex", "--tool=claude,", "--rule", "r1"))!!
+        assertEquals(listOf("cursor", "codex", "claude"), parsed.csv("tool"))
+        assertEquals(listOf("r1"), parsed.csv("rule"))
     }
 
     @Test

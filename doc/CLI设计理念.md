@@ -11,7 +11,7 @@ CLI 不是 GUI 的简化版，是给 AI 和自动化用的接口。AI 不会"打
 2. **统计**：看看匹配了多少、占多大空间
 3. **删除**：执行清理
 
-GUI 里这三步是分离的（先扫描、看结果、勾选、点清理），但 CLI 必须让 AI 能在一条命令里走完全程。
+GUI 里这三步是分离的（先扫描、看结果、勾选、点清理），但 CLI 必须让 AI 能在一条命令里完成全程。
 
 ### 参数互通
 
@@ -146,6 +146,50 @@ cxclear delete chats --older-than 90d --keep-recent 10 --preview
 ```bash
 # 删除所有对话，但保留最近 7 天的
 cxclear delete chats --keep-days 7 --preview
+```
+
+---
+
+### 策略筛选参数
+
+只对 `chats` 目标有效。把自动清理策略当成筛选来源，和其他条件是交集关系；只计算已启用的规则，与自动清理的实际执行一致。
+
+#### `--rules`
+用已保存的策略（`chat-retention.txt`）匹配会话。
+
+**示例**：
+```bash
+# 预览已保存策略会命中哪些会话
+cxclear find chats --rules
+
+# 按已保存策略执行删除
+cxclear delete chats --rules --yes
+```
+
+---
+
+#### `--rules-file <path>`
+用一份未写入配置文件的策略 JSON 匹配会话，用于验证 AI 生成的候选规则。值为 `-` 时从标准输入读取。
+
+**示例**：
+```bash
+# 试跑一份候选策略，看实际会删谁
+cxclear find chats --rules-file rules.json
+cxclear find chats --rules-file - < rules.json
+```
+
+---
+
+#### `--rule <id,id>`
+只使用指定 id 的规则，多个用逗号分隔。用于预览单条规则：挑中的规则无论是否启用都参与匹配，方便在 GUI 中启用前验证。不指定 `--rules-file` 时从已保存策略中挑选。
+
+**示例**：
+```bash
+# 只看 rule-3 这一条会删什么（即使它还没启用）
+cxclear find chats --rule rule-3
+
+# 在候选文件里单测某条规则
+cxclear find chats --rules-file rules.json --rule new-rule
 ```
 
 ---
@@ -287,7 +331,7 @@ cxclear delete files --tool cursor --type downloads --size-gt 500MB --yes
 
 2. **默认安全**：删除命令默认只返回预览，只有显式指定 `--yes` 才执行；`--preview` 始终只显示计划。
 
-3. **输出分离**：JSON 结果走 `stdout`，人类消息（进度、警告）走 `stderr`，方便 AI 解析。
+3. **输出分离**：JSON 结果输出到 `stdout`，人类消息（进度、警告）输出到 `stderr`，方便 AI 解析。
 
 4. **无状态**：每次调用都是独立的，不依赖上次扫描结果（`clean` 内部会自动重新扫描）。
 
@@ -297,4 +341,4 @@ cxclear delete files --tool cursor --type downloads --size-gt 500MB --yes
 
 AI 按设置页提供的规则提示词直接修改 `%USERPROFILE%\.cxclear\chat-retention.txt`，新建规则默认关闭，在 GUI 中核对后启用。CLI 不提供规则写入命令。
 
-`rules get` 读取现有配置并输出 JSON；`rules validate --file <path>` 校验规则 JSON，也可从标准输入读取，不修改配置。JSON 是读取和校验接口的格式，不是配置文件的落盘格式。
+`rules get` 读取现有配置并输出 JSON；`rules validate --file <path>` 校验规则 JSON，也可从标准输入读取，不修改配置。JSON 是读取和校验接口的格式，不是配置文件的存储格式。验证策略的实际命中用 `find chats --rules`（已保存策略）或 `find chats --rules-file`（候选 JSON）。

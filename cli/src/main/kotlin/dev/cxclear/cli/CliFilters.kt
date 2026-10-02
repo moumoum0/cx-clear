@@ -1,5 +1,7 @@
 package dev.cxclear.cli
 
+import dev.cxclear.chats.RetentionConfig
+import dev.cxclear.chats.match
 import dev.cxclear.model.ChatSessionSummary
 import dev.cxclear.model.ScanResult
 import dev.cxclear.model.PathSnapshotKind
@@ -46,6 +48,10 @@ internal fun parseSize(raw: String): Long {
     return bytes.toLong()
 }
 
+private fun ParsedArgs.nonNegativeInt(name: String): Int? = value(name)?.let {
+    it.toIntOrNull()?.takeIf { n -> n >= 0 } ?: throw CliUsageException("--$name must be a non-negative integer")
+}
+
 // 应用会话筛选条件
 internal data class ChatFilters(
     val olderThan: Long? = null,
@@ -54,59 +60,57 @@ internal data class ChatFilters(
     val keepDays: Int? = null,
     val sizeGt: Long? = null,
     val sizeLt: Long? = null,
+    val rulesConfig: RetentionConfig? = null,
+) {
+    fun apply(sessions: List<ChatSessionSummary>, nowMillis: Long): List<ChatSessionSummary> {
+        var result = sessions
+        if (sizeGt != null) result = result.filter { it.sizeBytes > sizeGt }
+        if (sizeLt != null) result = result.filter { it.sizeBytes < sizeLt }
+
+        // 时间筛选
+        if (olderThan != null) {
+            val threshold = nowMillis - olderThan
+            result = result.filter { it.updatedMillis < threshold }
+        }
+        if (newerThan != null) {
+            val threshold = nowMillis - newerThan
+            result = result.filter { it.updatedMillis >= threshold }
+        }
+
+        // keep-days：保留 N 天内的（从筛选结果中排除）
+        if (keepDays != null) {
+            val keepThreshold = nowMillis - keepDays * 24L * 3600 * 1000
+            result = result.filter { it.updatedMillis < keepThreshold }
+        }
+
+        // keep-recent：保留最近 N 条（从筛选结果中排除）
+        if (keepRecent != null && keepRecent > 0) {
+            val sorted = result.sortedByDescending { it.updatedMillis }
+            result = sorted.drop(keepRecent)
+        }
+
+        // 策略筛选最后套，和其他条件是交集
+        if (rulesConfig != null) result = rulesConfig.match(result, nowMillis)
+
+        return result
+    }
+}
+
+internal fun parseChatFilters(args: ParsedArgs) = ChatFilters(
+    olderThan = args.value("older-than")?.let { parseDuration(it) },
+    newerThan = args.value("newer-than")?.let { parseDuration(it) },
+    keepRecent = args.nonNegativeInt("keep-recent"),
+    keepDays = args.nonNegativeInt("keep-days"),
+    sizeGt = args.value("size-gt")?.let { parseSize(it) },
+    sizeLt = args.value("size-lt")?.let { parseSize(it) },
+    rulesConfig = loadRulesConfig(args),
 )
 
-internal fun ChatFilters.apply(sessions: List<ChatSessionSummary>, nowMillis: Long): List<ChatSessionSummary> {
-    var result = sessions
-    if (sizeGt != null) result = result.filter { it.sizeBytes > sizeGt }
-    if (sizeLt != null) result = result.filter { it.sizeBytes < sizeLt }
-    
-    // 时间筛选
-    if (olderThan != null) {
-        val threshold = nowMillis - olderThan
-        result = result.filter { it.updatedMillis < threshold }
-    }
-    if (newerThan != null) {
-        val threshold = nowMillis - newerThan
-        result = result.filter { it.updatedMillis >= threshold }
-    }
-    
-    // keep-days：保留 N 天内的（从筛选结果中排除）
-    if (keepDays != null) {
-        val keepThreshold = nowMillis - keepDays * 24L * 3600 * 1000
-        result = result.filter { it.updatedMillis < keepThreshold }
-    }
-    
-    // keep-recent：保留最近 N 条（从筛选结果中排除）
-    if (keepRecent != null && keepRecent > 0) {
-        val sorted = result.sortedByDescending { it.updatedMillis }
-        result = sorted.drop(keepRecent)
-    }
-    
-    return result
-}
-
-internal fun parseChatFilters(args: ParsedArgs): ChatFilters {
-    val keepRecent = args.value("keep-recent")?.let {
-        it.toIntOrNull()?.takeIf { count -> count >= 0 }
-            ?: throw CliUsageException("--keep-recent must be a non-negative integer")
-    }
-    val keepDays = args.value("keep-days")?.let {
-        it.toIntOrNull()?.takeIf { days -> days >= 0 }
-            ?: throw CliUsageException("--keep-days must be a non-negative integer")
-    }
-    return ChatFilters(
-        olderThan = args.value("older-than")?.let { parseDuration(it) },
-        newerThan = args.value("newer-than")?.let { parseDuration(it) },
-        keepRecent = keepRecent,
-        keepDays = keepDays,
-        sizeGt = args.value("size-gt")?.let { parseSize(it) },
-        sizeLt = args.value("size-lt")?.let { parseSize(it) },
-    )
-}
-
 internal val FILE_FILTER_FLAGS = setOf("tool", "type", "older-than", "newer-than", "size-gt", "size-lt")
-internal val CHAT_FILTER_FLAGS = setOf("tool", "older-than", "newer-than", "size-gt", "size-lt", "keep-recent", "keep-days")
+internal val CHAT_FILTER_FLAGS = setOf(
+    "tool", "older-than", "newer-than", "size-gt", "size-lt", "keep-recent", "keep-days",
+    "rules-file", "rule",
+)
 
 internal data class FileFilters(
     val type: String? = null,

@@ -43,6 +43,9 @@ cxclear --version
 --size-lt <size>
 --keep-recent <n>        保留最近 N 条会话
 --keep-days <n>          保留最近 N 天的会话
+--rules                  用已保存的自动清理策略匹配会话
+--rules-file <path>      用策略 JSON 文件匹配会话（'-' 读标准输入）
+--rule <id,id>           只用指定规则预览，忽略启用状态
 --preview                只预览
 --yes                    执行删除
 --safe-only              只包含安全项
