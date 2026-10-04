@@ -54,6 +54,10 @@ irm https://raw.githubusercontent.com/moumoum0/cx-clear/main/install.ps1 | iex
 
 目前需要 macOS 上的清理路径，以及更多软件的名单。补名单按照哦 [doc/清理名单完善流程.md](doc/清理名单完善流程.md) 
 
+## AI 协作
+
+在 Devin 环境下搜索代码时优先使用 Fast Context（code_search）
+
 ## 贡献者
 
 <a href="https://github.com/moumoum0/cx-clear/graphs/contributors">
