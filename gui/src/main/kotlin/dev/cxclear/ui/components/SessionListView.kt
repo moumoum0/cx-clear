@@ -46,11 +46,7 @@ import dev.cxclear.ui.theme.AppDimensions
 import dev.cxclear.ui.theme.Motion
 import dev.cxclear.util.formatBytes
 
-/**
- * 手动管理面板的会话列表叶子：扫描中指示、空态骨架、分组头、会话行。
- *
- * 分组半径、是否显示项目、是否展开都由主体算好当参数传进来，这里只负责画。
- */
+/** 会话列表叶子：扫描指示、空态骨架、分组头、会话行；展示参数由主体传入。 */
 @Composable
 internal fun ScanningIndicator(
     foundCount: Int,
@@ -98,7 +94,6 @@ internal fun EmptySessionList(hasQuery: Boolean, modifier: Modifier = Modifier) 
             fontSize = 13.sp,
             color = AppColors.TextTertiary,
         )
-        // 骨架：形状与真实分组卡一致，数据到位时原地填充。
         repeat(3) {
             Column(
                 modifier = Modifier
@@ -126,7 +121,7 @@ internal fun SkeletonBar(width: Dp, height: Dp) {
     )
 }
 
-/** 会话在选择集合里的唯一键：同一 UUID 可能同时存在于两个工具下。 */
+// 会话在选择集合里的唯一键：同一 UUID 可能同时存在于两个工具下。
 internal fun sessionKey(session: ChatSessionSummary): String = "${session.tool.id}:${session.id}"
 
 @Composable

@@ -6,7 +6,6 @@ import dev.cxclear.scan.readPathSnapshot
 import java.io.IOException
 import java.nio.file.Files
 
-/** 删除 [session.entries] 里的所有冻结条目，深度优先（文件先于目录）。 */
 internal fun deleteSessionEntries(session: ChatSessionSummary): Pair<Long, List<String>> {
     val ordered = session.entries.sortedWith(
         compareByDescending<dev.cxclear.model.PathSnapshot> { it.path.nameCount }

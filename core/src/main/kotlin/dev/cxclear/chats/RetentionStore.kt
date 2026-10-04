@@ -6,21 +6,16 @@ import java.nio.file.Path
 import java.nio.file.StandardOpenOption
 
 /**
- * 自动清理策略落盘。
- *
- * 格式：`~/.cxclear/chat-retention.txt`，每行一个 `key=value`，容错解析——
- * 认不出的行直接跳过，宁可少读一条规则也不能让整份配置读失败后「什么都不删」变成「乱删」。
- *
- * 规则顺序由 `order=` 显式记录，不依赖文件里 key 的出现次序。
- * 值里的 `\`、换行、回车做转义，避免用户在文本条件里粘进换行把格式撑破。
- *
+ * 自动清理策略落盘：`~/.cxclear/chat-retention.txt`，每行 `key=value`，顺序以 `order=` 为准。
+ * 容错解析：认不出的行跳过，整份读失败按「什么都不删」处理。
+ * 值里的 `\`、换行、回车做转义，粘进换行会撑破格式。
  * v1 只有单条 `enabled=` / `days=`，读到时迁成一条等价规则（[migrateV1]）。
  */
 object RetentionStore {
     private const val FILE_NAME = "chat-retention.txt"
     private const val CURRENT_VERSION = 2
 
-    /** 规则数与单规则条件数的上限：配置文件被写坏时不至于让 UI 撑爆。 */
+    // 规则数与单规则条件数的上限：配置文件被写坏时不至于让 UI 撑爆。
     private const val MAX_RULES = 50
     private const val MAX_CONDITIONS = 20
 
@@ -78,7 +73,6 @@ object RetentionStore {
 
     private fun readRule(props: Map<String, String>, id: String): RetentionRule? {
         val prefix = "rule.$id."
-        // count 缺失说明这条规则没写全，跳过。
         val count = props["${prefix}count"]?.toIntOrNull()?.coerceIn(0, MAX_CONDITIONS) ?: return null
         val name = props["${prefix}name"] ?: ""
         val enabled = props["${prefix}enabled"]?.toBooleanStrictOrNull() ?: false
@@ -97,7 +91,7 @@ object RetentionStore {
         return RetentionRule(id = id, name = name, enabled = enabled, join = join, conditions = conditions)
     }
 
-    /** v1 的 `enabled` / `days` 等价于一条「未更新超过 N 天」的规则。 */
+    // v1 的 `enabled` / `days` 等价于一条「未更新超过 N 天」的规则。
     private fun migrateV1(props: Map<String, String>): RetentionConfig {
         val enabled = props["enabled"]?.toBooleanStrictOrNull() ?: false
         val days = props["days"]?.toIntOrNull()?.coerceIn(1, 3650) ?: 30

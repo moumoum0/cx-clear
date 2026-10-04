@@ -9,7 +9,6 @@ fun main(args: Array<String>) {
         System.setOut(java.io.PrintStream(System.out, true, "UTF-8"))
         System.setErr(java.io.PrintStream(System.err, true, "UTF-8"))
     } catch (e: Exception) {
-        // 忽略编码设置失败
     }
     
     Cli.runAndExit(args)

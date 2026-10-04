@@ -20,7 +20,6 @@ import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.nio.file.Path
 
-/** 用户勾选的一项，以及扫描阶段冻结下来的精确删除清单。 */
 data class CleanRequest(
     val profile: ToolProfile,
     val target: CleanTarget,
@@ -76,7 +75,7 @@ private fun overlapsProtectedPath(path: Path, protected: Path): Boolean {
         realProtected.startsWith(realPath)
 }
 
-/** 删除前先完整校验整份计划；任何路径变化都会让该 target 在删除第一个文件前终止。 */
+// 删除前先完整校验整份计划；任何路径变化都会让该 target 在删除第一个文件前终止。
 private fun validatePlan(request: CleanRequest, outcome: DeleteOutcome): Boolean {
     if (request.plan.toolId != request.profile.id || request.plan.targetId != request.target.id) {
         outcome.note(IOException("扫描计划与所选清理项不匹配，已拒绝清理"))
@@ -112,7 +111,8 @@ private fun validatePlan(request: CleanRequest, outcome: DeleteOutcome): Boolean
 /**
  * 只删除扫描时冻结的条目，按深度从深到浅逐个删除。
  *
- * 不再 walkFileTree：扫描后新出现的文件不在计划内，因此不会被递归带走；父目录非空时只会保留。
+ * 逐条删除计划内的路径，不走 walkFileTree 递归：递归会把扫描后新出现的文件一起带走；
+ * 父目录非空时保留。
  */
 private fun deletePlan(request: CleanRequest, outcome: DeleteOutcome) {
     if (!validatePlan(request, outcome)) return
@@ -136,7 +136,7 @@ private fun deletePlan(request: CleanRequest, outcome: DeleteOutcome) {
             Files.delete(expected.path)
             if (expected.kind == PathSnapshotKind.FILE) outcome.freed += expected.size
         } catch (e: DirectoryNotEmptyException) {
-            // 扫描后出现的新内容绝不删除；保留目录并明确报错。
+            // 扫描后出现的新内容留在原地；目录保留并报错。
             outcome.note(IOException("目录在扫描后出现新内容，新增内容已保留", e))
         } catch (e: Exception) {
             outcome.note(e)
@@ -144,13 +144,12 @@ private fun deletePlan(request: CleanRequest, outcome: DeleteOutcome) {
     }
 }
 
-/** 可执行文件名去掉平台后缀后与 [ToolProfile.processNamePrefixes] 精确比对。 */
 internal fun processMatchesTool(profile: ToolProfile, executableName: String): Boolean {
     val stem = executableStem(executableName)
     return profile.processNamePrefixes.any { stem == it.lowercase() }
 }
 
-/** 清理运行中的工具会产生扫描/删除竞态；检测到相关进程时整批阻断。 */
+// 清理运行中的工具会产生扫描/删除竞态；检测到目标工具的进程时整批阻断。
 internal fun isToolProcessRunning(profile: ToolProfile): Boolean = runCatching {
     ProcessHandle.allProcesses().use { processes ->
         processes.anyMatch { process ->
@@ -166,7 +165,7 @@ internal fun isToolProcessRunning(profile: ToolProfile): Boolean = runCatching {
 /**
  * 逐项清理并以事件流上报进度。
  *
- * 大小以实际删掉的字节累计。删除前要求工具已退出，并且文件身份与扫描时完全一致。
+ * 大小以实际删掉的字节累计。删除前要求工具已退出，并且文件身份与扫描时一致。
  */
 fun clean(
     requests: List<CleanRequest>,

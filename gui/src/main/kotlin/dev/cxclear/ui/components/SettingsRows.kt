@@ -22,7 +22,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.cxclear.ui.theme.AppColors
 
-/** 设置分组标题。颜色走 Primary，与 selves 设置页同构。 */
+// 设置分组标题。颜色走 Primary，与 selves 设置页同构。
 @Composable
 fun SettingsGroupTitle(title: String) {
     Text(

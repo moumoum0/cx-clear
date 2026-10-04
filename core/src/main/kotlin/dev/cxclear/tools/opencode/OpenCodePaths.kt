@@ -19,12 +19,10 @@ internal fun opencodeCacheHome(): Path? =
 internal fun opencodeAppData(): Path? =
     appDataRoaming()?.resolve("ai.opencode.desktop")?.takeIf { Files.isDirectory(it) }
 
-/** Open Code 数据库文件：~/.local/share/opencode/opencode.db */
 internal fun opencodeDbFile(): Path? =
     userDataDir()?.resolve("opencode")?.resolve("opencode.db")
         ?.takeIf { Files.isRegularFile(it) }
 
-/** Open Code 存储目录：~/.local/share/opencode/storage/ */
 internal fun opencodeStorageDir(): Path? =
     userDataDir()?.resolve("opencode")?.resolve("storage")
         ?.takeIf { Files.isDirectory(it) }

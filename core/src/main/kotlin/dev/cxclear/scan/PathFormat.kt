@@ -3,5 +3,5 @@ package dev.cxclear.scan
 import java.nio.file.Path
 import kotlin.io.path.name
 
-/** 调试用：打印某个路径的名字，避免在日志里泄露完整路径。 */
+// 调试用：日志里只打印路径名，完整路径会泄露用户目录结构。
 internal fun Path.displayName(): String = name

@@ -42,11 +42,7 @@ import dev.cxclear.ui.theme.AppColors
 import dev.cxclear.ui.theme.AppDimensions
 import dev.cxclear.ui.theme.Motion
 
-/**
- * 手动管理面板的顶部筛选栏：排列轴胶囊、升降序按钮、搜索框。
- *
- * 排列轴胶囊支持「选中排列 / 再点切分档」的两次点击语义，升降序独立成钮避免抢同一次点击。
- */
+/** 手动管理面板的筛选栏：排列轴胶囊、升降序按钮、搜索框；轴上第二次点击切分档。 */
 @Composable
 internal fun ChatsFilterBar(
     query: String,
@@ -76,7 +72,7 @@ internal fun ChatsFilterBar(
 
         Spacer(Modifier.weight(1f))
 
-        // 升降序独立成一个按钮，避免和「双击切分组」抢同一次点击。
+        // 升降序独立成一个按钮，并进排列轴会和「双击切分组」抢同一次点击。
         OrderToggle(ascending = ascending, onClick = onToggleOrder)
 
         SearchField(
@@ -135,10 +131,7 @@ internal fun SearchField(
     }
 }
 
-/**
- * 排列轴胶囊。选中即按该轴排列；再点一下（同一个轴的第二次点击）切换是否按它分档，
- * 分档开启时胶囊左侧长出分组图标。
- */
+/** 排列轴胶囊：选中排列，再点同一个轴切分档。 */
 @Composable
 internal fun AxisPill(
     label: String,
@@ -181,7 +174,6 @@ internal fun AxisPill(
     }
 }
 
-/** 升降序切换：箭头翻转，跟分组的双击手势分开。 */
 @Composable
 internal fun OrderToggle(ascending: Boolean, onClick: () -> Unit) {
     val rotation by animateFloatAsState(

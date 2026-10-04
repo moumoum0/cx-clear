@@ -42,10 +42,10 @@ private val UnitRank = mapOf("B" to 0, "KB" to 1, "MB" to 2, "GB" to 3, "TB" to 
 
 
 /**
- * 容量数字的翻转显示：每位数字与单位都只在新旧两值之间切换，
- * 旧字上滑淡出、新字下滑淡入，不经过中间值。小数点保持静止。
+ * 容量数字的翻转显示：每位数字与单位在新旧两值之间直接切换，
+ * 旧字上滑淡出、新字下滑淡入。小数点保持静止。
  *
- * 显示值会等本轮翻转播完再追上最新 [bytes]，避免扫描节拍快于动画时翻牌被打断。
+ * 扫描节拍快于动画时中途换值会让翻牌被打断，所以显示值等本轮翻转播完再追上最新 [bytes]。
  */
 @Composable
 fun FlipBytesText(
@@ -172,7 +172,7 @@ private fun FlipNumberDigits(
                         text = char.toString(),
                         rankOf = { it.singleOrNull()?.digitToIntOrNull() ?: 0 },
                         wrapRising = true,
-                        // 新进位列首次入场时从 0 翻到目标位，避免只有个位在转、高位直接跳出。
+                        // 新进位列首次入场时从 0 翻到目标位；没有这个起点就只有个位在转，高位直接跳出。
                         appearFromZero = true,
                         style = style,
                         color = color,

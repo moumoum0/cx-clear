@@ -5,12 +5,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
-/**
- * 手写 JSON 解析器的行为。
- *
- * 会话标题、项目名都从这里取值；解析错一个字段，UI 上就是一条张冠李戴的会话，
- * 而用户是照着标题决定删哪条的。解析失败必须返回 null 让调用方跳过该行，绝不能抛。
- */
+// 手写 JSON 解析器的行为：解析失败返回 null 让调用方跳过该行，抛出会把整个列表弄崩。
 class MiniJsonTest {
     @Test
     fun `parses nested objects and arrays`() {

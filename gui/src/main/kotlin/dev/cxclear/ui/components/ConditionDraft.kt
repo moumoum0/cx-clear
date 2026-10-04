@@ -4,10 +4,7 @@ import dev.cxclear.chats.ChatCondition
 import dev.cxclear.chats.ChatConditionType
 import dev.cxclear.chats.ConditionJoin
 
-/**
- * 条件编辑向导的草稿态：已确认的条件、当前的连接词，以及正在选的属性/比较符。
- * 纯逻辑无 Compose，附带从已有条件反推草稿的入口。
- */
+/** 条件编辑向导的草稿态：已确认条件、连接词、正在选的属性与比较符。 */
 internal data class Draft(
     val committed: List<ChatCondition> = emptyList(),
     val join: ConditionJoin = ConditionJoin.AND,

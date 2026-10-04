@@ -53,9 +53,7 @@ dependencies {
     implementation("net.java.dev.jna:jna:5.19.1")
     implementation(compose.desktop.currentOs)
     implementation(compose.components.resources)
-    // 必须跟 foundation 走同一发布列车：compose.desktop 1.11.1 把 foundation 拉到 1.12.0，
-    // 而 material3 1.11.0-alpha07 是针对 foundation 1.11.0-beta03 编译的，
-    // 运行期会因 CustomStyle.applyStyle 签名变化抛 AbstractMethodError（输入框一渲染就崩）。
+    // material3 要跟 compose.desktop 带的 foundation 同发布列车，版本错配会在 CustomStyle.applyStyle 抛 AbstractMethodError（输入框一渲染就崩）。
     implementation("org.jetbrains.compose.material3:material3:1.12.0-alpha03")
     add(materialIconsArchive.name, "org.jetbrains.compose.material:material-icons-extended-desktop:$materialIconsVersion")
     implementation("org.jetbrains.compose.material:material-icons-core:$materialIconsVersion")
@@ -86,7 +84,7 @@ compose.desktop {
         }
 
         nativeDistributions {
-            // Windows 走 app-image + Inno Setup（packageInnoSetup 任务），不再出 MSI。
+            // Windows 安装包用 app-image + Inno Setup（packageInnoSetup 任务），targetFormats 只需 Dmg。
             targetFormats(TargetFormat.Dmg)
             packageName = "CX Clear"
             packageVersion = version.toString()

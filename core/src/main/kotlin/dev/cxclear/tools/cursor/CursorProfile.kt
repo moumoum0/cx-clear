@@ -8,18 +8,9 @@ import dev.cxclear.model.ToolProfile
 import java.nio.file.Files
 
 /**
- * Cursor 的清理名单：`~/.cursor` 与 `%APPDATA%\Cursor` 两处数据根。
- */
-
-/**
- * Cursor — 数据分两处：
- * - `~/.cursor`：扩展、Agent 项目态、技能与配置
- * - `%APPDATA%\Cursor`：Electron/Chromium 缓存、工作区存储、全局状态库
- *
- * 安装目录（`%LOCALAPPDATA%\Programs\Cursor`）不计入、不清理。
- * 主状态库 `state.vscdb` 不提供清理项——删掉会导致历史会话卡在 Loading Chat。
- * `Partitions` 只清 Cache/GPUCache 等，不动 Local Storage / Session Storage。
- * `~/.cursor/projects` 按子目录拆分：不清 canvases / rules（用户产物）。
+ * Cursor：`~/.cursor` 与 `%APPDATA%\Cursor` 两处数据根，安装目录是软件本体。
+ * 主状态库 `state.vscdb` 删掉会让历史会话卡在 Loading Chat；`Partitions` 只列缓存子目录，
+ * Local Storage / Session Storage 是登录态；`~/.cursor/projects` 的 canvases / rules 是用户产物。
  */
 val CursorProfile = ToolProfile(
     id = "cursor",
@@ -30,7 +21,6 @@ val CursorProfile = ToolProfile(
     protectedPaths = ::cursorProtectedPaths,
     spaceDirs = { listOfNotNull(cursorHome(), cursorAppData()) },
     targets = listOf(
-        // —— AppData\\Cursor：缓存与临时（SAFE）——
         CleanTarget(
             id = "cursor.state-backup",
             label = "全局状态库备份",
@@ -149,8 +139,7 @@ val CursorProfile = ToolProfile(
             description = "Chromium blob 存储，可能包含尚未持久化的页面或附件数据。删除后不可恢复。",
             baseDir = ::cursorAppData,
         ),
-        // Partitions 整目录含 Local Storage / Session Storage，不能整删。
-        // 只清其中明确是缓存的子目录。
+        // 整删 Partitions 会丢登录态，这里只列缓存子目录。
         CleanTarget(
             id = "cursor.partition-cache",
             label = "内置浏览器 HTTP 缓存",
@@ -233,7 +222,6 @@ val CursorProfile = ToolProfile(
             baseDir = ::cursorAppData,
         ),
 
-        // —— ~/.cursor：缓存与临时（SAFE）——
         CleanTarget(
             id = "cursor.home-logs",
             label = "Agent 日志",
@@ -271,7 +259,6 @@ val CursorProfile = ToolProfile(
             baseDir = ::cursorHome,
         ),
 
-        // —— OPTIONAL：会丢历史 / 需重装 ——
         CleanTarget(
             id = "cursor.ai-tracking",
             label = "AI 代码追踪库",

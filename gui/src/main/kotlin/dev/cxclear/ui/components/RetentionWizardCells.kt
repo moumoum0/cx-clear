@@ -44,10 +44,7 @@ import dev.cxclear.ui.theme.AppDimensions
 import dev.cxclear.ui.theme.Motion
 import dev.cxclear.ui.theme.appOutlinedTextFieldColors
 
-/**
- * 向导的通用分段原语：定宽列、分段选项列表、返回格，以及自选数值/文本输入格。
- * 只负责外观与回调，不含任何条件语义。
- */
+/** 向导的分段原语：定宽列、选项列表、返回格、输入格；只画外观，条件含义由调用方处理。 */
 @Composable
 internal fun WizColumn(content: @Composable ColumnScope.() -> Unit) {
     Column(
@@ -83,7 +80,7 @@ internal fun WizSegmented(
             .background(AppColors.Surface3),
     ) {
         options.forEachIndexed { index, option ->
-            // 别按下标 key，选项换位会串颜色动画。
+            // 按下标 key 会让选项换位时串颜色动画。
             key(option.label) {
                 if (index > 0) {
                     Box(

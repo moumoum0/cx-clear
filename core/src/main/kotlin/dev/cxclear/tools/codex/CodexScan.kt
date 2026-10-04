@@ -11,13 +11,9 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.BasicFileAttributes
 
-/**
- * Codex 会话扫描：读 ~/.codex/session_index.jsonl 索引 + rollout-*.jsonl 头部元数据。
- */
-
 internal data class CodexIndexEntry(val id: String, val title: String, val updatedAt: String?)
 
-/** 坏行跳过；索引本身不会被删，损坏不影响主流程。 */
+// 坏行跳过；索引本身不会被删，损坏不影响主流程。
 @Suppress("UNCHECKED_CAST")
 internal fun readCodexIndex(): Map<String, CodexIndexEntry> {
     val file = codexIndexFile() ?: return emptyMap()
@@ -48,10 +44,6 @@ internal fun codexFileId(file: Path): String {
 
 internal data class CodexMeta(val title: String?, val project: String?)
 
-/**
- * 扫一遍 rollout jsonl 头部，取标题与项目名。
- * 标题优先第一条用户消息，退回 cwd 末段；项目名一律取 cwd 末段。
- */
 internal fun readCodexMeta(file: Path): CodexMeta {
     return runCatching {
         Files.newBufferedReader(file).use { br ->
@@ -62,7 +54,6 @@ internal fun readCodexMeta(file: Path): CodexMeta {
                 if (scanned++ > 200) break
                 val obj = MiniJson.parse(line) ?: continue
                 when (obj.jsonStr("type")) {
-                    // session_meta 的 cwd 是项目名来源；标题只在没有用户消息时才退回用它。
                     "session_meta" -> {
                         val cwd = obj.jsonObj("payload")?.jsonStr("cwd")
                         if (!cwd.isNullOrBlank()) project = lastPathSegment(cwd)

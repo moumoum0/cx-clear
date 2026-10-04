@@ -5,11 +5,7 @@ import dev.cxclear.model.ScanResult
 import dev.cxclear.scan.ToolSpaceResult
 import dev.cxclear.util.formatBytes
 
-/**
- * 给 AI 看的 JSON 投影：domain 对象 → 稳定的字段名。
- *
- * 字段名（bytes_label / target_id 之类）是外部契约，改名会破坏消费方。
- */
+/** 给 AI 看的 JSON 输出：字段名对脚本与 AI 固定，改名会破坏消费方。 */
 
 // delete / clean 的预览输出；matched / bytes / preview 三个顶层字段所有删除命令共用
 internal fun previewJson(

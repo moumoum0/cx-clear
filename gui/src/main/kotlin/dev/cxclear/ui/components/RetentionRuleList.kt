@@ -44,9 +44,7 @@ import dev.cxclear.chats.RetentionRule
 import dev.cxclear.ui.theme.AppColors
 import dev.cxclear.ui.theme.AppDimensions
 
-/**
- * 自动清理策略的列表区：策略卡片（长按出删除菜单）、空态占位与底部新建/AI 提示词按钮。
- */
+// 自动清理策略的列表区：策略卡片（长按出删除菜单）、空态占位与底部新建/AI 提示词按钮。
 @Composable
 internal fun RuleListView(
     config: RetentionConfig,

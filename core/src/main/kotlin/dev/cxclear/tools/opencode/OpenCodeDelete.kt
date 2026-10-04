@@ -6,12 +6,7 @@ import java.io.IOException
 import java.nio.file.Files
 import java.sql.DriverManager
 
-/**
- * 删除 Open Code 会话。
- * Open Code 使用 SQLite 存储，需要：
- * 1. 从数据库中删除 session 记录（会级联删除 session_message）
- * 2. 删除 storage/session_diff/<session_id>.json 文件
- */
+// 删除 Open Code 会话：库里的 session 记录（级联删消息）和 session_diff 文件。
 internal fun deleteOpenCodeSession(session: ChatSessionSummary): Pair<Long, List<String>> {
     val dbFile = opencodeDbFile()
     if (dbFile == null) {

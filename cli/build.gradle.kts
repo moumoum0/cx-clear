@@ -27,7 +27,7 @@ application {
 }
 
 tasks.named<CreateStartScripts>("startScripts") {
-    // 发布包只用原生 cxclear.exe，不带 application plugin 生成的 bat/sh
+    // 发布包入口是 MinGW 编出的 cxclear.exe；application plugin 顺手生成的 bat/sh 属于多余产物，关掉生成任务
     enabled = false
 }
 

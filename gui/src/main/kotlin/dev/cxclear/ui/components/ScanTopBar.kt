@@ -37,10 +37,7 @@ import dev.cxclear.ui.theme.AppColors
 import dev.cxclear.ui.theme.AppDimensions
 import dev.cxclear.util.formatBytes
 
-/**
- * 扫描页顶栏：左侧工具选择器 + 右侧扫描 / 清理按钮。
- * 工具按钮统一走 [ToolEntries]，默认只露前三个，其余由箭头展开。
- */
+/** 扫描页顶栏：工具选择 + 扫描/清理按钮，工具清单见 [ToolEntries]。 */
 
 @Composable
 internal fun TopBar(
@@ -158,7 +155,6 @@ internal fun ToolSelector(
         horizontalArrangement = Arrangement.spacedBy(AppDimensions.SpacingSmall.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // 前三个常驻，其余收在箭头后面；顺序由 ToolEntries 决定。
         ToolEntries.take(3).forEach { entry ->
             key(entry.id) {
                 ToolIcon(entry.name, entry.resource, entry.id in selectedTools) { onToolToggle(entry.id) }

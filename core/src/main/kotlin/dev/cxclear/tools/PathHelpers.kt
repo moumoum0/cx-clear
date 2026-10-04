@@ -27,7 +27,6 @@ internal fun listDir(dir: Path): List<Path> = runCatching {
     Files.newDirectoryStream(dir).use { it.toList() }
 }.getOrDefault(emptyList())
 
-/** 不跟随软链接。 */
 internal fun snapshotTree(dir: Path): List<PathSnapshot> {
     if (!Files.exists(dir)) return emptyList()
     val snap = readPathSnapshot(dir) ?: return emptyList()
@@ -40,7 +39,6 @@ internal fun snapshotTree(dir: Path): List<PathSnapshot> {
     return list
 }
 
-/** 只计文件，不跟随链接。 */
 internal fun treeSize(dir: Path): Long {
     if (!Files.exists(dir)) return 0L
     return runCatching {

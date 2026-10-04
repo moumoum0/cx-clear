@@ -11,14 +11,12 @@ internal fun cursorHome(): Path? = homeSubdir(".cursor")
 internal fun cursorAppData(): Path? =
     appDataRoaming()?.resolve("Cursor")?.takeIf { Files.isDirectory(it) }
 
-/** Cursor 项目存储根目录：~/.cursor/projects/ */
 internal fun cursorProjectsRoot(): Path? =
     homeDir()?.resolve(".cursor")?.resolve("projects")?.takeIf { Files.isDirectory(it) }
 
-/** 测试注入。null 走真实路径；指向不存在的文件则视为状态库缺失。 */
+// 测试注入。null 时按默认路径解析；指向不存在的文件则视为状态库缺失。
 internal var cursorStateDbOverride: Path? = null
 
-/** Cursor 全局状态库：%APPDATA%/Cursor/User/globalStorage/state.vscdb */
 internal fun cursorStateDbFile(): Path? =
     appDataRoaming()
         ?.resolve("Cursor")

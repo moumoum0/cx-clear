@@ -2,14 +2,10 @@ package dev.cxclear.model
 
 import java.nio.file.Path
 
-/** 项目名为空时的归档名。各工具的 [ChatTool.projectLabel] 也落到这里。 */
+// 项目名为空时的归档名。各工具的 [ChatTool.projectLabel] 也落到这里。
 const val NO_PROJECT_LABEL = "未归属项目"
 
-/**
- * 一个工具在对话管理里的身份。
- * 实例由 `tools/<id>/` 的插件持有，不在这里枚举具体软件。
- * 相等只看 [id]，方便扫描结果和登记表互相比较。
- */
+// 工具在对话管理里的身份，实例由 `tools/<id>/` 插件持有；相等只看 [id]。
 class ChatTool(
     val id: String,
     val displayName: String,
@@ -26,7 +22,6 @@ class ChatTool(
 
 enum class ChatRole { USER, ASSISTANT }
 
-/** 详情里展示的一条消息。只保留纯文本，工具调用不展示。 */
 data class ChatMessage(
     val role: ChatRole,
     val text: String,
@@ -34,10 +29,8 @@ data class ChatMessage(
 )
 
 /**
- * 列表里的一条会话。
- *
- * [entries] 是扫描时冻结的待删条目（Codex 一个文件；Claude 主 jsonl + 同级 `<uuid>/` 下的全部内容），
- * 删除阶段只允许按这份清单逐条删，不重新展开目录。
+ * 列表里的一条会话。[entries] 是扫描时冻结的待删清单，删除阶段按它逐条删；
+ * 重新展开目录会把扫描后新增的文件带进来。
  */
 data class ChatSessionSummary(
     val tool: ChatTool,
@@ -51,7 +44,7 @@ data class ChatSessionSummary(
     val entries: List<PathSnapshot>,
 )
 
-/** 一次对话删除的结果。单条失败只记账，不中断其余条目。 */
+// 一次对话删除的结果。单条失败记入 errors，其余条目继续删。
 data class ChatDeleteResult(
     val deletedSessions: Int,
     val freedBytes: Long,

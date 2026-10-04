@@ -43,10 +43,7 @@ import java.awt.datatransfer.StringSelection
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-/**
- * 自动清理策略页入口：策略列表 + 命名对话框 + 规则编辑浮层宿主。
- * 列表见 RetentionRuleList，向导骨架见 RetentionWizardLayout，文案见 RetentionRuleText。
- */
+/** 自动清理策略页入口：策略列表 + 命名对话框 + 编辑浮层宿主。 */
 @Composable
 internal fun ChatsAutoPane(
     config: RetentionConfig,
@@ -206,7 +203,7 @@ private fun WizardOverlay(
                 .fillMaxSize()
                 .padding(start = AppDimensions.SidebarWidth.dp, top = AppDimensions.TitleBarHeight.dp)
                 .padding(AppDimensions.SpacingLarge.dp)
-                // 吞点击，别落到 scrim 上取消。
+                // 吞点击，落到 scrim 上会取消。
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,

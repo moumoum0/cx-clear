@@ -17,10 +17,8 @@ private fun xdgPath(env: String, vararg homeParts: String): Path? {
 }
 
 /**
- * 用户主目录。Windows 上 USERPROFILE 比 user.home 更可靠（后者在某些 JVM 下指向别处）。
- *
- * 放在 storage 而不是 tools：AppDir、会话扫描都要用它，留在某个软件目录会让
- * storage 仅为这一个函数反向依赖工具名单。
+ * 用户主目录。Windows 上 USERPROFILE 比 user.home 更可靠。
+ * 放在 storage：放 tools 会让 storage 反向依赖工具名单。
  */
 internal fun homeDir(): Path? = firstExistingDir(
     buildList {
@@ -29,7 +27,6 @@ internal fun homeDir(): Path? = firstExistingDir(
     }
 )
 
-/** `%APPDATA%`（Roaming）。非 Windows 走 [userConfigDir]。 */
 internal fun appDataRoaming(): Path? = when (currentOs()) {
     HostOs.WINDOWS -> firstExistingDir(
         buildList {
@@ -40,7 +37,6 @@ internal fun appDataRoaming(): Path? = when (currentOs()) {
     else -> userConfigDir()
 }
 
-/** `%LOCALAPPDATA%`。非 Windows 走 [userCacheDir]。 */
 internal fun appDataLocal(): Path? = when (currentOs()) {
     HostOs.WINDOWS -> firstExistingDir(
         buildList {
@@ -51,20 +47,17 @@ internal fun appDataLocal(): Path? = when (currentOs()) {
     else -> userCacheDir()
 }
 
-/** XDG 数据目录。Windows 仍是 `~/.local/share`，不读 XDG_DATA_HOME。 */
 internal fun userDataDir(): Path? = when (currentOs()) {
     HostOs.LINUX -> xdgPath("XDG_DATA_HOME", ".local", "share")
     else -> homeDir()?.resolve(".local")?.resolve("share")
 }
 
-/** 用户配置目录。Windows 仍是 `~/.config`，不是 `%APPDATA%`。 */
 internal fun userConfigDir(): Path? = when (currentOs()) {
     HostOs.MACOS -> homeDir()?.resolve("Library")?.resolve("Application Support")
     HostOs.LINUX -> xdgPath("XDG_CONFIG_HOME", ".config")
     else -> homeDir()?.resolve(".config")
 }
 
-/** 用户缓存目录。Windows 仍是 `~/.cache`，不读 XDG_CACHE_HOME。 */
 internal fun userCacheDir(): Path? = when (currentOs()) {
     HostOs.LINUX -> xdgPath("XDG_CACHE_HOME", ".cache")
     else -> homeDir()?.resolve(".cache")

@@ -9,8 +9,7 @@ import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
 
-/** 自动清理策略：--rules / --rules-file / --rule 读取、rules validate 输入、策略告警说明 */
-
+// 自动清理策略：--rules / --rules-file / --rule 读取、rules validate 输入、策略告警说明
 internal fun readInputText(file: String?): String {
     val text = if (file != null && file != "-") {
         val path = Path.of(file)

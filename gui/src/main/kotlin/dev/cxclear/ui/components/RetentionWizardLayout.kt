@@ -46,10 +46,7 @@ import dev.cxclear.ui.theme.Motion
 import kotlin.math.max
 import kotlin.math.roundToInt
 
-/**
- * 规则编辑向导的骨架：分栏滚轮式条件构造器的槽位调度、级联锚点对齐与整体位移动画。
- * 自定义 Layout + onPlaced 位移那套度量逻辑全在这里，单元格外观见 RetentionWizardCells。
- */
+/** 规则编辑向导骨架：自定义 Layout + onPlaced 位移动画；单元格外观见 RetentionWizardCells。 */
 internal val ColumnWidth = 150.dp
 
 internal data class RoundEntry(
@@ -100,7 +97,7 @@ internal fun WizardView(
         valuePreview = null
     }
 
-    // RoundEntry.id 要稳：点「且」只翻 locked，别换 key。
+    // RoundEntry.id 要稳：点「且」只翻 locked，换 key 会重建这一轮。
     val initialFrozenCount = if (draft.showCombine) {
         (draft.committed.size - 1).coerceAtLeast(0)
     } else {
@@ -176,7 +173,7 @@ internal fun WizardView(
         )
     }
 
-    // 当前轮钉左边；右对齐单轮也会贴右。位移只信 onPlaced（-x），别在 layout 里重算。
+    // 当前轮钉左边，右对齐单轮也会贴右。位移以 onPlaced 上报的 -x 实测值为准。
     val pathShift = remember { Animatable(0f) }
     var shiftInit by remember { mutableStateOf(false) }
     var shiftTarget by remember { mutableFloatStateOf(0f) }
@@ -265,7 +262,7 @@ internal fun WizardView(
     }
 }
 
-// 同槽位会换 call-site（比较符↔取值），状态得 hoist，否则每次重播入场。
+// 同槽位会换 call-site（比较符与取值互换），状态需要 hoist，否则每次重播入场。
 internal class ColumnAnim {
     val enter = Animatable(0f)
     val anchor = Animatable(0f)

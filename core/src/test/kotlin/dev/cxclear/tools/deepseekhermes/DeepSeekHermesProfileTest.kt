@@ -47,7 +47,7 @@ class DeepSeekHermesProfileTest {
     private fun plannedPaths(): Set<Path> = DeepSeekHermesProfile.targets
         .filter { it.id.startsWith("dsh.desktop-") }
         .flatMap { target ->
-            // Resolve desktop rules against the isolated fixture, never the user's data.
+            // Resolve desktop rules against the isolated fixture so the test stays off the user's real data.
             val result = scanResolved(DeepSeekHermesProfile.id, resolveTarget(base, target))
             assertNotNull(result.deletionPlan).entries.map { it.path }
         }.toSet()

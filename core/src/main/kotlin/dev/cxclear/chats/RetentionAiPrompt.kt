@@ -3,10 +3,8 @@ package dev.cxclear.chats
 import dev.cxclear.tools.chatTools
 
 /**
- * 给外部 AI 助手用的提示词：根据自然语言需求生成
- * `~/.cxclear/chat-retention.txt`（见 [RetentionStore]）。
- *
- * 设置页一点击就整段复制到剪贴板，用户粘贴给任意对话式 AI 即可。
+ * 给外部 AI 用的提示词：按自然语言需求生成 `~/.cxclear/chat-retention.txt`（见 [RetentionStore]）。
+ * 设置页整段复制到剪贴板。
  */
 object RetentionAiPrompt {
     private val toolNames get() = chatTools().joinToString(" / ") { it.displayName }

@@ -68,7 +68,7 @@ fun screenFromPrefId(id: String): Screen = when (id) {
     else -> Screen.SCAN
 }
 
-/** 设置页改主题时写回偏好，由 [App] 根部持有状态并驱动 [AppTheme]。 */
+// 设置页改主题时写回偏好，由 [App] 根部持有状态并驱动 [AppTheme]。
 data class ThemeController(
     val themeMode: ThemeMode,
     val colorScheme: AppColorScheme,
@@ -87,7 +87,6 @@ fun WindowScope.App(
 ) {
     val scope = rememberCoroutineScope()
     var prefs by remember { mutableStateOf<AppPrefs?>(null) }
-    // 后台异步加载偏好，不阻塞 UI。
     LaunchedEffect(Unit) {
         prefs = withContext(Dispatchers.IO) { AppPreferences.read() }
     }
@@ -117,7 +116,7 @@ fun WindowScope.App(
 
     val overlayHost = remember { OverlayHostState() }
     val hazeState = rememberHazeState()
-    // 让 Haze 在窗口显示后立即完成一次渲染管线初始化，但不影响首屏内容,屁用没有，首次模糊会卡顿,目前没有任何办法能够解决了
+    // 窗口显示后先让 Haze 渲染管线初始化一次。实测没用：首次模糊仍会卡顿，暂时无解。
     var isWarmingUp by remember { mutableStateOf(true) }
     LaunchedEffect(Unit) {
         kotlinx.coroutines.delay(50)
@@ -240,7 +239,7 @@ fun WindowScope.App(
                     ),
             )
         }
-        // 别跟 scrim 一起卸，草稿状态会丢。
+        // 跟 scrim 一起卸会丢草稿状态。
         overlay?.invoke()
     }
     }

@@ -38,10 +38,7 @@ import dev.cxclear.util.formatBytes
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-/**
- * 底部两张统计卡：累计清理（含近 7 天柱状图）与 C 盘占用圆柱。
- * 两张卡都由 refreshKey 驱动重读磁盘，清理完成后父级 bump 它。
- */
+/** 底部统计卡：累计清理（近 7 天柱状图）与 C 盘圆柱；refreshKey 驱动重读磁盘。 */
 
 @Composable
 internal fun CleaningStatsCard(refreshKey: Int, modifier: Modifier = Modifier) {
@@ -85,7 +82,7 @@ internal fun CleaningStatsCard(refreshKey: Int, modifier: Modifier = Modifier) {
     }
 }
 
-// 别用 weight，一两根会被拉成整条。
+// 用 weight 的话，一两根柱子会被拉成整条。
 private val BarWidth = 26.dp
 private val BarSpacing = 8.dp
 private val BarLabelHeight = 16.dp

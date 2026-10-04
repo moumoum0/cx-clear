@@ -17,7 +17,7 @@ import dev.cxclear.storage.AppColorScheme
 
 val LocalAppColors = staticCompositionLocalOf { appColorTokensOf(M3DefaultLight) }
 
-/** 当前主题语义色；只在 @Composable 里读。Canvas 等非组合作用域先抓到局部变量再用。 */
+// 当前主题色表，在 @Composable 里读。Canvas 等非组合作用域先抓到局部变量再用。
 val AppColors: AppColorTokens
     @Composable
     @ReadOnlyComposable
@@ -136,7 +136,7 @@ fun AppTheme(
     }
 }
 
-/** OutlinedTextField 统一取 [AppColors]，避免各输入框各自拼一套颜色。 */
+// OutlinedTextField 的配色，各输入框共用这一套 [AppColors] 取值。
 @Composable
 fun appOutlinedTextFieldColors(
     focusedTrailingIconColor: Color = AppColors.TextTertiary,

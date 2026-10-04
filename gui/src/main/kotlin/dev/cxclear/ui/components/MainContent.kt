@@ -49,10 +49,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/**
- * 扫描页外壳：只放状态机（ScanPhase / 分类 / 勾选 / 清理中）、页面路由与布局，
- * 具体渲染在 ScanTopBar / ScanResultView / DiskStatCards 里。
- */
+/** 扫描页外壳：状态机、页面路由与布局；渲染在 ScanTopBar / ScanResultView / DiskStatCards。 */
 @Composable
 fun MainContent(
     currentScreen: Screen,
@@ -97,7 +94,6 @@ fun MainContent(
                 clean(requests).collect { event ->
                     when (event) {
                         is CleanEvent.AllDone -> {
-                            // 用实测释放量，不用扫描预估。
                             CleanHistory.append(event.totalFreedBytes)
                         }
                         is CleanEvent.Blocked -> errors +=
@@ -144,7 +140,7 @@ fun MainContent(
                 )
             }
 
-            // 跟 defaultSelected 对齐，不能写死 risk == SAFE。
+            // 默认勾选读 defaultSelected，写死 risk == SAFE 会多勾。
             selectedTargets = scanCategories
                 .flatMap { it.items }
                 .filter { it.defaultSelected && it.bytes > 0L }
@@ -177,7 +173,6 @@ fun MainContent(
         TopBar(
             selectedTools = selectedTools,
             onToolToggle = { id ->
-                // 换工具只改勾选，不抹已有扫描结果。
                 if (scanPhase != ScanPhase.SCANNING) {
                     selectedTools = if (id in selectedTools) selectedTools - id else selectedTools + id
                 }

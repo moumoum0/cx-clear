@@ -28,11 +28,7 @@ import dev.cxclear.ui.theme.AppColors
 import dev.cxclear.ui.theme.AppDimensions
 import dev.cxclear.util.formatBytes
 
-/**
- * 手动管理面板的批量删除出口：底部选中条 + 删除前确认弹窗。
- *
- * 条上的按钮在删除期间整体禁用，计数与体积都由主体算好传进来。
- */
+/** 批量删除出口：底部选中条 + 确认弹窗，删除期间按钮禁用。 */
 @Composable
 internal fun SelectionActionBar(
     count: Int,

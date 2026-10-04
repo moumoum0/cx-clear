@@ -7,11 +7,6 @@ import dev.cxclear.model.ScanResult
 import dev.cxclear.model.PathSnapshotKind
 import java.math.BigDecimal
 
-/**
- * CLI 筛选条件解析与应用
- */
-
-// 解析时长（支持 30d, 7d, 1h, 30m 等）
 internal fun parseDuration(raw: String): Long {
     val pattern = Regex("""^(\d+)([dhms])$""")
     val match = pattern.matchEntire(raw) ?: throw CliUsageException("invalid duration: $raw (examples: 30d, 7h, 30m)")
@@ -29,7 +24,6 @@ internal fun parseDuration(raw: String): Long {
     return num * multiplier
 }
 
-// 解析大小（支持 100MB, 1GB, 500KB 等）
 internal fun parseSize(raw: String): Long {
     val pattern = Regex("""^(\d+(?:\.\d+)?)\s*(B|KB|MB|GB|TB)?$""", RegexOption.IGNORE_CASE)
     val match = pattern.matchEntire(raw) ?: throw CliUsageException("invalid size: $raw (examples: 100MB, 1GB)")
@@ -52,7 +46,6 @@ private fun ParsedArgs.nonNegativeInt(name: String): Int? = value(name)?.let {
     it.toIntOrNull()?.takeIf { n -> n >= 0 } ?: throw CliUsageException("--$name must be a non-negative integer")
 }
 
-// 应用会话筛选条件
 internal data class ChatFilters(
     val olderThan: Long? = null,
     val newerThan: Long? = null,
@@ -67,7 +60,6 @@ internal data class ChatFilters(
         if (sizeGt != null) result = result.filter { it.sizeBytes > sizeGt }
         if (sizeLt != null) result = result.filter { it.sizeBytes < sizeLt }
 
-        // 时间筛选
         if (olderThan != null) {
             val threshold = nowMillis - olderThan
             result = result.filter { it.updatedMillis < threshold }
@@ -77,19 +69,16 @@ internal data class ChatFilters(
             result = result.filter { it.updatedMillis >= threshold }
         }
 
-        // keep-days：保留 N 天内的（从筛选结果中排除）
         if (keepDays != null) {
             val keepThreshold = nowMillis - keepDays * 24L * 3600 * 1000
             result = result.filter { it.updatedMillis < keepThreshold }
         }
 
-        // keep-recent：保留最近 N 条（从筛选结果中排除）
         if (keepRecent != null && keepRecent > 0) {
             val sorted = result.sortedByDescending { it.updatedMillis }
             result = sorted.drop(keepRecent)
         }
 
-        // 策略筛选最后套，和其他条件是交集
         if (rulesConfig != null) result = rulesConfig.match(result, nowMillis)
 
         return result

@@ -8,8 +8,6 @@ import java.nio.file.LinkOption
 import java.nio.file.Path
 import java.nio.file.attribute.BasicFileAttributes
 
-/** 路径展开与删除安全校验：软链接不跟随、路径边界判定、身份快照读取。 */
-
 /**
  * 解析相对路径；单独的路径段 `*` 展开为该层每个非符号链接子目录。
  * 不含 `*` 时与 [Path.resolve] 等价（返回单元素列表）。
@@ -44,7 +42,7 @@ internal fun expandPathPattern(baseDir: Path, relPath: String): List<Path> {
     return currents
 }
 
-/** 最终条目可以是链接（删除链接本身是安全的），但 base 到其父目录之间不能经过链接。 */
+// 最终条目可以是链接（删除链接本身是安全的），但 base 到其父目录之间不能经过链接。
 internal fun isSafeDeletionPath(baseDir: Path, candidate: Path): Boolean {
     val base = baseDir.toAbsolutePath().normalize()
     val path = candidate.toAbsolutePath().normalize()
@@ -62,7 +60,7 @@ internal fun isSafeDeletionPath(baseDir: Path, candidate: Path): Boolean {
     return true
 }
 
-/** 只允许真实目录；符号链接和 Windows 目录联接点都不能作为遍历入口。 */
+// 遍历入口必须是普通目录；符号链接和 Windows 目录联接点会被拒绝。
 internal fun isSafeTraversalDirectory(baseDir: Path, candidate: Path): Boolean {
     val base = baseDir.toAbsolutePath().normalize()
     val path = candidate.toAbsolutePath().normalize()
@@ -87,7 +85,7 @@ internal data class PathInspection(
     val linkState: LinkState,
 )
 
-/** 一次属性读取同时完成类型和链接判断；仅对无法分类的特殊项做跟随目录兜底检查。 */
+// 一次属性读取同时完成类型和链接判断；无法分类的特殊项再跟随链接查一次是否目录。
 internal fun inspectPath(path: Path): PathInspection? {
     val normalized = path.toAbsolutePath().normalize()
     val attrs = runCatching {
@@ -102,7 +100,7 @@ internal fun inspectPath(path: Path): PathInspection? {
     return PathInspection(normalized, attrs, state)
 }
 
-/** 属性读取失败时返回 UNKNOWN；所有安全判断都把 UNKNOWN 当成拒绝，而不是放行。 */
+// 属性读取失败时返回 UNKNOWN；所有安全判断都把 UNKNOWN 当拒绝处理。
 internal fun linkState(path: Path): LinkState {
     return inspectPath(path)?.linkState ?: LinkState.UNKNOWN
 }
@@ -120,7 +118,7 @@ internal fun matchesExpectedType(path: Path, expected: TargetEntryType): Boolean
 internal fun lastModifiedOrNull(path: Path): Long? =
     runCatching { Files.getLastModifiedTime(path, LinkOption.NOFOLLOW_LINKS).toMillis() }.getOrNull()
 
-/** 目录条目迭代：目录打不开、迭代中途抛错都当空处理，绝不把异常冒到扫描主流程。 */
+// 目录条目迭代：目录打不开、迭代中途抛错都当空目录处理，扫描继续。
 internal inline fun forEachDirectoryEntry(directory: Path, action: (Path) -> Unit) {
     val entries = runCatching { Files.newDirectoryStream(directory) }.getOrNull() ?: return
     try {
@@ -142,7 +140,7 @@ internal fun directoryEntries(directory: Path): List<Path> = buildList {
     forEachDirectoryEntry(directory) { add(it) }
 }
 
-/** Cleaner 复用的 NOFOLLOW_LINKS 身份读取。读取失败或特殊类型不生成可删除快照。 */
+// Cleaner 复用的 NOFOLLOW_LINKS 身份读取。读取失败或特殊类型不生成可删除快照。
 internal fun readPathSnapshot(path: Path): PathSnapshot? {
     val inspection = inspectPath(path) ?: return null
     val normalized = inspection.path

@@ -20,12 +20,6 @@ private val cursorTool = chatToolById("cursor")!!
 private val claudeTool = chatToolById("claude")!!
 private val codexTool = chatToolById("codex")!!
 
-/**
- * 会话删除的安全边界。
- *
- * 会话是用户不可恢复的历史记录，比缓存严重得多：这里每条断言都对应一种「删错了就没了」的场景，
- * 所以身份校验、进程阻断、冻结清单都必须逐个钉死。
- */
 class ChatDeleterTest {
     private val neverRunning: (ChatTool) -> Boolean = { false }
 
@@ -36,7 +30,7 @@ class ChatDeleterTest {
 
     private fun tempDir(): Path = Files.createTempDirectory("cxclear-chat")
 
-    /** 用 [mainFile] 及其冻结快照构造一条会话；[extra] 为同级 `<uuid>/` 之类的附带条目。 */
+    // 冻结快照构造一条会话；[extra] 为同级 `<uuid>/` 之类的附带条目。
     private fun session(
         mainFile: Path,
         root: Path,
@@ -57,9 +51,7 @@ class ChatDeleterTest {
         )
     }
 
-    // ─────────────────────────────────────────
     // 正常路径
-    // ─────────────────────────────────────────
 
     @Test
     fun `deletes the frozen entries and reports measured bytes`() = runBlocking {
@@ -71,7 +63,6 @@ class ChatDeleterTest {
 
         assertFalse(Files.exists(main))
         assertEquals(1, result.deletedSessions)
-        // 报的是实测字节，不是扫描时的预估值。
         assertEquals(10L, result.freedBytes)
         assertTrue(result.errors.isEmpty())
     }
@@ -96,9 +87,7 @@ class ChatDeleterTest {
         assertEquals(3L, result.freedBytes)
     }
 
-    // ─────────────────────────────────────────
     // 身份校验
-    // ─────────────────────────────────────────
 
     @Test
     fun `file modified after scan is never deleted`() = runBlocking {
@@ -140,11 +129,10 @@ class ChatDeleterTest {
 
         val result = deleteSessions(listOf(s), neverRunning)
 
-        // 目录非空必须保留，且不能连带把新内容删掉。
+        // 目录非空时保留，连带删会把新内容一起带走。
         assertTrue(Files.exists(added))
         assertTrue(Files.isDirectory(dir))
         assertEquals(1, result.errors.size)
-        // 有失败条目的会话不计入已删数量。
         assertEquals(0, result.deletedSessions)
     }
 
@@ -260,9 +248,7 @@ class ChatDeleterTest {
         assertEquals(1, headerCount(db, s.id))
     }
 
-    // ─────────────────────────────────────────
     // 进程阻断
-    // ─────────────────────────────────────────
 
     @Test
     fun `running tool blocks its sessions and leaves others deletable`() = runBlocking {
@@ -323,7 +309,7 @@ class ChatDeleterTest {
         val root = tempDir()
         val main = Files.writeString(root.resolve("a.jsonl"), "x")
         val s = session(main, root)
-        // 冻结之后同目录出现了另一条会话，删除阶段不得重新遍历目录。
+        // 冻结之后同目录出现了另一条会话；删除阶段按清单删，重新遍历会把这条新会话带走。
         val other = Files.writeString(root.resolve("b.jsonl"), "keep")
 
         deleteSessions(listOf(s), neverRunning)

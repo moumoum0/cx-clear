@@ -6,11 +6,6 @@ import dev.cxclear.model.ChatSessionSummary
 import dev.cxclear.util.MiniJson
 import java.sql.DriverManager
 
-/**
- * 从 Open Code 数据库加载消息。
- * Open Code 将消息存储在 session_message 表中，type 字段区分不同类型。
- * 用户和助手消息的 data 字段为 JSON，包含消息内容。
- */
 @Suppress("UNCHECKED_CAST")
 internal fun loadOpenCodeMessages(session: ChatSessionSummary): List<ChatMessage> {
     val messages = mutableListOf<ChatMessage>()

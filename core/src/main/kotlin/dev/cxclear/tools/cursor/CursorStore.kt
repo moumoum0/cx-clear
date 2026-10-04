@@ -23,7 +23,7 @@ private val CURSOR_KV_PREFIXES = listOf(
 
 /**
  * 按 Cursor ComposerService.deleteComposer 的落盘顺序清 state.vscdb。
- * 不碰 agentKv:blob，那些键没有 composerId 前缀，无法安全归属到单条会话。
+ * agentKv:blob 保留：那些键没有 composerId 前缀，无法安全归属到单条会话。
  */
 internal fun deleteCursorComposerFromStateDb(dbPath: Path, composerId: String): Pair<Long, List<String>> {
     if (!Files.isRegularFile(dbPath)) {

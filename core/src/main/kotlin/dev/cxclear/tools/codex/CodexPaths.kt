@@ -9,7 +9,7 @@ import java.nio.file.Path
 
 internal fun codexHome(): Path? = homeSubdir(".codex")
 
-/** `~/.cache/codex-runtimes`：primary-runtime 的 python/node/native 依赖，体积通常远大于 `~/.codex`。 */
+// `~/.cache/codex-runtimes`：primary-runtime 的 python/node/native 依赖，体积通常远大于 `~/.codex`。
 internal fun codexRuntimesCache(): Path? =
     userCacheDir()?.resolve("codex-runtimes")?.takeIf { Files.isDirectory(it) }
 

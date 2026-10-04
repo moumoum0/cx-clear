@@ -17,7 +17,7 @@ class ToolPlugin(
     val iconName: String,
     val shortName: String = profile.name,
     val chat: ChatTool,
-    /** 空集合表示所有系统都登记。名单按当前系统滤一次，不在每个调用点再判断。 */
+    // 空集合表示所有系统都登记。名单按当前系统滤一次，不在每个调用点再判断。
     val supportedOs: Set<HostOs> = emptySet(),
     val scan: ((ChatSessionSummary) -> Unit) -> List<ChatSessionSummary> = { emptyList() },
     val load: (ChatSessionSummary) -> List<ChatMessage> = { emptyList() },

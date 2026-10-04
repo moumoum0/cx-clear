@@ -7,11 +7,9 @@ import java.nio.file.StandardOpenOption
 
 private fun knownToolIds(): Set<String> = tools().map { it.profile.id }.toSet()
 
-// 偏好设置
 data class AppPrefs(
     // 扫描页默认勾选的工具 id。空则回退到 ChatTool 全量。
     val defaultTools: Set<String> = knownToolIds(),
-    // 启动时是否恢复 [lastScreenId]。
     val rememberLastScreen: Boolean = false,
     // 上次打开的页面：scan / chats / settings。
     val lastScreenId: String = "scan",
@@ -21,9 +19,7 @@ data class AppPrefs(
     val autoCleanEnabled: Boolean = true,
     // 自动清理删过东西后是否弹出通知条。
     val autoCleanNotify: Boolean = true,
-    // 亮 / 暗 / 跟随系统。
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
-    // 配色方案。
     val colorScheme: AppColorScheme = AppColorScheme.APP_DEFAULT,
 )
 

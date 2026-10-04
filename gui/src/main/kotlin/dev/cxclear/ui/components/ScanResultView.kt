@@ -52,10 +52,7 @@ import dev.cxclear.ui.theme.AppColors
 import dev.cxclear.ui.theme.Motion
 import dev.cxclear.util.formatBytes
 
-/**
- * 扫描结果主体：左侧圆柱 + 右侧分类卡片列表。
- * 分类卡片可展开成逐条勾选行，扫描中只显示进度不做勾选。
- */
+/** 扫描结果主体：左圆柱 + 右分类卡片列表，卡片展开成勾选行。 */
 
 @Composable
 internal fun ScanView(
@@ -238,7 +235,7 @@ internal fun ScanResultView(
                                 expandedCategoryId = if (isExpanded) null else category.id
                             },
                     ) {
-                        // matchParentSize，别把分类头撑高。
+                        // 色条用 matchParentSize 跟行高，直接填充会把分类头撑高。
                         if (!isRetained && fraction > 0f) {
                             Box(Modifier.matchParentSize()) {
                                 Box(
@@ -410,7 +407,7 @@ internal fun TargetSelectionRow(
                     color = AppColors.TextSecondary,
                 )
             }
-            // SAFE 说明对勾选没增量，只亮 OPTIONAL。
+            // OPTIONAL 的说明才亮，SAFE 的说明对勾选没增量。
             if (isOptional && target.description.isNotBlank()) {
                 Spacer(modifier = Modifier.height(3.dp))
                 Text(

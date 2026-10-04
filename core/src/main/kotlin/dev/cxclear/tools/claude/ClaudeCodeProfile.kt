@@ -7,12 +7,8 @@ import dev.cxclear.model.ToolProfile
 import dev.cxclear.storage.homeDir
 
 /**
- * Claude Code 的清理名单：`~/.claude`、CLI MCP 缓存与 Desktop Electron 缓存。
- */
-
-/**
- * Claude Code — `~/.claude` + CLI MCP 缓存 + Desktop（`Claude-3p`）Electron 缓存。
- * 不含 npm 安装目录、不含 Desktop 内嵌 claude-code 二进制 / 会话 / 登录态。
+ * Claude Code：`~/.claude` + CLI MCP 缓存 + Desktop（`Claude-3p`）Electron 缓存。
+ * npm 安装目录、Desktop 内嵌 claude-code 二进制 / 会话 / 登录态均留给用户。
  * 顺序按占用从大到小，方便用户从上往下勾。
  */
 val ClaudeCodeProfile = ToolProfile(
@@ -46,7 +42,6 @@ val ClaudeCodeProfile = ToolProfile(
             relPath = "plugins/marketplaces",
             kind = MatchKind.DIRECTORY_CONTENTS,
             risk = Risk.SAFE,
-            // 需再从 GitHub 拉取，不默认勾。
             defaultSelected = false,
             description = "克隆下来的插件市场仓库。删除后下次用插件时会重新拉取；不动 plugins 下的配置 JSON。",
         ),

@@ -14,10 +14,6 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.BasicFileAttributes
 
-/**
- * Claude Code 会话扫描：~/.claude/projects/<项目>/<uuid>.jsonl 及其同名兄弟目录。
- */
-
 internal val CLAUDE_SKIP_DIRS = setOf("memory", "settings", "todos")
 
 internal val UUID_REGEX = Regex(
@@ -29,12 +25,12 @@ internal fun isUuidFileName(name: String): Boolean = name.endsWith(".jsonl") &&
 
 /**
  * 从 Claude jsonl 读会话标题，优先级：
- *   1. `ai-title.aiTitle`  — Claude 自动生成的会话标题，追加在文件末尾
- *   2. `last-prompt.lastPrompt` — 用户最后一条提问，次优
- *   3. 首条非 meta 用户文本消息 — 保底
+ *   1. `ai-title.aiTitle`：Claude 自动生成的会话标题，追加在文件末尾
+ *   2. `last-prompt.lastPrompt`：用户最后一条提问，次优
+ *   3. 首条非 meta 用户文本消息，保底
  *
  * 标题字段用 `\uXXXX` 转义存储，MiniJson 已正确解码，无需额外处理。
- * 文件按 UTF-8 读取，遇到损坏行跳过，不中断整体解析。
+ * 文件按 UTF-8 读取，遇到损坏行跳过，其余行继续解析。
  */
 @Suppress("UNCHECKED_CAST")
 internal fun readClaudeTitle(file: Path): String? {

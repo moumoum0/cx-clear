@@ -6,13 +6,7 @@ import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
-/**
- * 手动管理页的排列与分组规则。
- *
- * 这里只做纯计算（筛选 / 排序 / 分档），不碰文件系统，也不依赖 Compose，
- * 便于 UI 层随状态变化反复调用。
- */
-
+// 手动管理页的排列与分组：纯计算，UI 可随状态反复调用。
 enum class ChatSortKey(val label: String) {
     UPDATED("更新时间"),
     SIZE("大小"),
@@ -27,12 +21,7 @@ enum class ChatGroupDimension(val label: String) {
     NONE("不分组"),
 }
 
-/**
- * 排列轴：把「按什么排」与「按什么分组」合成一个选择。
- *
- * 选中一个轴即按它排列；再把 [groupDimension] 打开就按同一个轴切档。
- * [groupDimension] 为 null 表示这个轴没有可用的分档（标题无从分档）。
- */
+// 排列轴：选中即按它排列，[groupDimension] 打开就按同一个轴切档；null 表示无可用分档。
 enum class ChatAxis(
     val label: String,
     val sortKey: ChatSortKey,
@@ -54,7 +43,7 @@ data class ChatGroup(
 
 private const val MB = 1024L * 1024L
 
-/** [min, max) ；顺序即展示顺序。 */
+// [min, max) ；顺序即展示顺序。
 private data class SizeBucket(val key: String, val label: String, val min: Long, val max: Long)
 
 private val SIZE_BUCKETS = listOf(
@@ -64,7 +53,7 @@ private val SIZE_BUCKETS = listOf(
     SizeBucket("size-gt-20m", "大于 20 MB", 20 * MB, Long.MAX_VALUE),
 )
 
-/** 时间档：距今不超过 [withinDays] 天；`null` 表示兜底的「更早」。顺序即展示顺序。 */
+// 时间档：距今不超过 [withinDays] 天；`null` 落在「更早」档。顺序即展示顺序。
 private data class TimeBucket(val key: String, val label: String, val withinDays: Long?)
 
 private val TIME_BUCKETS = listOf(
@@ -75,10 +64,10 @@ private val TIME_BUCKETS = listOf(
     TimeBucket("time-older", "更早", null),
 )
 
-/** 项目为空时的归档名。Codex 未记录 cwd、Claude 目录名缺失时落到这里。 */
+// 项目为空时的归档名。Codex 未记录 cwd、Claude 目录名缺失时落到这里。
 private const val NO_PROJECT_LABEL = "未归属项目"
 
-/** 展示用项目名。编码规则在各工具自己的 [ChatTool.projectLabel] 里。 */
+// 展示用项目名。编码规则在各工具自己的 [ChatTool.projectLabel] 里。
 fun projectLabel(session: ChatSessionSummary): String = session.tool.projectLabel(session.project)
 
 fun filterSessions(
@@ -101,7 +90,6 @@ private fun sortSessions(
     val sorted = when (sortKey) {
         ChatSortKey.UPDATED -> sessions.sortedBy { it.updatedMillis }
         ChatSortKey.SIZE -> sessions.sortedBy { it.sizeBytes }
-        // 项目名同名时退回更新时间，保证同项目内也有稳定次序。
         ChatSortKey.PROJECT -> sessions.sortedWith(
             compareBy<ChatSessionSummary> { projectLabel(it).lowercase() }
                 .thenBy { it.updatedMillis }
@@ -111,11 +99,7 @@ private fun sortSessions(
     return if (ascending) sorted else sorted.reversed()
 }
 
-/**
- * 把 [sessions] 按 [dimension] 切成可折叠区块，每块内部按 [sortKey] / [ascending] 排列。
- *
- * 空档位不产出区块。时间档以 [nowMillis] 为基准，同一次渲染内保持一致。
- */
+/** 按 [dimension] 切成可折叠区块，空档不产出；时间档以 [nowMillis] 为基准。 */
 fun groupSessions(
     sessions: List<ChatSessionSummary>,
     dimension: ChatGroupDimension,
@@ -138,8 +122,7 @@ fun groupSessions(
         }
 
         ChatGroupDimension.TIME -> {
-            // 「今天」按自然日切，其余按滚动天数切；一条会话只落最前面命中的那一档。
-            // 单次遍历分桶，避免逐档 filter + Set 差集在会话多时拖慢 UI 线程。
+            // 单次遍历分桶：逐档 filter + Set 差集在会话多时会拖慢 UI 线程。
             val zone = ZoneId.systemDefault()
             val startOfToday = LocalDate.now(zone).atStartOfDay(zone).toInstant().toEpochMilli()
             val dayMs = 24L * 3600_000L
@@ -171,7 +154,6 @@ fun groupSessions(
         ChatGroupDimension.PROJECT -> sessions
             .groupBy { projectLabel(it) }
             .map { (label, hits) -> ChatGroup("project-$label", label, sorted(hits)) }
-            // 项目多时把「会话多的项目」顶上去，「未归属」永远垫底。
             .sortedWith(
                 compareBy<ChatGroup> { it.label == NO_PROJECT_LABEL }
                     .thenByDescending { it.sessions.size }

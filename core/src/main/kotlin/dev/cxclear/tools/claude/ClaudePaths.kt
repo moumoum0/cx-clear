@@ -12,7 +12,7 @@ internal fun claudeHome(): Path? = homeSubdir(".claude")
 internal fun claudeProjectsRoot(): Path? =
     homeDir()?.resolve(".claude")?.resolve("projects")?.takeIf { Files.isDirectory(it) }
 
-/** CLI / IDE 扩展写入的 MCP 日志缓存（按项目切分）。 */
+// CLI / IDE 扩展写入的 MCP 日志缓存（按项目切分）。
 internal fun claudeCliNodejsCache(): Path? =
     appDataLocal()?.resolve("claude-cli-nodejs")?.resolve("Cache")?.takeIf { Files.isDirectory(it) }
 

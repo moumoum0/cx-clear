@@ -13,8 +13,7 @@ import dev.cxclear.tools.ALL_PROFILES
 import dev.cxclear.tools.chatToolById
 import dev.cxclear.tools.chatTools
 
-/** 命令作用范围：--tool / --targets 解析、一次性扫描、扫描结果反查 profile 与清理项 */
-
+// 命令作用范围：--tool / --targets 解析、一次性扫描、扫描结果反查 profile 与清理项
 internal data class ScanSnapshot(
     val spaces: List<ToolSpaceResult>,
     val results: List<ScanResult>,
@@ -53,7 +52,7 @@ internal fun resolveChatTools(args: ParsedArgs): Set<ChatTool> {
     return ids.map { id -> chatToolById(id) ?: throw CliUsageException("unknown tool: $id") }.toSet()
 }
 
-// --targets 只认所选工具下的清理项，写错直接报错，避免静默 matched:0
+// --targets 按所选工具下的清理项校验：写错 id 直接报错，放行会得到静默 matched:0
 internal fun resolveTargetIds(args: ParsedArgs, tools: Set<String>): Set<String>? {
     val ids = args.csv("targets").ifEmpty { return null }
     val known = ALL_PROFILES.filter { it.id in tools }.flatMap { p -> p.targets.map { it.id } }.toSet()

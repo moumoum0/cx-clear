@@ -10,10 +10,7 @@ import dev.cxclear.model.TargetKey
 import dev.cxclear.model.ToolProfile
 import dev.cxclear.ui.theme.AppColors
 
-/**
- * 扫描结果的分类桶与展示模型：扫描页的状态机、圆柱图、勾选行共用这些类型。
- * [buildCategories] 决定「应用共占用」如何拆成四个分类，[categoryAccent] 只负责取色。
- */
+/** 扫描结果的分类桶与展示模型；[buildCategories] 拆「应用共占用」，[categoryAccent] 取色。 */
 
 internal enum class ScanPhase { IDLE, SCANNING, DONE }
 
@@ -135,7 +132,6 @@ internal fun emptyScanCategories(): List<ScanCategory> = listOf(
     ),
 )
 
-// 纯函数取色，@Composable 是历史遗留，别去掉：调用点都在 @Composable 作用域内。
 @Composable
 internal fun categoryAccent(id: String): Color = when (id) {
     "packages" -> AppColors.CategoryPackages

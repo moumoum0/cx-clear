@@ -37,10 +37,7 @@ import dev.cxclear.ui.theme.AppDimensions
 import dev.cxclear.ui.theme.Motion
 import dev.cxclear.util.formatBytes
 
-/**
- * 对话管理页筛选顶栏：工具筛选按钮 + 手动/自动分段切换。
- * 以及自动清理、手动删除共用的结果条 [ChatsNotice]。
- */
+/** 对话管理页筛选顶栏：工具筛选按钮 + 手动/自动分段切换 + 结果条 [ChatsNotice]。 */
 
 internal enum class ChatsMode { MANUAL, AUTO }
 
@@ -113,10 +110,7 @@ internal fun AllFilterButton(
 private val ModeSegmentWidth = 52.dp
 private val ModeControlHeight = 40.dp
 
-/**
- * 手动 / 自动切换：M3 原生连体分段按钮。两段共享一圈描边、选中段填主色，
- * 段间由 M3 自己画分隔线，切换自带补间；只放图标，文案降到 contentDescription。
- */
+/** 手动 / 自动切换：M3 连体分段按钮，只放图标，文案降到 contentDescription。 */
 @Composable
 internal fun ModeSegmentedControl(
     mode: ChatsMode,
@@ -175,10 +169,7 @@ internal fun deleteNotice(result: ChatDeleteResult, auto: Boolean): String? = wh
     else -> null
 }
 
-/**
- * 对话页结果条：自动清理和手动删除共用。
- * 挂在列表外面，避免重扫把提示冲掉。
- */
+/** 对话页结果条：自动清理和手动删除共用；挂在列表外面，挂进列表会被重扫冲掉。 */
 @Composable
 internal fun ChatsNotice(message: String, warning: Boolean, onDismiss: () -> Unit) {
     val bg = if (warning) AppColors.Optional.copy(alpha = 0.12f) else AppColors.PrimaryContainer

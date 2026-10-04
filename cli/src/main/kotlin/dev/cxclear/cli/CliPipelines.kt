@@ -11,8 +11,7 @@ import dev.cxclear.scan.ToolSpaceResult
 import dev.cxclear.storage.CleanHistory
 import kotlinx.coroutines.runBlocking
 
-/** 文件 / 会话命令共用的筛选流水线与删除执行；scan、find、delete、clean 只决定选哪些、输出什么 */
-
+// 文件 / 会话命令共用的筛选流水线与删除执行；scan、find、delete、clean 只决定选哪些、输出什么
 internal class FileSelection(
     val tools: Set<String>,
     val spaces: List<ToolSpaceResult>,

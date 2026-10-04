@@ -26,16 +26,16 @@ import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.nio.file.Path
 
-/** 一个 target 实际会被删掉的东西。Scanner 与 Cleaner 共用同一套解析结果，避免两边规则不一致。 */
+// 一个 target 实际会被删掉的东西。Scanner 与 Cleaner 共用同一套解析结果。
 data class ResolvedTarget(
     val target: CleanTarget,
-    /** 本项允许删除的根目录。Cleaner 会在实际删除前再次用它校验路径边界。 */
+    // 本项允许删除的根目录。Cleaner 会在实际删除前再次用它确认待删路径仍在根目录内。
     val baseDir: Path,
-    /** 待删除的路径。DIRECTORY_CONTENTS 展开成一级子项，GLOB 展开成匹配到的文件。 */
+    // 待删除的路径。DIRECTORY_CONTENTS 展开成一级子项，GLOB 展开成匹配到的文件。
     val paths: List<Path>,
 )
 
-/** 一个工具目录的完整占用，不区分是否允许清理。 */
+// 一个工具目录的完整占用，不区分是否允许清理。
 data class ToolSpaceResult(
     val toolId: String,
     val bytes: Long,
@@ -45,8 +45,8 @@ data class ToolSpaceResult(
 /**
  * 解析 target 实际使用的根目录。
  *
- * target 一旦声明了自己的 [CleanTarget.baseDir]，解析失败就必须返回 null，不能回退到
- * profile 根目录，否则空 relPath 等规则可能把整个工具数据目录当成独立缓存清掉。
+ * target 一旦声明了自己的 [CleanTarget.baseDir]，解析失败需要返回 null；
+ * 回退到 profile 根目录会让空 relPath 等规则把整个工具数据目录当成独立缓存清掉。
  */
 fun resolveBase(profile: ToolProfile, target: CleanTarget): Path? {
     val targetBase = target.baseDir
@@ -54,12 +54,7 @@ fun resolveBase(profile: ToolProfile, target: CleanTarget): Path? {
     return resolved?.toAbsolutePath()?.normalize()
 }
 
-/**
- * 把 [CleanTarget] 解析成具体路径列表。不做任何删除。
- *
- * relPath 允许带 `*` 路径段（展开为每层子目录），最后一段可以是文件名 glob
- *（配合 GLOB / STALE_VERSIONS）。
- */
+// 把 [CleanTarget] 解析成具体路径列表；`*` 路径段展开为该层子目录，末段可文件名 glob。
 fun resolveTarget(baseDir: Path, target: CleanTarget): ResolvedTarget {
     val safeBase = baseDir.toAbsolutePath().normalize()
     val paths: List<Path> = when (target.kind) {
@@ -71,8 +66,7 @@ fun resolveTarget(baseDir: Path, target: CleanTarget): ResolvedTarget {
         }
 
         MatchKind.DIRECTORY_CONTENTS -> {
-            // listDirectoryEntries 会带上点开头的条目 —— Codex 的大头（.plugin-appserver 等）
-            // 正是点开头的，用 shell glob 会漏掉。
+            // listDirectoryEntries 能拿到点开头的条目（Codex 的大头就在这里），shell glob 会漏掉。
             expandPathPattern(safeBase, target.relPath).flatMap { dir ->
                 if (isSafeTraversalDirectory(safeBase, dir)) {
                     directoryEntries(dir)
@@ -103,7 +97,7 @@ fun resolveTarget(baseDir: Path, target: CleanTarget): ResolvedTarget {
                         .filter { isSafeDeletionPath(safeBase, it) }
                         .filter { matchesExpectedType(it, target.entryType) }
                     if (target.kind == MatchKind.STALE_VERSIONS) {
-                        // 每个父目录内各自保留全部并列最新项；mtime 读不出来的也一律保留。
+                        // 每个父目录内各自保留全部并列最新项；mtime 读不出来的也保留。
                         val knownTimes = matched.mapNotNull { path ->
                             lastModifiedOrNull(path)?.let { path to it }
                         }
@@ -145,10 +139,8 @@ private class ProgressBatch(
 private const val PROGRESS_BATCH_SIZE = 128
 
 /**
- * 递归统计大小与文件数。软链接不跟随，避免重复计算或走出目标范围。
- *
- * [onProgress] 每处理一个条目回调一次增量（字节, 文件数），供调用方实时累计
- * 「正在遍历中」的进度；默认空实现，一次性取最终值的调用（如 Cleaner）无额外开销。
+ * 递归统计大小与文件数。软链接按自身计（1 个条目、0 字节）：跟随会重复计算甚至走出目标范围。
+ * [onProgress] 每条目回调一次增量，供调用方实时累计进度。
  */
 private fun measure(
     path: Path,
@@ -194,7 +186,7 @@ private data class PlanBuild(
     val files: Int,
 )
 
-/** 单个 target 内缓存已确认的真实目录，避免每个文件都从 base 重新检查整条父路径。 */
+// 单个 target 内缓存已验证为普通目录的目录；否则每个文件都要从 base 重新检查整条父路径。
 private class TraversalSafety(baseDir: Path) {
     private val base = baseDir.toAbsolutePath().normalize()
     private val safeDirectories = hashSetOf<Path>()
@@ -239,9 +231,7 @@ private class TraversalSafety(baseDir: Path) {
     }
 }
 
-/**
- * 在扫描阶段把每个实际条目及身份完整冻结下来。Cleaner 只消费这份计划，绝不重新展开目录/glob。
- */
+// 扫描阶段把每个实际条目及身份冻结下来，Cleaner 直接消费这份计划。
 private fun buildDeletionPlan(
     toolId: String,
     resolved: ResolvedTarget,
@@ -305,7 +295,7 @@ private fun buildDeletionPlan(
     )
 }
 
-/** 扫描单个 target。已解析过路径的话直接复用，省一次目录遍历。 */
+// 扫描单个 target。已解析过路径的话直接复用，省一次目录遍历。
 fun scanResolved(toolId: String, resolved: ResolvedTarget): ScanResult {
     val built = buildDeletionPlan(toolId, resolved)
     return ScanResult(
@@ -318,10 +308,7 @@ fun scanResolved(toolId: String, resolved: ResolvedTarget): ScanResult {
     )
 }
 
-/**
- * 单个 target 遍历过程中的实时累计。worker 边遍历边把增量累到这里，
- * 定时器随时读出「当前扫到多少」——包括仍在遍历、尚未收尾的项。
- */
+// 单个 target 遍历中的实时累计，定时器随时读出「当前扫到多少」。
 private class TargetProgress(
     val toolId: String,
     val targetId: String,
@@ -342,10 +329,7 @@ private class TargetProgress(
     )
 }
 
-/**
- * 扫描一个 target，遍历途中把增量实时写进 [progress]。逻辑与 [scanResolved] 等价，
- * 区别只是「边扫边报」而非「扫完一次性返回」，因此不复用后者，避免给 Cleaner 引入回调开销。
- */
+// 与 [scanResolved] 等价，边扫边把增量写进 [progress]；复用 scanResolved 会给 Cleaner 引入回调开销。
 private fun scanWithProgress(profile: ToolProfile, target: CleanTarget, progress: TargetProgress) {
     val base = resolveBase(profile, target) ?: return
     val resolved = resolveTarget(base, target)
@@ -358,10 +342,7 @@ private fun scanWithProgress(profile: ToolProfile, target: CleanTarget, progress
     progress.exists.set(built.plan.entries.isNotEmpty())
 }
 
-/**
- * 单个工具目录总占用遍历过程中的实时累计。与 [TargetProgress] 同理：
- * worker 边遍历边写增量，定时器随时读出「当前已找到多少」。
- */
+// 工具目录总占用遍历中的实时累计，与 [TargetProgress] 同理。
 private class SpaceProgress(val toolId: String) {
     val bytes = AtomicLong(0L)
     val files = AtomicInteger(0)
@@ -373,55 +354,30 @@ private class SpaceProgress(val toolId: String) {
     )
 }
 
-/**
- * 扫描过程中的增量事件。
- *
- * 扫描以事件流而不是一次性返回值上报，是为了让 UI 能反映真实进度：
- * 每测完一项就能立刻更新，而不是扫完才一次性刷新。
- */
+// 扫描过程中的增量事件；事件流上报让 UI 能实时反映进度。
 sealed interface ScanEvent {
-    /** 本次扫描的工作项总数（可清理项 + 工具目录），用于算进度分母。 */
+    // 本次扫描的工作项总数（可清理项 + 工具目录），用于算进度分母。
     data class Started(val total: Int) : ScanEvent
 
-    /**
-     * 到目前为止各工具目录总占用快照。
-     *
-     * 与 [TargetsScanned] 一样由定时器按固定节拍推整份快照：阶段一测量
-     * spaceDirs 时边遍历边累加，UI 的「已找到」数字随拍更新，而不是等整阶段结束。
-     */
+    // 各工具目录总占用的当前快照，按固定节拍推整份。
     data class SpaceScanned(val spaces: List<ToolSpaceResult>) : ScanEvent
 
-    /**
-     * 到目前为止已测完的全部可清理项快照。
-     *
-     * 不再每测完一项推一次，而是由定时器按固定节拍推整份快照：worker 只管写结果，
-     * 节流集中在一处，UI 拿到的是稳定节奏的批量更新，而不是随磁盘忽快忽慢的抖动。
-     */
+    // 已测完可清理项的当前快照，按固定节拍推整份。
     data class TargetsScanned(val results: List<ScanResult>) : ScanEvent
 }
 
 /**
- * 扫描所有 profile，逐项上报。纯磁盘 IO，每项各自跑在 IO 调度器上。
- *
- * 工具目录总占用和可清理项分别测量，口径互相独立：总占用代表应用真实体积，
- * 可清理项只代表其中能删的部分，两者相减就是必须保留的数据。
+ * 扫描所有 profile，逐项上报。先测各工具目录总占用（分母）再扫可清理项：
+ * 两阶段并发会让最慢的总占用最后才到，分母突变一次。
+ * worker 边遍历边累增量，定时协程每 [SNAPSHOT_INTERVAL_MS] 推一份整份快照，收尾补推全量。
  * 工具未安装（spaceDirs 为空）时上报全 0，由 UI 决定是否显示。
- *
- * 分两个阶段：先测完总占用，再扫可清理项。总占用是分母，阶段一内边测边报
- * （「已找到」随拍增长）；阶段一结束后分母固定，阶段二每测出一项都只是在已知
- * 总量里重新划分，占比不会被整体重算。若两阶段并发上报，总占用（要遍历整个
- * 目录，最慢）最后才到，分母会突变一次。
- *
- * 两个阶段都不按「每项测完推一次」上报，而是让 worker 边遍历边把增量累进各自的
- * 进度槽，另一个协程每 [SNAPSHOT_INTERVAL_MS] 读出当前累计推一份快照——包括仍在
- * 遍历、尚未收尾的项。全部 worker 完成后立即补推一份收尾全量。
  */
-// 略长于 UI 数字翻转（~260ms），避免下一拍到来时上一次翻牌还没播完。
+// 略长于 UI 数字翻转（~260ms）；太短会让下一拍打断还没播完的翻牌。
 private const val SNAPSHOT_INTERVAL_MS = 500L
 private const val SCAN_PARALLELISM = 8
 private val SCAN_DISPATCHER: CoroutineDispatcher = Dispatchers.IO.limitedParallelism(SCAN_PARALLELISM)
 
-/** 边跑 [workers] 边按固定节拍执行 [emit]，全部完成后立即再 emit 一次收尾。 */
+// 边跑 [workers] 边按固定节拍执行 [emit]，全部完成后立即再 emit 一次收尾。
 private suspend fun CoroutineScope.snapshotWhile(
     workers: List<Job>,
     emit: suspend () -> Unit,
@@ -444,7 +400,7 @@ private suspend fun CoroutineScope.snapshotWhile(
 fun scanStream(profiles: List<ToolProfile>): Flow<ScanEvent> = channelFlow {
     send(ScanEvent.Started(profiles.sumOf { it.targets.size } + profiles.size))
 
-    // —— 阶段一：工具目录总占用。边测边报，供 UI「已找到」实时更新。 ——
+    // 阶段一：工具目录总占用。边测边报，供 UI「已找到」实时更新。
     val spaceProgresses = profiles.map { SpaceProgress(it.id) }
     val spaceById = spaceProgresses.associateBy { it.toolId }
     val spaceWorkers = profiles.flatMap { profile ->
@@ -462,7 +418,7 @@ fun scanStream(profiles: List<ToolProfile>): Flow<ScanEvent> = channelFlow {
         send(ScanEvent.SpaceScanned(spaceProgresses.map { it.snapshot() }))
     }
 
-    // —— 阶段二：可清理项。每个 target 一份实时累计。 ——
+    // 阶段二：可清理项。每个 target 一份实时累计。
     val progresses = profiles.flatMap { profile ->
         profile.targets.map { TargetProgress(profile.id, it.id) }
     }

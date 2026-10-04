@@ -9,12 +9,6 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
-/**
- * 自动清理匹配引擎的判定测试。
- *
- * 这里的每条断言都对应「会不会误删」：匹配引擎多命中一条，就是用户少一份不可恢复的会话记录，
- * 所以空条件、零值、未开启这些中间态必须逐个钉死。
- */
 class RetentionMatchTest {
     private val now = 1_700_000_000_000L
     private val day = 86_400_000L
@@ -44,9 +38,7 @@ class RetentionMatchTest {
         enabled: Boolean = true,
     ) = RetentionRule("rule-1", enabled = enabled, join = join, conditions = conditions.toList())
 
-    // ─────────────────────────────────────────
-    // 安全兜底：不该命中的中间态
-    // ─────────────────────────────────────────
+    // 安全网：不该命中的中间态
 
     @Test
     fun `rule with no conditions never matches`() {
@@ -65,7 +57,7 @@ class RetentionMatchTest {
 
     @Test
     fun `zero valued numeric condition is treated as incomplete`() {
-        // 「未更新超过 0 天」会命中一切，必须当成还没填完。
+        // 「未更新超过 0 天」会命中一切，要当成还没填完。
         val cond = ChatCondition(ChatConditionType.UPDATED_BEFORE_DAYS, number = 0)
         assertFalse(cond.isComplete())
         assertFalse(rule(cond).matches(session("a", agoDays = 999L), now))
@@ -97,15 +89,12 @@ class RetentionMatchTest {
         assertFalse(r.matches(session("b", agoDays = 5L), now))
     }
 
-    // ─────────────────────────────────────────
     // 各条件类型
-    // ─────────────────────────────────────────
 
     @Test
     fun `updated before days uses strict threshold`() {
         val r = rule(ChatCondition(ChatConditionType.UPDATED_BEFORE_DAYS, number = 30))
         assertTrue(r.matches(session("old", agoDays = 31L), now))
-        // 正好 30 天不算「超过 30 天」。
         assertFalse(r.matches(session("edge", agoDays = 30L), now))
         assertFalse(r.matches(session("fresh", agoDays = 1L), now))
     }
@@ -115,7 +104,6 @@ class RetentionMatchTest {
         // 「未更新少于 30 天」= 最近 30 天内动过。与「超过」互补，边界都归到「少于」一侧。
         val r = rule(ChatCondition(ChatConditionType.UPDATED_WITHIN_DAYS, number = 30))
         assertTrue(r.matches(session("fresh", agoDays = 1L), now))
-        // 两侧都用严格比较：正好 30 天既不「超过」也不「少于」，落在边界上谁都不命中。
         assertFalse(r.matches(session("edge", agoDays = 30L), now))
         assertFalse(r.matches(session("old", agoDays = 31L), now))
     }
@@ -134,7 +122,6 @@ class RetentionMatchTest {
         val r = rule(ChatCondition(ChatConditionType.SIZE_SMALLER_MB, number = 10))
         val mb = 1024L * 1024L
         assertTrue(r.matches(session("small", sizeBytes = 1024L), now))
-        // 两侧都用严格比较：正好 10 MB 落在边界上，「超过」「少于」都不命中。
         assertFalse(r.matches(session("edge", sizeBytes = 10 * mb), now))
         assertFalse(r.matches(session("big", sizeBytes = 11 * mb), now))
     }
@@ -162,9 +149,7 @@ class RetentionMatchTest {
         assertTrue(r.matches(session("a", tool = chatToolById("claude")!!, project = "d--project-cxclear"), now))
     }
 
-    // ─────────────────────────────────────────
     // 与 / 或 组合
-    // ─────────────────────────────────────────
 
     @Test
     fun `and requires every condition`() {
@@ -192,9 +177,7 @@ class RetentionMatchTest {
         assertFalse(r.matches(session("neither", agoDays = 1L, sizeBytes = 1024L), now))
     }
 
-    // ─────────────────────────────────────────
     // 多策略：规则之间取「或」
-    // ─────────────────────────────────────────
 
     @Test
     fun `config unions matches across rules`() {

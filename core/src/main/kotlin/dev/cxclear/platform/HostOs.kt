@@ -1,6 +1,6 @@
 package dev.cxclear.platform
 
-/** 宿主系统。路径、进程名、磁盘都从这里分发，不要再各写一份 os.name。 */
+// 宿主系统。路径、进程名、磁盘都从这里分发，系统判定只维护这一份。
 enum class HostOs { WINDOWS, MACOS, LINUX, OTHER }
 
 fun currentOs(): HostOs {
@@ -13,7 +13,6 @@ fun currentOs(): HostOs {
     }
 }
 
-/** 进程名去掉平台后缀后再对 processNamePrefixes。 */
 internal fun executableStem(fileName: String): String {
     val name = fileName.lowercase().removeSuffix(".exe")
     return if (currentOs() == HostOs.MACOS) name.removeSuffix(".app") else name

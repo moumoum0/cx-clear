@@ -5,13 +5,13 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
-/** 条件类型表与 id 生成的一致性。落盘只认 id，改动这些常量会让旧配置读不回来。 */
+// 条件类型表与 id 生成的一致性。落盘按 id 认规则，改动这些常量会让旧配置读不回来。
 class RetentionRuleTextTest {
     @Test
     fun `new rule ids never collide with existing ones`() {
         assertEquals("rule-1", newRuleId(emptyList()))
         assertEquals("rule-3", newRuleId(listOf("rule-1", "rule-2")))
-        // 删掉中间一条后要补空位，而不是撞上已有 id。
+        // 删掉中间一条后，新 id 补空位；撞上已有 id 会冲突。
         assertEquals("rule-2", newRuleId(listOf("rule-1", "rule-3")))
     }
 

@@ -12,11 +12,6 @@ import java.nio.file.Path
 import java.nio.file.attribute.BasicFileAttributes
 import java.sql.DriverManager
 
-/**
- * Cursor 会话扫描：~/.cursor/projects/<project-hash>/agent-transcripts/ 下的 jsonl，
- * 元数据取自 state.vscdb 的 composerData 键。
- */
-
 internal fun unwrapCursorUserQuery(raw: String): String {
     val trimmed = raw.trim()
     val queryStart = trimmed.indexOf("<user_query>")
@@ -28,9 +23,7 @@ internal fun unwrapCursorUserQuery(raw: String): String {
     return inner.ifBlank { raw }
 }
 
-/**
- * 递归收集 Cursor transcript 目录下所有 .jsonl 文件，跳过 subagents/ 子目录。
- */
+// subagents/ 是子代理转录，不算独立会话。
 internal fun collectCursorTranscripts(transcriptsRoot: Path): List<Path> {
     val files = mutableListOf<Path>()
     val pending = mutableListOf(transcriptsRoot)
@@ -50,7 +43,6 @@ internal fun collectCursorTranscripts(transcriptsRoot: Path): List<Path> {
     return files
 }
 
-/** Cursor 会话元数据（从 state.vscdb 的 composerData 读取）。 */
 internal data class CursorComposerData(
     val name: String?,
     val subtitle: String?,
@@ -58,7 +50,6 @@ internal data class CursorComposerData(
     val workspacePath: String?,
 )
 
-/** 从 state.vscdb 读取所有 composerData，返回 Map<composerId, CursorComposerData>。 */
 @Suppress("UNCHECKED_CAST")
 internal fun loadCursorComposerDataMap(): Map<String, CursorComposerData> {
     val dbPath = resolveCursorStateDb() ?: return emptyMap()
@@ -99,7 +90,7 @@ internal fun loadCursorComposerDataMap(): Map<String, CursorComposerData> {
     return map
 }
 
-/** 从 Cursor transcript 读标题（第一条非 meta 用户消息），作为降级方案。 */
+// 从 Cursor transcript 读标题（第一条非 meta 用户消息），是 composerData 取不到标题时的备用方案。
 internal fun readCursorTranscriptTitle(file: Path): String? {
     var title: String? = null
     runCatching {
@@ -131,8 +122,8 @@ internal fun readCursorTranscriptTitle(file: Path): String? {
 }
 
 /**
- * 扫描 Cursor 会话。目录结构：
- *   ~/.cursor/projects/<project-hash>/agent-transcripts/<session-uuid>/<session-uuid>.jsonl
+ * 扫描 Cursor 会话：~/.cursor/projects/<project-hash>/agent-transcripts/<session-uuid>/<session-uuid>.jsonl，
+ * 元数据取自 state.vscdb 的 composerData 键。
  */
 internal fun scanCursorSessions(
     onFound: (ChatSessionSummary) -> Unit = {},
@@ -140,7 +131,7 @@ internal fun scanCursorSessions(
     val projectsRoot = cursorProjectsRoot() ?: return emptyList()
     val sessions = mutableListOf<ChatSessionSummary>()
 
-    // 一次性从 state.vscdb 加载所有 composerData
+    // composerData 一次全量读进内存，每个 jsonl 都查一次库太慢。
     val composerDataMap = loadCursorComposerDataMap()
 
     for (projectDir in listDir(projectsRoot)) {
@@ -153,10 +144,8 @@ internal fun scanCursorSessions(
 
         for (file in transcriptFiles) {
             runCatching {
-                // 从文件路径提取 composerId (UUID)
                 val composerId = file.parent.fileName.toString()
-                // Cursor 原生删除会清 composerData，但 agent-transcripts 常残留。
-                // 没有索引的 jsonl 不是历史里的对话，标题也会退化成 UUID。
+                // Cursor 应用内删除后 jsonl 常残留；没索引的标题会退化成 UUID。
                 val composerData = composerDataMap[composerId] ?: return@runCatching
 
                 val updatedMs = composerData.lastUpdatedAt ?: run {
@@ -170,9 +159,8 @@ internal fun scanCursorSessions(
                     ?: readCursorTranscriptTitle(file)
                     ?: composerId
 
-                // 使用 composerData 的工作区路径，降级到项目目录名推断
+                // 项目名取 composerData 工作区路径末段，取不到退回项目目录名推断
                 val project = composerData.workspacePath?.let { path ->
-                    // 从路径提取最后一段作为项目名，如 d:\project\cxclear -> cxclear
                     Path.of(path).fileName?.toString()
                 } ?: when {
                     projectHash == "empty-window" -> null

@@ -6,8 +6,8 @@ import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
 
 /**
- * 全应用动效节奏。组件里的 tween / AnimatedVisibility 一律取这里的时长与缓动，
- * 避免各处自写毫秒数导致节奏漂移。
+ * 全应用动效节奏。组件里的 tween / AnimatedVisibility 取这里的时长与缓动，
+ * 各处自写毫秒数会导致节奏漂移。
  */
 object Motion {
     const val FastMs = 180

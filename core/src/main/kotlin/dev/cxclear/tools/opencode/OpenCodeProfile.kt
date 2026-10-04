@@ -6,19 +6,8 @@ import dev.cxclear.model.Risk
 import dev.cxclear.model.ToolProfile
 
 /**
- * Open Code 的清理名单：`~/.local/share/opencode`、`~/.config/opencode`、
- * `~/.cache/opencode` 与 `%APPDATA%\ai.opencode.desktop` 四处数据根。
- */
-
-/**
- * Open Code — 数据分三处：
- * - `~/.local/share/opencode`：SQLite 数据库（会话、消息）、storage 目录
- * - `~/.config/opencode`：配置文件
- * - `~/.cache/opencode`：缓存（models.json）
- * - `%APPDATA%\ai.opencode.desktop`：Electron 应用缓存
- *
- * Open Code 使用 SQLite 存储会话，不支持通过文件系统直接清理单个会话。
- * 主数据库 `opencode.db` 和 `opencode-local.db` 不提供清理项。
+ * Open Code：四处数据根见 spaceDirs。主数据库是会话本体留给用户；
+ * 会话存 SQLite，不支持按文件清理单条会话。
  */
 val OpenCodeProfile = ToolProfile(
     id = "opencode",

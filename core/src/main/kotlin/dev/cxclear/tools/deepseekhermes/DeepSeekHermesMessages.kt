@@ -31,7 +31,6 @@ internal fun loadDeepSeekHermesMessages(session: ChatSessionSummary): List<ChatM
     }
 }.getOrDefault(emptyList())
 
-/** content 数组里只取 type=text，工具调用和推理块不进详情。 */
 internal fun textBlocks(owner: Map<String, Any?>?): String? {
     val blocks = owner?.jsonArr("content") ?: return null
     return blocks.filterIsInstance<Map<String, Any?>>()

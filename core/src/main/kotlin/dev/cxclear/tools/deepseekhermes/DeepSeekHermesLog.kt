@@ -36,7 +36,7 @@ internal inline fun <T> readDeepSeekLog(file: Path, block: (Sequence<Map<String,
         block(log.lines().mapNotNull { MiniJson.parse(it) as? Map<String, Any?> })
     }
 
-/** 目录里优先最新一代 session.vN.jsonl(.zstd)，没有再退回旧文件名。 */
+// 目录里优先最新一代 session.vN.jsonl(.zstd)，没有再退回旧文件名。
 internal fun findSessionLog(dir: Path): Path? {
     var best: Path? = null
     var bestVersion = -1

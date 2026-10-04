@@ -48,7 +48,7 @@ import java.util.concurrent.atomic.AtomicInteger
 
 private enum class ViewState { IDLE, SCANNING, SCAN_DONE }
 
-/** 工具筛选的「所有」键；ChatsNotice.kt 的顶栏也在用，所以是 internal。 */
+// 工具筛选的「所有」键；ChatsNotice.kt 的顶栏也在用，所以是 internal。
 internal const val TOOL_FILTER_ALL = "all"
 
 private const val SCAN_SNAPSHOT_INTERVAL_MS = 500L
@@ -103,7 +103,7 @@ fun ChatsView(modifier: Modifier = Modifier) {
         scope.launch { withContext(Dispatchers.IO) { RetentionStore.write(updated) } }
     }
 
-    // 切筛选不重扫；自动页也要跑完扫描+自动清理。
+    // 切筛选时复用已缓存的扫描结果。自动页也要跑完扫描和自动清理。
     LaunchedEffect(mode, rescanToken) {
         if (mode != ChatsMode.MANUAL && ChatScanCache.autoRunDone) return@LaunchedEffect
 
@@ -138,7 +138,7 @@ fun ChatsView(modifier: Modifier = Modifier) {
         }
 
         val sessions = allSessions
-        // 每进程只跑一次，否则删→重扫→再删成环。
+        // 每进程只跑一次，再跑会删完又扫、扫完又删，成环。
         if (!ChatScanCache.autoRunDone) {
             ChatScanCache.markAutoRunDone()
             val prefs = withContext(Dispatchers.IO) { AppPreferences.read() }

@@ -54,8 +54,7 @@ fun WindowScope.AppTitleBar(
             .background(AppColors.Surface2),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // 标题区只交给 WindowDraggableArea，不要再叠 pointerInput，
-        // 否则会抢走按下事件，窗口就拖不动。
+        // 标题区交给 WindowDraggableArea，再叠 pointerInput 会抢走按下事件。
         WindowDraggableArea(
             modifier = Modifier
                 .weight(1f)

@@ -6,18 +6,8 @@ import dev.cxclear.model.Risk
 import dev.cxclear.model.ToolProfile
 
 /**
- * DeepSeek Hermes 的清理名单：`~/.dsh`、桌面版 Electron 数据与更新缓存三处数据根。
- */
-
-/**
- * DeepSeek Hermes — 数据分四处：
- * - `~/.dsh`：凭据、会话、存储、profiles（插件 node_modules）、dsh-runtimes（约 270MB）
- * - `%APPDATA%\@deepseek-ai\dsh-desktop`：桌面版 Electron 缓存
- * - `%LOCALAPPDATA%\@deepseek-aidsh-desktop-updater`：更新缓存（约 550MB 待安装包）
- * - npm 全局安装：`%APPDATA%\npm\node_modules\@deepseek-ai\dsh`（另一套 CLI，约 220MB）
- *
- * 不清理 npm 全局安装（用户可能用 `npm uninstall -g` 管理）。
- * 不清理桌面版安装目录（多数在自定义位置如 `D:\app data\dsh`，不在标准路径）。
+ * DeepSeek Hermes：数据根见 spaceDirs。npm 全局安装留给 `npm uninstall -g`；
+ * 桌面版安装目录路径不固定，清理名单按数据根走。
  */
 val DeepSeekHermesProfile = ToolProfile(
     id = "deepseek-hermes",
@@ -28,14 +18,12 @@ val DeepSeekHermesProfile = ToolProfile(
     protectedPaths = ::dshProtectedPaths,
     spaceDirs = { listOfNotNull(dshHome(), dshDesktopAppData(), dshUpdaterCache()) },
     targets = listOf(
-        // —— ~/.dsh：缓存与临时（大头是 dsh-runtimes，约 270MB）——
         CleanTarget(
             id = "dsh.runtimes",
             label = "Primary Runtime 依赖",
             relPath = "dsh-runtimes",
             kind = MatchKind.DIRECTORY_CONTENTS,
             risk = Risk.SAFE,
-            // 约 270MB，删后要重新下载，不默认勾。
             defaultSelected = false,
             description = "~/.dsh/dsh-runtimes 下的 dsh-primary-runtime（python/node/native 运行时依赖）。不丢用户数据，但删除后首次使用相关插件会重新下载（体积大、耗时长）。",
         ),
@@ -61,13 +49,10 @@ val DeepSeekHermesProfile = ToolProfile(
             relPath = "profiles/node_modules",
             kind = MatchKind.DIRECTORY_CONTENTS,
             risk = Risk.SAFE,
-            // profiles/node_modules 被 desktop 和 web 共享，约 250 个 @deepseek-ai/dsh-* 包。
-            // 但用户不会频繁清，体积相对小（几 MB），默认不勾。
             defaultSelected = false,
             description = "profiles/node_modules 下共享的 @deepseek-ai/dsh-* 插件包（被 desktop 和 web profile 共用）。删除后需要时会重新安装。",
         ),
 
-        // —— %APPDATA%\@deepseek-ai\dsh-desktop：Electron 缓存（SAFE）——
         CleanTarget(
             id = "dsh.desktop-cache",
             label = "桌面端 HTTP 缓存",
@@ -158,7 +143,7 @@ val DeepSeekHermesProfile = ToolProfile(
             description = "Cookies / Trust Tokens / Network Persistent State。删除后登录态可能失效。",
             baseDir = ::dshDesktopAppData,
         ),
-        // 分区包含持久化数据，只清明确的缓存子目录，保留分区本身及其存储。
+        // 分区包含持久化数据，这里只列明确的缓存子目录，分区本身及其余存储留给用户。
         CleanTarget(
             id = "dsh.desktop-partitions-cache",
             label = "内置浏览器 HTTP 缓存",
@@ -222,16 +207,14 @@ val DeepSeekHermesProfile = ToolProfile(
             description = "拼写检查字典文件（如 en-US-10-1.bdic）。删除后会重新下载。",
             baseDir = ::dshDesktopAppData,
         ),
-        // DIPS 及其 WAL/SHM 恢复文件一起保留，不能把 WAL 当作普通日志单独清理。
+        // DIPS 和它的 WAL/SHM 恢复文件一起保留：把 WAL 当普通日志删掉会丢未落库的数据。
 
-        // —— %LOCALAPPDATA%\@deepseek-aidsh-desktop-updater：更新缓存（约 550MB）——
         CleanTarget(
             id = "dsh.updater-cache",
             label = "桌面端更新缓存",
             relPath = "",
             kind = MatchKind.DIRECTORY_CONTENTS,
             risk = Risk.SAFE,
-            // 约 550MB 待安装包，清后下次更新会重新下载。
             defaultSelected = false,
             description = "%LOCALAPPDATA%\\@deepseek-aidsh-desktop-updater 下的更新安装包（约 550MB）。清理后下次更新会重新下载。",
             baseDir = ::dshUpdaterCache,

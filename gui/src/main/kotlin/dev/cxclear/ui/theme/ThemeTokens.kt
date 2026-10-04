@@ -3,8 +3,8 @@ package dev.cxclear.ui.theme
 import androidx.compose.ui.graphics.Color
 
 /**
- * M3 token 的数据结构与语义色门面。
- * 注意：M3Tokens 的 35 个字段名与 Theme.kt 里 toMaterialColorScheme 的 35 个具名参数逐一硬对应，增删字段必须同时改两处。
+ * M3 token 的数据结构与应用主题色表。
+ * M3Tokens 的 35 个字段名与 Theme.kt 里 toMaterialColorScheme 的 35 个具名参数逐一对应，增删字段需要同时改两处。
  */
 data class M3Tokens(
     val primary: Color,
@@ -71,7 +71,7 @@ data class AppColorTokens(
     val CylinderShellLight: Color,
     val CylinderShellMid: Color,
     val CylinderShellEdge: Color,
-    /** 柱体高光 / 扫光混色用，暗色下不能硬写 White。 */
+    // 柱体高光 / 扫光混色用，暗色主题下用它代替写死的 White。
     val Highlight: Color,
 )
 

@@ -6,12 +6,8 @@ import dev.cxclear.model.Risk
 import dev.cxclear.model.ToolProfile
 
 /**
- * Codex 的清理名单：数据根、可清理项、进程名与永久保护路径。
- */
-
-/**
- * Codex — `~/.codex` + `~/.cache/codex-runtimes`。
- * 不含 `%LOCALAPPDATA%\OpenAI\Codex` 安装目录、不含 Documents\Codex 用户工作区。
+ * Codex：`~/.codex` + `~/.cache/codex-runtimes`。
+ * `%LOCALAPPDATA%\OpenAI\Codex` 安装目录与 Documents\Codex 用户工作区留给用户。
  * 顺序按占用从大到小，方便用户从上往下勾。
  */
 val CodexProfile = ToolProfile(
@@ -29,7 +25,6 @@ val CodexProfile = ToolProfile(
             relPath = "",
             kind = MatchKind.DIRECTORY_CONTENTS,
             risk = Risk.SAFE,
-            // 常占 1GB+，删后要重新下载，不默认勾。
             defaultSelected = false,
             description = "~/.cache/codex-runtimes 下的 python / node / native 运行时。不丢用户数据，但删除后首次使用相关插件会重新下载（体积大、耗时长）。",
             baseDir = ::codexRuntimesCache,
@@ -40,7 +35,6 @@ val CodexProfile = ToolProfile(
             relPath = "plugins/.plugin-appserver",
             kind = MatchKind.DIRECTORY,
             risk = Risk.SAFE,
-            // 约数百 MB；一般从安装目录再拷，但仍可能让插件宿主短暂不可用，不默认勾。
             defaultSelected = false,
             description = "安装目录二进制在 ~/.codex 下的副本（可与安装包重复）。删除后需要时会重新放置；请先退出 Codex 再清。",
         ),
@@ -50,7 +44,6 @@ val CodexProfile = ToolProfile(
             relPath = ".tmp",
             kind = MatchKind.DIRECTORY_CONTENTS,
             risk = Risk.SAFE,
-            // config 可能正指向其中的 marketplace source；清完要等再同步，不默认勾。
             defaultSelected = false,
             description = "marketplace / 插件同步的中间目录（含 staging 残留）。可重建，但配置可能正引用此处，删除后需重新同步，期间插件列表可能暂不可用。",
         ),
@@ -81,7 +74,6 @@ val CodexProfile = ToolProfile(
         CleanTarget(
             id = "codex.sandbox-bin",
             label = "沙箱运行器（历史版本）",
-            // 同时覆盖带版本号与无版本号的旧 runner；STALE_VERSIONS 按 mtime 保留最新一份。
             relPath = ".sandbox-bin/codex-command-runner*.exe",
             kind = MatchKind.STALE_VERSIONS,
             risk = Risk.SAFE,
@@ -93,14 +85,12 @@ val CodexProfile = ToolProfile(
             relPath = "vendor_imports",
             kind = MatchKind.DIRECTORY_CONTENTS,
             risk = Risk.SAFE,
-            // 需再从 GitHub 拉取，不默认勾。
             defaultSelected = false,
             description = "从 GitHub 拉取的官方 skills 仓库缓存。删除后需要时会重新下载；不影响你自己的 skills 目录。",
         ),
         CleanTarget(
             id = "codex.sandbox-logs",
             label = "沙箱日志",
-            // 只清日志，不动 setup_marker / ACL 状态等沙箱元数据。
             relPath = ".sandbox/sandbox*.log",
             kind = MatchKind.GLOB,
             risk = Risk.SAFE,

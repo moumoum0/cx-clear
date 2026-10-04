@@ -1,11 +1,11 @@
 package dev.cxclear.util
 
 /**
- * 只够用的 JSON 读取器：把一行 JSON 解析成 Map / List / String / Double / Boolean / null。
+ * 只够用的 JSON 读取器。
  *
  * 会话 jsonl 只需要取少量嵌套字段，为此引入完整序列化框架不划算；正则又扛不住
  * `message.content` 这种数组套对象的结构，所以在这里放一个手写解析器。
- * 解析失败一律返回 null，由调用方跳过该行——转录文件被写坏不该让整页崩掉。
+ * 解析失败返回 null，由调用方跳过该行；这样一行写坏只丢那一行。
  */
 object MiniJson {
     fun parse(text: String): Any? = runCatching { Reader(text).parseRoot() }.getOrNull()
@@ -146,7 +146,7 @@ object MiniJson {
         }
     }
 
-    /** 命令行 JSON 出口；会话 jsonl 仍只走 [parse]。 */
+    // 命令行 JSON 出口；会话 jsonl 仍只走 [parse]。
     fun stringify(value: Any?): String {
         val sb = StringBuilder()
         write(sb, value)
