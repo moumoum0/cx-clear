@@ -17,6 +17,8 @@
     <img alt="Compose Desktop" src="https://img.shields.io/badge/Compose%20Desktop-Material%203-4285F4?style=flat&logo=jetpackcompose&logoColor=white"></a>
   <a href="./LICENSE">
     <img alt="License" src="https://img.shields.io/badge/license-GPL--3.0-blue?style=flat"></a>
+  <a href="https://github.com/moumoum0/cx-clear/releases">
+    <img alt="累计下载量" src="https://img.shields.io/endpoint?url=https%3A%2F%2Fmoumoum0.github.io%2Fcx-clear%2Fdownloads.json&style=flat"></a>
 
   <br>
 

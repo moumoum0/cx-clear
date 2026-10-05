@@ -1,0 +1,33 @@
+# 累计下载量统计:每天更新 public/downloads.json 并推到 gh-pages 供 badge / 官网动态获取
+name: Download Stats
+
+on:
+  schedule:
+    - cron: '0 16 * * *' # UTC 16:00 = 北京时间 0 点
+  workflow_dispatch:
+
+concurrency:
+  group: download-stats
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    name: Update download stats
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Compute download stats
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node .github/scripts/download-stats.mjs
+
+      - name: Deploy to Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./public
