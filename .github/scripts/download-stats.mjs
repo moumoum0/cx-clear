@@ -58,4 +58,19 @@ const badge = {
 };
 mkdirSync('public', { recursive: true });
 writeFileSync('public/downloads.json', JSON.stringify(badge) + '\n');
+
+// README 的下载徽章:和 img/badges/ 同款的描边胶囊,数字走这里动态生成
+const message = format(total);
+const width = Math.round(96 + message.length * 7.5);
+writeFileSync('public/download-badge.svg', `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="28" role="img" aria-label="download: ${message}">
+  <style>@media (prefers-color-scheme: dark) { .b { stroke: #49454F } .l { fill: #CAC4D0 } .s { fill: #49454F } .v { fill: #E6E1E5 } .i { stroke: #D0BCFF } }</style>
+  <rect x="0.5" y="0.5" width="${width - 1}" height="27" rx="13.5" fill="none" class="b" stroke="#CAC4D0"/>
+  <g class="i" stroke="#475D92" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none" transform="translate(14 7.5) scale(0.542)">
+    <path d="M12 15V3"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/>
+  </g>
+  <text x="32" y="18.5" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="12">
+    <tspan class="l" fill="#44464F">download</tspan><tspan class="s" fill="#CAC4D0"> · </tspan><tspan class="v" fill="#1A1B20" font-weight="600">${message}</tspan>
+  </text>
+</svg>
+`);
 console.log(`GitHub Releases: ${github}, npm: ${npm}, total: ${total}`);

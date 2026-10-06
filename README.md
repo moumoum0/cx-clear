@@ -18,7 +18,7 @@
   <a href="./LICENSE">
     <img alt="License" src="./img/badges/license.svg"></a>
   <a href="https://github.com/moumoum0/cx-clear/releases">
-    <img alt="下载" src="./img/badges/download.svg"></a>
+    <img alt="累计下载量" src="https://moumoum0.github.io/cx-clear/download-badge.svg"></a>
 
   <br>
 
