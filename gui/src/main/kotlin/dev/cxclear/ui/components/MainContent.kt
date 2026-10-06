@@ -60,8 +60,8 @@ import kotlin.random.Random
 // 首次清理后必出调研条；之后每次清理完按此概率出，直到写死 survey_done。
 private const val SURVEY_SHOW_CHANCE = 0.3f
 
-// 调试开关：true = 每次清理完都弹调研条、忽略 survey_done。发布前改回 false。
-private const val SURVEY_DEBUG_ALWAYS = true
+// 调试开关：true = 每次清理完都弹调研条、忽略 survey_done。
+private const val SURVEY_DEBUG_ALWAYS = false
 
 /** 扫描页外壳：状态机、页面路由与布局；渲染在 ScanTopBar / ScanResultView / DiskStatCards。 */
 @Composable
@@ -257,9 +257,15 @@ fun MainContent(
             CleaningStatsCard(refreshKey = cleanTick, modifier = Modifier.weight(1f))
             DiskUsageCard(refreshKey = cleanTick, modifier = Modifier.weight(1f))
         }
-        
+    }
+
+        // 覆盖在底部统计卡上方，不参与 Column 排布。
+        // 必须是外层 Box 的直属子节点，挪进 Column 会撞 ColumnScope.AnimatedVisibility 重载编不过。
         AnimatedVisibility(
             visible = showSurvey,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(AppDimensions.SpacingLarge.dp),
             enter = slideInVertically(Motion.normal()) { it } + fadeIn(Motion.normal()),
             exit = slideOutVertically(Motion.fast()) { it } + fadeOut(Motion.fast()),
         ) {
@@ -268,7 +274,6 @@ fun MainContent(
                 onDone = ::dismissSurveyForever,
             )
         }
-    }
     }
 
     if (showCleanConfirm) {
@@ -330,24 +335,5 @@ fun MainContent(
             },
             containerColor = AppColors.Surface2,
         )
-    }
-}
-
-// 单独包一层：在 Column 里的 Box 中直接写 AnimatedVisibility，
-// 会被解析成 ColumnScope 扩展版本而编不过（LayoutScopeMarker 挡外层 receiver）。
-@Composable
-private fun SurveyPromptHost(
-    visible: Boolean,
-    onLater: () -> Unit,
-    onDone: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    AnimatedVisibility(
-        visible = visible,
-        modifier = modifier,
-        enter = slideInVertically(Motion.normal()) { -it } + fadeIn(Motion.normal()),
-        exit = slideOutVertically(Motion.fast()) { -it } + fadeOut(Motion.fast()),
-    ) {
-        SurveyPromptBar(onLater = onLater, onDone = onDone)
     }
 }
