@@ -21,6 +21,8 @@ data class AppPrefs(
     val autoCleanNotify: Boolean = true,
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
     val colorScheme: AppColorScheme = AppColorScheme.APP_DEFAULT,
+    // 来源调研条：true = 已去填写或点了不再提示，永不弹。
+    val surveyDone: Boolean = false,
 )
 
 object AppPreferences {
@@ -70,6 +72,7 @@ object AppPreferences {
             autoCleanNotify = props["auto_clean_notify"]?.toBooleanStrictOrNull() ?: true,
             themeMode = parseThemeMode(props["theme_mode"]),
             colorScheme = parseColorScheme(props["color_scheme"]),
+            surveyDone = props["survey_done"]?.toBooleanStrictOrNull() ?: false,
         )
     }
 
@@ -87,6 +90,7 @@ object AppPreferences {
             "auto_clean_notify=${prefs.autoCleanNotify}",
             "theme_mode=${prefs.themeMode.name}",
             "color_scheme=${prefs.colorScheme.name}",
+            "survey_done=${prefs.surveyDone}",
         )
         runCatching {
             Files.createDirectories(path.parent)

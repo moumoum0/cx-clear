@@ -1,5 +1,10 @@
 package dev.cxclear.ui.components
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -21,6 +26,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
@@ -43,11 +49,19 @@ import dev.cxclear.storage.CleanHistory
 import dev.cxclear.ui.Screen
 import dev.cxclear.ui.theme.AppColors
 import dev.cxclear.ui.theme.AppDimensions
+import dev.cxclear.ui.theme.Motion
 import dev.cxclear.util.formatBytes
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.random.Random
+
+// 首次清理后必出调研条；之后每次清理完按此概率出，直到写死 survey_done。
+private const val SURVEY_SHOW_CHANCE = 0.3f
+
+// 调试开关：true = 每次清理完都弹调研条、忽略 survey_done。发布前改回 false。
+private const val SURVEY_DEBUG_ALWAYS = true
 
 /** 扫描页外壳：状态机、页面路由与布局；渲染在 ScanTopBar / ScanResultView / DiskStatCards。 */
 @Composable
@@ -71,7 +85,31 @@ fun MainContent(
     var cleanError by remember { mutableStateOf<String?>(null) }
     // 清理完成后 bump，驱动累计卡 / 磁盘卡重读磁盘。
     var cleanTick by remember { mutableStateOf(0) }
+    var showSurvey by remember { mutableStateOf(false) }
+    var surveyDone by remember(initialPrefs) { mutableStateOf(initialPrefs.surveyDone) }
     val scope = rememberCoroutineScope()
+
+    fun maybeShowSurvey() {
+        if (showSurvey) return
+        if (SURVEY_DEBUG_ALWAYS) {
+            showSurvey = true
+            return
+        }
+        if (surveyDone) return
+        // AllDone 时已 append，记录数为 1 即首次清理。
+        val cleanCount = CleanHistory.readAll().size
+        if (cleanCount <= 1 || Random.nextFloat() < SURVEY_SHOW_CHANCE) showSurvey = true
+    }
+
+    fun dismissSurveyForever() {
+        surveyDone = true
+        showSurvey = false
+        scope.launch {
+            withContext(Dispatchers.IO) {
+                AppPreferences.update { it.copy(surveyDone = true) }
+            }
+        }
+    }
 
     fun startClean() {
         if (isCleaning) return
@@ -95,6 +133,7 @@ fun MainContent(
                     when (event) {
                         is CleanEvent.AllDone -> {
                             CleanHistory.append(event.totalFreedBytes)
+                            maybeShowSurvey()
                         }
                         is CleanEvent.Blocked -> errors +=
                             "检测到 ${event.tools.joinToString("、")} 仍在运行。请完全退出后重新扫描。"
@@ -163,10 +202,14 @@ fun MainContent(
         return
     }
 
-    Column(
+    Box(
         modifier = modifier
             .fillMaxSize()
-            .background(AppColors.Surface1)
+            .background(AppColors.Surface1),
+    ) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
             .padding(AppDimensions.SpacingLarge.dp),
         verticalArrangement = Arrangement.spacedBy(AppDimensions.SpacingLarge.dp)
     ) {
@@ -214,6 +257,18 @@ fun MainContent(
             CleaningStatsCard(refreshKey = cleanTick, modifier = Modifier.weight(1f))
             DiskUsageCard(refreshKey = cleanTick, modifier = Modifier.weight(1f))
         }
+        
+        AnimatedVisibility(
+            visible = showSurvey,
+            enter = slideInVertically(Motion.normal()) { it } + fadeIn(Motion.normal()),
+            exit = slideOutVertically(Motion.fast()) { it } + fadeOut(Motion.fast()),
+        ) {
+            SurveyPromptBar(
+                onLater = { showSurvey = false },
+                onDone = ::dismissSurveyForever,
+            )
+        }
+    }
     }
 
     if (showCleanConfirm) {
@@ -275,5 +330,24 @@ fun MainContent(
             },
             containerColor = AppColors.Surface2,
         )
+    }
+}
+
+// 单独包一层：在 Column 里的 Box 中直接写 AnimatedVisibility，
+// 会被解析成 ColumnScope 扩展版本而编不过（LayoutScopeMarker 挡外层 receiver）。
+@Composable
+private fun SurveyPromptHost(
+    visible: Boolean,
+    onLater: () -> Unit,
+    onDone: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    AnimatedVisibility(
+        visible = visible,
+        modifier = modifier,
+        enter = slideInVertically(Motion.normal()) { -it } + fadeIn(Motion.normal()),
+        exit = slideOutVertically(Motion.fast()) { -it } + fadeOut(Motion.fast()),
+    ) {
+        SurveyPromptBar(onLater = onLater, onDone = onDone)
     }
 }

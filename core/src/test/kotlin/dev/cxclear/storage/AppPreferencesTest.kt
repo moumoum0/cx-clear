@@ -33,6 +33,7 @@ class AppPreferencesTest {
         assertTrue(prefs.autoCleanNotify)
         assertEquals(ThemeMode.SYSTEM, prefs.themeMode)
         assertEquals(AppColorScheme.APP_DEFAULT, prefs.colorScheme)
+        assertFalse(prefs.surveyDone)
     }
 
     @Test
@@ -47,6 +48,7 @@ class AppPreferencesTest {
                 autoCleanNotify = false,
                 themeMode = ThemeMode.DARK,
                 colorScheme = AppColorScheme.CLOUD_FIELD,
+                surveyDone = true,
             )
         )
         val prefs = AppPreferences.read()
@@ -58,6 +60,7 @@ class AppPreferencesTest {
         assertFalse(prefs.autoCleanNotify)
         assertEquals(ThemeMode.DARK, prefs.themeMode)
         assertEquals(AppColorScheme.CLOUD_FIELD, prefs.colorScheme)
+        assertTrue(prefs.surveyDone)
     }
 
     @Test
