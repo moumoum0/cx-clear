@@ -10,15 +10,15 @@
   <b>简体中文</b>
 
   <a href="https://www.microsoft.com/windows">
-    <img alt="Platform" src="https://img.shields.io/badge/platform-Windows-475D92?style=flat-square&logo=windows&logoColor=white&labelColor=44464F"></a>
+    <img alt="Platform" src="./img/badges/platform.svg"></a>
   <a href="https://kotlinlang.org/">
-    <img alt="Kotlin" src="https://img.shields.io/badge/Kotlin-2.4-475D92?style=flat-square&logo=kotlin&logoColor=white&labelColor=44464F"></a>
+    <img alt="Kotlin" src="./img/badges/kotlin.svg"></a>
   <a href="https://www.jetbrains.com/lp/compose-multiplatform/">
-    <img alt="Compose Desktop" src="https://img.shields.io/badge/Compose%20Desktop-Material%203-475D92?style=flat-square&logo=jetpackcompose&logoColor=white&labelColor=44464F"></a>
+    <img alt="Compose Desktop" src="./img/badges/compose.svg"></a>
   <a href="./LICENSE">
-    <img alt="License" src="https://img.shields.io/badge/license-GPL--3.0-475D92?style=flat-square&labelColor=44464F"></a>
+    <img alt="License" src="./img/badges/license.svg"></a>
   <a href="https://github.com/moumoum0/cx-clear/releases">
-    <img alt="累计下载量" src="https://img.shields.io/endpoint?url=https%3A%2F%2Fmoumoum0.github.io%2Fcx-clear%2Fdownloads.json&style=flat-square&labelColor=44464F&color=475D92"></a>
+    <img alt="下载" src="./img/badges/download.svg"></a>
 
   <br>
 

@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="136" height="28" role="img" aria-label="license: GPL-3.0">
+  <style>@media (prefers-color-scheme: dark) { .b { stroke: #49454F } .l { fill: #CAC4D0 } .s { fill: #49454F } .v { fill: #E6E1E5 } .i { stroke: #D0BCFF } }</style>
+  <rect x="0.5" y="0.5" width="135" height="27" rx="13.5" fill="none" class="b" stroke="#CAC4D0"/>
+  <g class="i" stroke="#475D92" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none" transform="translate(14 7.5) scale(0.542)">
+    <path d="m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="m2 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="M7 21h10"/><path d="M12 3v18"/><path d="M3 7h2c2 0 5-1 7-2 2 1 5 2 7 2h2"/>
+  </g>
+  <text x="32" y="18.5" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="12">
+    <tspan class="l" fill="#44464F">license</tspan><tspan class="s" fill="#CAC4D0"> · </tspan><tspan class="v" fill="#1A1B20" font-weight="600">GPL-3.0</tspan>
+  </text>
+</svg>

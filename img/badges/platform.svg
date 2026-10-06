@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="152" height="28" role="img" aria-label="platform: Windows">
+  <style>@media (prefers-color-scheme: dark) { .b { stroke: #49454F } .l { fill: #CAC4D0 } .s { fill: #49454F } .v { fill: #E6E1E5 } .i { fill: #D0BCFF } }</style>
+  <rect x="0.5" y="0.5" width="151" height="27" rx="13.5" fill="none" class="b" stroke="#CAC4D0"/>
+  <path class="i" fill="#475D92" transform="translate(14 7.5) scale(0.542)" d="M0,0H11.377V11.372H0ZM12.623,0H24V11.372H12.623ZM0,12.623H11.377V24H0Zm12.623,0H24V24H12.623"/>
+  <text x="32" y="18.5" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="12">
+    <tspan class="l" fill="#44464F">platform</tspan><tspan class="s" fill="#CAC4D0"> · </tspan><tspan class="v" fill="#1A1B20" font-weight="600">Windows</tspan>
+  </text>
+</svg>

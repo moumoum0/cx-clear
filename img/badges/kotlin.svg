@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="112" height="28" role="img" aria-label="Kotlin: 2.4">
+  <style>@media (prefers-color-scheme: dark) { .b { stroke: #49454F } .l { fill: #CAC4D0 } .s { fill: #49454F } .v { fill: #E6E1E5 } .i { fill: #D0BCFF } }</style>
+  <rect x="0.5" y="0.5" width="111" height="27" rx="13.5" fill="none" class="b" stroke="#CAC4D0"/>
+  <path class="i" fill="#475D92" transform="translate(14 7.5) scale(0.542)" d="M24 24H0V0h24L12 12Z"/>
+  <text x="32" y="18.5" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="12">
+    <tspan class="l" fill="#44464F">Kotlin</tspan><tspan class="s" fill="#CAC4D0"> · </tspan><tspan class="v" fill="#1A1B20" font-weight="600">2.4</tspan>
+  </text>
+</svg>
