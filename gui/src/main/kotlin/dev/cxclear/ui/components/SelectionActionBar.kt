@@ -28,7 +28,6 @@ import dev.cxclear.ui.theme.AppColors
 import dev.cxclear.ui.theme.AppDimensions
 import dev.cxclear.util.formatBytes
 
-/** 批量删除出口：底部选中条 + 确认弹窗，删除期间按钮禁用。 */
 @Composable
 internal fun SelectionActionBar(
     count: Int,

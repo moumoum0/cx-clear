@@ -64,7 +64,6 @@ private const val SURVEY_SHOW_CHANCE = 0.3f
 // 调试开关：true = 每次清理完都弹调研条、忽略 survey_done。
 private const val SURVEY_DEBUG_ALWAYS = false
 
-/** 扫描页外壳：状态机、页面路由与布局；渲染在 ScanTopBar / ScanResultView / DiskStatCards。 */
 @Composable
 fun MainContent(
     currentScreen: Screen,
@@ -85,7 +84,6 @@ fun MainContent(
     var isCleaning by remember { mutableStateOf(false) }
     var showCleanConfirm by remember { mutableStateOf(false) }
     var cleanError by remember { mutableStateOf<String?>(null) }
-    // 清理完成后 bump，驱动累计卡 / 磁盘卡重读磁盘。
     var cleanTick by remember { mutableStateOf(0) }
     var showSurvey by remember { mutableStateOf(false) }
     var surveyDone by remember(initialPrefs) { mutableStateOf(initialPrefs.surveyDone) }
@@ -98,7 +96,6 @@ fun MainContent(
             return
         }
         if (surveyDone) return
-        // AllDone 时已 append，记录数为 1 即首次清理。
         val cleanCount = CleanHistory.readAll().size
         if (cleanCount <= 1 || Random.nextFloat() < SURVEY_SHOW_CHANCE) showSurvey = true
     }
@@ -175,7 +172,6 @@ fun MainContent(
                     is ScanEvent.Started -> Unit
                     is ScanEvent.SpaceScanned -> {
                         spaces = event.spaces
-                        // 扫描中只有总占用实时跳，分类扫完一次性构建。
                         scanTotalBytes = spaces.sumOf { it.bytes }
                     }
                     is ScanEvent.TargetsScanned -> results = event.results
@@ -187,7 +183,6 @@ fun MainContent(
                 results = results,
                 totalToolBytes = spaces.sumOf { it.bytes },
             )
-            // 默认勾选读 defaultSelected，写死 risk == SAFE 会多勾。
             selectedTargets = scanCategories
                 .flatMap { it.items }
                 .filter { it.defaultSelected && it.bytes > 0L }

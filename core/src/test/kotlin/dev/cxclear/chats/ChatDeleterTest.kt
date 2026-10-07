@@ -30,7 +30,6 @@ class ChatDeleterTest {
 
     private fun tempDir(): Path = Files.createTempDirectory("cxclear-chat")
 
-    // 冻结快照构造一条会话；[extra] 为同级 `<uuid>/` 之类的附带条目。
     private fun session(
         mainFile: Path,
         root: Path,
@@ -50,8 +49,6 @@ class ChatDeleterTest {
             entries = entries,
         )
     }
-
-    // 正常路径
 
     @Test
     fun `deletes the frozen entries and reports measured bytes`() = runBlocking {
@@ -78,7 +75,6 @@ class ChatDeleterTest {
 
         val result = deleteSessions(listOf(s), neverRunning)
 
-        // 深到浅的顺序必须让父目录在子项之后删，否则目录非空会失败。
         assertFalse(Files.exists(leaf))
         assertFalse(Files.exists(nested))
         assertFalse(Files.exists(dir))
@@ -87,14 +83,11 @@ class ChatDeleterTest {
         assertEquals(3L, result.freedBytes)
     }
 
-    // 身份校验
-
     @Test
     fun `file modified after scan is never deleted`() = runBlocking {
         val root = tempDir()
         val main = Files.writeString(root.resolve("a.jsonl"), "old")
         val s = session(main, root)
-        // 扫描后用户又聊了几句，文件长大了：这条会话不再是当时判定的那条。
         Files.writeString(main, "the user kept chatting")
 
         val result = deleteSessions(listOf(s), neverRunning)
@@ -111,7 +104,7 @@ class ChatDeleterTest {
         val main = Files.writeString(root.resolve("a.jsonl"), "old")
         val s = session(main, root)
         Files.delete(main)
-        Files.writeString(main, "old") // 同名同长度，但已是另一个文件
+        Files.writeString(main, "old")
 
         val result = deleteSessions(listOf(s), neverRunning)
 
@@ -129,7 +122,6 @@ class ChatDeleterTest {
 
         val result = deleteSessions(listOf(s), neverRunning)
 
-        // 目录非空时保留，连带删会把新内容一起带走。
         assertTrue(Files.exists(added))
         assertTrue(Files.isDirectory(dir))
         assertEquals(1, result.errors.size)
@@ -141,7 +133,7 @@ class ChatDeleterTest {
         val root = tempDir()
         val main = Files.writeString(root.resolve("a.jsonl"), "x")
         val s = session(main, root)
-        Files.delete(main) // 用户自己先删了
+        Files.delete(main)
 
         val result = deleteSessions(listOf(s), neverRunning)
 
@@ -248,8 +240,6 @@ class ChatDeleterTest {
         assertEquals(1, headerCount(db, s.id))
     }
 
-    // 进程阻断
-
     @Test
     fun `running tool blocks its sessions and leaves others deletable`() = runBlocking {
         val root = tempDir()
@@ -291,7 +281,6 @@ class ChatDeleterTest {
 
         deleteSessions(sessions) { checks++; false }
 
-        // 进程枚举有成本，且两次结果不一致会让「报告阻断」与「实际跳过」对不上。
         assertEquals(1, checks)
     }
 
@@ -309,7 +298,6 @@ class ChatDeleterTest {
         val root = tempDir()
         val main = Files.writeString(root.resolve("a.jsonl"), "x")
         val s = session(main, root)
-        // 冻结之后同目录出现了另一条会话；删除阶段按清单删，重新遍历会把这条新会话带走。
         val other = Files.writeString(root.resolve("b.jsonl"), "keep")
 
         deleteSessions(listOf(s), neverRunning)

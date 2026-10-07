@@ -25,7 +25,6 @@ import dev.cxclear.ui.theme.AppDimensions
 import java.awt.Desktop
 import java.net.URI
 
-// 用户来源调研：最底部的简洁小条
 @Composable
 internal fun SurveyPromptBar(
     onLater: () -> Unit,

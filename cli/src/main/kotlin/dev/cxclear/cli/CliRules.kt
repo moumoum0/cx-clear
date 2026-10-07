@@ -9,7 +9,6 @@ import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
 
-// 自动清理策略：--rules / --rules-file / --rule 读取、rules validate 输入、策略告警说明
 internal fun readInputText(file: String?): String {
     val text = if (file != null && file != "-") {
         val path = Path.of(file)
@@ -30,8 +29,6 @@ internal fun readConfigJson(args: ParsedArgs): RetentionParseResult {
 
 internal fun ruleSelection(args: ParsedArgs): List<String> = args.csv("rule")
 
-// --rules 读已保存策略，--rules-file 读候选 JSON（"-" 走 stdin）；只算 enabled 的规则，与自动清理一致
-// --rule <id> 用于预览单条规则：挑中的规则强制视为启用，好让还没开启的新规则也能试跑
 internal fun loadRulesConfig(args: ParsedArgs): RetentionConfig? {
     val file = args.value("rules-file")
     val ids = ruleSelection(args)
@@ -48,6 +45,7 @@ internal fun loadRulesConfig(args: ParsedArgs): RetentionConfig? {
         else -> return null
     }
     if (ids.isEmpty()) return config
+    // --rule <id> 用于预览单条规则：挑中的规则强制视为启用，好让还没开启的新规则也能试跑
     val known = config.rules.map { it.id }.toSet()
     val unknown = ids.filter { it !in known }
     if (unknown.isNotEmpty()) throw CliUsageException("unknown rule: ${unknown.joinToString(",")}")
@@ -70,8 +68,8 @@ internal fun ruleWarnings(config: RetentionConfig): List<String> {
     return warnings
 }
 
-// --rules 输出的策略说明；禁用规则不进匹配但要列出来，否则 matched:0 没法解释
 internal fun rulesInfo(config: RetentionConfig, source: String, selected: List<String> = emptyList()): Map<String, Any?> {
+    // --rules 输出的策略说明；禁用规则不进匹配但要列出来，否则 matched:0 没法解释
     val warnings = ruleWarnings(config).toMutableList()
     if (config.rules.isEmpty()) warnings += "no rules configured"
     for (rule in config.rules) {

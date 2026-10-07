@@ -8,20 +8,14 @@ import java.nio.file.StandardOpenOption
 private fun knownToolIds(): Set<String> = tools().map { it.profile.id }.toSet()
 
 data class AppPrefs(
-    // 扫描页默认勾选的工具 id。空则回退到 ChatTool 全量。
     val defaultTools: Set<String> = knownToolIds(),
     val rememberLastScreen: Boolean = false,
-    // 上次打开的页面：scan / chats / settings。
     val lastScreenId: String = "scan",
-    // 对话管理默认页：manual / auto。
     val defaultChatsMode: String = "manual",
-    // 总开关：关则跳过自动清理执行，不改各条规则。
     val autoCleanEnabled: Boolean = true,
-    // 自动清理删过东西后是否弹出通知条。
     val autoCleanNotify: Boolean = true,
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
     val colorScheme: AppColorScheme = AppColorScheme.APP_DEFAULT,
-    // 来源调研条：true = 已去填写或点了不再提示，永不弹。
     val surveyDone: Boolean = false,
 )
 

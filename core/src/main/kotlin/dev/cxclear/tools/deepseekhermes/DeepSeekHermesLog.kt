@@ -7,10 +7,6 @@ import java.io.InputStreamReader
 import java.nio.file.Files
 import java.nio.file.Path
 
-/**
- * 会话日志是多帧 zstd 拼在一个文件里（session.vN.jsonl.zstd），也可能是明文 jsonl。
- * 连续帧要开 setContinuous，否则解完第一帧就停。
- */
 internal class DeepSeekHermesLog(val path: Path) : AutoCloseable {
     private val reader: BufferedReader = openReader(path)
 
@@ -23,6 +19,7 @@ internal class DeepSeekHermesLog(val path: Path) : AutoCloseable {
     private fun openReader(file: Path): BufferedReader {
         val input = Files.newInputStream(file)
         val decoded = if (file.fileName.toString().endsWith(".zstd")) {
+            // 一个文件里拼了多帧，不开 setContinuous 解完第一帧就停。
             ZstdInputStream(input).apply { setContinuous(true) }
         } else {
             input
@@ -36,7 +33,6 @@ internal inline fun <T> readDeepSeekLog(file: Path, block: (Sequence<Map<String,
         block(log.lines().mapNotNull { MiniJson.parse(it) as? Map<String, Any?> })
     }
 
-// 目录里优先最新一代 session.vN.jsonl(.zstd)，没有再退回旧文件名。
 internal fun findSessionLog(dir: Path): Path? {
     var best: Path? = null
     var bestVersion = -1

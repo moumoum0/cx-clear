@@ -11,8 +11,8 @@ internal val ClaudePlugin = ToolPlugin(
     chat = ChatTool(
         id = ClaudeCodeProfile.id,
         displayName = ClaudeCodeProfile.name,
-        // 项目目录名把绝对路径整条编码进来（d--project-cxclear），只留最后一段。
         projectLabel = label@{ raw ->
+            // 项目目录名把绝对路径整条编码进来（d--project-cxclear），只留最后一段。
             val text = raw?.takeIf { it.isNotBlank() } ?: return@label NO_PROJECT_LABEL
             text.trimEnd('-').substringAfterLast('-').ifBlank { text }
         },

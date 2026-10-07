@@ -1,7 +1,6 @@
 package dev.cxclear.cli
 
 fun main(args: Array<String>) {
-    // 修复 Windows 控制台 UTF-8 输出乱码
     System.setProperty("file.encoding", "UTF-8")
     System.setProperty("stdout.encoding", "UTF-8")
     System.setProperty("stderr.encoding", "UTF-8")

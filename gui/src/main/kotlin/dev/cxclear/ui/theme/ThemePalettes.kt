@@ -2,8 +2,6 @@ package dev.cxclear.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-// 每个配色方案各有一套浅色与深色 M3 色板。
-// 默认配色
 val M3DefaultLight = M3Tokens(
     primary = Color(0xFF475D92),
     onPrimary = Color(0xFFFFFFFF),
@@ -42,7 +40,6 @@ val M3DefaultLight = M3Tokens(
     surfaceContainerHighest = Color(0xFFE6E5ED),
 )
 
-// 目前部分深色由AI自动推算，可能存在错误，之后会改
 val M3DefaultDark = M3Tokens(
     primary = Color(0xFFB0C6FF),
     onPrimary = Color(0xFF152E60),
@@ -81,7 +78,6 @@ val M3DefaultDark = M3Tokens(
     surfaceContainerHighest = Color(0xFF34343A),
 )
 
-// 云野浅色
 val M3CloudFieldLight = M3Tokens(
     primary = Color(0xFF3C6839),
     onPrimary = Color(0xFFFFFFFF),
@@ -120,7 +116,6 @@ val M3CloudFieldLight = M3Tokens(
     surfaceContainerHighest = Color(0xFFE0E4DA),
 )
 
-// 云野深色
 val M3CloudFieldDark = M3Tokens(
     primary = Color(0xFFA2D399),
     onPrimary = Color(0xFF0C390E),

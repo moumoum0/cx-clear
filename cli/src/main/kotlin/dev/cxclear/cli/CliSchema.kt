@@ -7,13 +7,6 @@ import dev.cxclear.tools.chatTools
 import dev.cxclear.model.Risk
 import dev.cxclear.tools.ALL_PROFILES
 
-/**
- * CLI 的自描述数据：`schema` 与 `help` 两个命令的 JSON 负载。
- *
- * 坑：这里的 condition_types 表、以及 50 条规则 / 20 个条件的上限，与
- * chats/RetentionStore 的落盘格式、chats/RetentionJson、chats/RetentionAiPrompt
- * 的提示词正文是几份平行副本。改落盘格式必须同时改这几处，编译器不会拦。
- */
 internal object CliSchema {
     private fun conditionLabel(type: ChatConditionType) = when (type) {
         ChatConditionType.UPDATED_BEFORE_DAYS -> "not updated for more than"

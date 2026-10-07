@@ -3,7 +3,6 @@ package dev.cxclear.cli
 import dev.cxclear.util.MiniJson
 import kotlin.system.exitProcess
 
-// 给 AI 调的无头入口。统一查找-删除模型，stdout 只出 JSON。
 object Cli {
     const val EXIT_OK = 0
     const val EXIT_FAIL = 1

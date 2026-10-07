@@ -9,7 +9,7 @@ version = "1.3.1"
 
 apply(from = "packaging/windows-native-jars.gradle.kts")
 
-// run 转发给 :gui:run：根项目的 run 按任务名会匹配到所有子模块。
+// 根项目的 run 按任务名会匹配到所有子模块。
 tasks.register("run") {
     group = "application"
     description = "启动 GUI"

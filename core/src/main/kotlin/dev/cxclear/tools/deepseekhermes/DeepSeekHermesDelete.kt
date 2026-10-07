@@ -8,10 +8,6 @@ import dev.cxclear.util.jsonMap
 import dev.cxclear.util.jsonObj
 import java.nio.file.Files
 
-/**
- * 删扫描时冻结的会话目录（含子代理目录和 session_projcache 缓存），
- * 再从 workspace.json 的 sessionIds 里摘掉这条。索引改失败时文件已经删了，要把错误带回。
- */
 internal fun deleteDeepSeekHermesSession(session: ChatSessionSummary): Pair<Long, List<String>> {
     val (freed, errors) = deleteSessionEntries(session)
     if (errors.isNotEmpty()) return freed to errors

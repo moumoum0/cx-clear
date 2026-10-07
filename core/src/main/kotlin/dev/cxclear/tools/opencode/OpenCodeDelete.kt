@@ -6,7 +6,6 @@ import java.io.IOException
 import java.nio.file.Files
 import java.sql.DriverManager
 
-// 删除 Open Code 会话：库里的 session 记录（级联删消息）和 session_diff 文件。
 internal fun deleteOpenCodeSession(session: ChatSessionSummary): Pair<Long, List<String>> {
     val dbFile = opencodeDbFile()
     if (dbFile == null) {

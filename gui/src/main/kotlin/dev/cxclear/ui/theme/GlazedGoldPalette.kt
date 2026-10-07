@@ -2,7 +2,6 @@ package dev.cxclear.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-// Cursor 官网品牌色与权重映射，使用 Material Color Utilities 0.3.0 推导 M3 色板。
 val M3GlazedGoldLight = M3Tokens(
     primary = Color(0xFF26251E),
     onPrimary = Color(0xFFF7F7F4),

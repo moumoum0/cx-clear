@@ -68,7 +68,6 @@ fun screenFromPrefId(id: String): Screen = when (id) {
     else -> Screen.SCAN
 }
 
-// 设置页改主题时写回偏好，由 [App] 根部持有状态并驱动 [AppTheme]。
 data class ThemeController(
     val themeMode: ThemeMode,
     val colorScheme: AppColorScheme,
@@ -116,8 +115,8 @@ fun WindowScope.App(
 
     val overlayHost = remember { OverlayHostState() }
     val hazeState = rememberHazeState()
-    // 窗口显示后先让 Haze 渲染管线初始化一次。实测没用：首次模糊仍会卡顿，暂时无解。
     var isWarmingUp by remember { mutableStateOf(true) }
+    // 窗口显示后先让 Haze 渲染管线初始化一次。实测没用：首次模糊仍会卡顿，暂时无解。
     LaunchedEffect(Unit) {
         kotlinx.coroutines.delay(50)
         isWarmingUp = false
@@ -154,8 +153,8 @@ fun WindowScope.App(
             },
         ),
     ) {
-    // clip 最外层，scrim/浮层才跟窗口圆角。
     Box(
+        // clip 最外层，scrim/浮层才跟窗口圆角。
         modifier = Modifier
             .fillMaxSize()
             .clip(windowShape),
@@ -203,7 +202,6 @@ fun WindowScope.App(
                 onClose = onCloseRequest,
             )
 
-            // fillMaxSize 会按整窗量高，底边被 clip 裁掉。
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -229,6 +227,7 @@ fun WindowScope.App(
             exit = fadeOut(Motion.fast()),
         ) {
             Box(
+                // fillMaxSize 会按整窗量高，底边被 clip 裁掉。
                 modifier = Modifier
                     .fillMaxSize()
                     .background(AppColors.Scrim.copy(alpha = 0.45f))

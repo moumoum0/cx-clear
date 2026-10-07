@@ -13,8 +13,6 @@ import java.nio.file.attribute.BasicFileAttributes
 
 internal data class CodexIndexEntry(val id: String, val title: String, val updatedAt: String?)
 
-// 坏行跳过；索引本身不会被删，损坏不影响主流程。
-@Suppress("UNCHECKED_CAST")
 internal fun readCodexIndex(): Map<String, CodexIndexEntry> {
     val file = codexIndexFile() ?: return emptyMap()
     val map = LinkedHashMap<String, CodexIndexEntry>()

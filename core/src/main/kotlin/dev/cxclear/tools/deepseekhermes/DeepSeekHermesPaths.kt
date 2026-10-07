@@ -6,8 +6,8 @@ import dev.cxclear.tools.homeSubdir
 import java.nio.file.Files
 import java.nio.file.Path
 
-// 测试注入。null 时解析用户目录下的 ~/.dsh。
 internal var dshHomeOverride: Path? = null
+// 测试注入。null 时解析用户目录下的 ~/.dsh。
 
 internal fun dshHome(): Path? {
     val override = dshHomeOverride
@@ -21,9 +21,9 @@ internal fun dshSessionsRoot(): Path? =
 internal fun dshWorkspaceFile(): Path? =
     dshHome()?.resolve("storages")?.resolve("workspace.json")?.takeIf { Files.isRegularFile(it) }
 
-// session_projcache 里按会话 id 存的缓存文件，删会话时要一起删掉。
 internal fun dshProjCacheFile(home: Path, sessionId: String): Path =
     home.resolve("storages").resolve("session_projcache").resolve("sessions").resolve("$sessionId.json")
+// session_projcache 里按会话 id 存的缓存文件，删会话时要一起删掉。
 
 internal fun dshDesktopAppData(): Path? =
     appDataRoaming()?.resolve("@deepseek-ai")?.resolve("dsh-desktop")?.takeIf { Files.isDirectory(it) }

@@ -92,7 +92,6 @@ class CliFiltersTest {
             )
             val args = parseArgs(arrayOf("find", "chats", "--rules-file", file.toString(), "--rule", "r1"))!!
             val config = parseChatFilters(args).rulesConfig!!
-            // --rule 用于预览单条规则：挑中的规则强制视为启用，其他规则不参与
             assertEquals(listOf("r1"), config.rules.map { it.id })
             assertTrue(config.rules[0].enabled)
 

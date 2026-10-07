@@ -17,7 +17,6 @@ import dev.cxclear.storage.AppColorScheme
 
 val LocalAppColors = staticCompositionLocalOf { appColorTokensOf(M3DefaultLight) }
 
-// 当前主题色表，在 @Composable 里读。Canvas 等非组合作用域先抓到局部变量再用。
 val AppColors: AppColorTokens
     @Composable
     @ReadOnlyComposable
@@ -29,7 +28,6 @@ private fun resolveM3Tokens(scheme: AppColorScheme, dark: Boolean): M3Tokens = w
     AppColorScheme.GLAZED_GOLD -> if (dark) M3GlazedGoldDark else M3GlazedGoldLight
 }
 
-// 35 个具名参数与 M3Tokens 的 35 个字段逐一硬对应，与 ThemeTokens.kt 保持同步
 private fun M3Tokens.toMaterialColorScheme(dark: Boolean) = if (dark) {
     darkColorScheme(
         primary = primary,
@@ -136,7 +134,6 @@ fun AppTheme(
     }
 }
 
-// OutlinedTextField 的配色，各输入框共用这一套 [AppColors] 取值。
 @Composable
 fun appOutlinedTextFieldColors(
     focusedTrailingIconColor: Color = AppColors.TextTertiary,

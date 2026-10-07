@@ -23,7 +23,6 @@ internal fun unwrapCursorUserQuery(raw: String): String {
     return inner.ifBlank { raw }
 }
 
-// subagents/ 是子代理转录，不算独立会话。
 internal fun collectCursorTranscripts(transcriptsRoot: Path): List<Path> {
     val files = mutableListOf<Path>()
     val pending = mutableListOf(transcriptsRoot)
@@ -31,6 +30,7 @@ internal fun collectCursorTranscripts(transcriptsRoot: Path): List<Path> {
         val dir = pending.removeAt(pending.lastIndex)
         for (entry in listDir(dir)) {
             if (Files.isDirectory(entry)) {
+                // subagents/ 是子代理转录，不算独立会话。
                 if (entry.fileName.toString() != "subagents") {
                     pending.add(entry)
                 }
@@ -90,7 +90,6 @@ internal fun loadCursorComposerDataMap(): Map<String, CursorComposerData> {
     return map
 }
 
-// 从 Cursor transcript 读标题（第一条非 meta 用户消息），是 composerData 取不到标题时的备用方案。
 internal fun readCursorTranscriptTitle(file: Path): String? {
     var title: String? = null
     runCatching {
@@ -121,10 +120,6 @@ internal fun readCursorTranscriptTitle(file: Path): String? {
     return title
 }
 
-/**
- * 扫描 Cursor 会话：~/.cursor/projects/<project-hash>/agent-transcripts/<session-uuid>/<session-uuid>.jsonl，
- * 元数据取自 state.vscdb 的 composerData 键。
- */
 internal fun scanCursorSessions(
     onFound: (ChatSessionSummary) -> Unit = {},
 ): List<ChatSessionSummary> {

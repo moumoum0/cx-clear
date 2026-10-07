@@ -5,11 +5,6 @@ import dev.cxclear.model.MatchKind
 import dev.cxclear.model.Risk
 import dev.cxclear.model.ToolProfile
 
-/**
- * Codex：`~/.codex` + `~/.cache/codex-runtimes`。
- * `%LOCALAPPDATA%\OpenAI\Codex` 安装目录与 Documents\Codex 用户工作区留给用户。
- * 顺序按占用从大到小，方便用户从上往下勾。
- */
 val CodexProfile = ToolProfile(
     id = "codex",
     name = "Codex",

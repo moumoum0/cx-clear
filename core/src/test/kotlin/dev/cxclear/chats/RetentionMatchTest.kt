@@ -38,11 +38,8 @@ class RetentionMatchTest {
         enabled: Boolean = true,
     ) = RetentionRule("rule-1", enabled = enabled, join = join, conditions = conditions.toList())
 
-    // 安全网：不该命中的中间态
-
     @Test
     fun `rule with no conditions never matches`() {
-        // AND 对空集合在逻辑上为真，照搬会把全部会话判成待删。
         val fresh = session("a")
         assertFalse(rule().matches(fresh, now))
         assertFalse(rule(join = ConditionJoin.OR).matches(fresh, now))
@@ -57,7 +54,6 @@ class RetentionMatchTest {
 
     @Test
     fun `zero valued numeric condition is treated as incomplete`() {
-        // 「未更新超过 0 天」会命中一切，要当成还没填完。
         val cond = ChatCondition(ChatConditionType.UPDATED_BEFORE_DAYS, number = 0)
         assertFalse(cond.isComplete())
         assertFalse(rule(cond).matches(session("a", agoDays = 999L), now))
@@ -65,7 +61,6 @@ class RetentionMatchTest {
 
     @Test
     fun `blank text condition is treated as incomplete`() {
-        // 空串 contains 恒为真，同样不能参与匹配。
         val cond = ChatCondition(ChatConditionType.TITLE_CONTAINS, text = "  ")
         assertFalse(cond.isComplete())
         assertFalse(rule(cond).matches(session("a"), now))
@@ -84,12 +79,9 @@ class RetentionMatchTest {
             ChatCondition(ChatConditionType.UPDATED_BEFORE_DAYS, number = 30),
             ChatCondition(ChatConditionType.TITLE_CONTAINS, text = ""),
         )
-        // 只剩「超过 30 天」一个有效条件，不应因为另一个填了空就整条失效。
         assertTrue(r.matches(session("a", agoDays = 60L), now))
         assertFalse(r.matches(session("b", agoDays = 5L), now))
     }
-
-    // 各条件类型
 
     @Test
     fun `updated before days uses strict threshold`() {
@@ -101,7 +93,6 @@ class RetentionMatchTest {
 
     @Test
     fun `updated within days is the strict complement of before`() {
-        // 「未更新少于 30 天」= 最近 30 天内动过。与「超过」互补，边界都归到「少于」一侧。
         val r = rule(ChatCondition(ChatConditionType.UPDATED_WITHIN_DAYS, number = 30))
         assertTrue(r.matches(session("fresh", agoDays = 1L), now))
         assertFalse(r.matches(session("edge", agoDays = 30L), now))
@@ -144,12 +135,9 @@ class RetentionMatchTest {
 
     @Test
     fun `project condition matches the displayed label`() {
-        // Claude 的目录名是整条路径编码，projectLabel 取末段；条件应按展示值匹配。
         val r = rule(ChatCondition(ChatConditionType.PROJECT_CONTAINS, text = "cxclear"))
         assertTrue(r.matches(session("a", tool = chatToolById("claude")!!, project = "d--project-cxclear"), now))
     }
-
-    // 与 / 或 组合
 
     @Test
     fun `and requires every condition`() {
@@ -176,8 +164,6 @@ class RetentionMatchTest {
         assertTrue(r.matches(session("bigOnly", agoDays = 1L, sizeBytes = 20 * mb), now))
         assertFalse(r.matches(session("neither", agoDays = 1L, sizeBytes = 1024L), now))
     }
-
-    // 多策略：规则之间取「或」
 
     @Test
     fun `config unions matches across rules`() {

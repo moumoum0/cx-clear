@@ -3,7 +3,6 @@ package dev.cxclear.ui.components
 import dev.cxclear.chats.ChatConditionType
 import dev.cxclear.chats.ConditionValueKind
 
-/** 条件构造器的属性元数据：属性 → 比较符与取值类型；向导列与文案生成共用。 */
 internal data class AttrSpec(
     val label: String,
     val kind: ConditionValueKind,

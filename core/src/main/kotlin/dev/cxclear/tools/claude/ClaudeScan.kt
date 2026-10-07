@@ -23,20 +23,10 @@ internal val UUID_REGEX = Regex(
 internal fun isUuidFileName(name: String): Boolean = name.endsWith(".jsonl") &&
     UUID_REGEX.matches(name.dropLast(6))
 
-/**
- * 从 Claude jsonl 读会话标题，优先级：
- *   1. `ai-title.aiTitle`：Claude 自动生成的会话标题，追加在文件末尾
- *   2. `last-prompt.lastPrompt`：用户最后一条提问，次优
- *   3. 首条非 meta 用户文本消息，保底
- *
- * 标题字段用 `\uXXXX` 转义存储，MiniJson 已正确解码，无需额外处理。
- * 文件按 UTF-8 读取，遇到损坏行跳过，其余行继续解析。
- */
-@Suppress("UNCHECKED_CAST")
 internal fun readClaudeTitle(file: Path): String? {
-    var aiTitle: String? = null        // 最后一条 ai-title（追加写，越新越靠后）
-    var lastPrompt: String? = null     // last-prompt.lastPrompt
-    var firstUserText: String? = null  // 首条用户文本（保底）
+    var aiTitle: String? = null
+    var lastPrompt: String? = null
+    var firstUserText: String? = null
 
     runCatching {
         Files.newBufferedReader(file, Charsets.UTF_8).use { br ->
@@ -44,7 +34,6 @@ internal fun readClaudeTitle(file: Path): String? {
                 val obj = MiniJson.parse(line) ?: continue
                 when (obj.jsonStr("type")) {
                     "ai-title" -> {
-                        // aiTitle 字段用 \uXXXX 存储，MiniJson 已解码为正常字符串
                         obj.jsonStr("aiTitle")?.takeIf { it.isNotBlank() }?.let { aiTitle = it }
                     }
                     "last-prompt" -> {

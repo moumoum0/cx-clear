@@ -20,15 +20,12 @@ import dev.cxclear.ui.theme.Motion
 import kotlinx.coroutines.launch
 import kotlin.math.max
 
-/** 容量圆柱：[StorageCylinder] 竖向堆叠、[DiskUsageCylinder] 横向填充；数学各写一份，合一起反而难读。 */
-
 internal data class CylinderSlice(
     val color: Color,
     val top: Float,
     val bottom: Float,
 )
 
-// 极小段抬高再压回，不然被底盘盖没。stubZero 扫初期画扁片。
 internal fun sliceCylinder(
     colors: List<Color>,
     shares: List<Float>,
@@ -68,7 +65,6 @@ internal fun StorageCylinder(
     val stackColors = stack.map { categoryAccent(it.id) }
 
     val shares = remember(stack.size) { List(stack.size) { Animatable(0f) } }
-    // isScanning 进 key 会在扫完时白抖一轮。
     LaunchedEffect(stack.map { it.bytes }) {
         stack.forEachIndexed { index, category ->
             launch {
@@ -143,7 +139,6 @@ internal fun StorageCylinder(
 
         clipRect(left, top - capHeight / 2f, right, bottom + capHeight / 2f) {
             slices.forEach { slice ->
-                // 暗边用同色系，混黑会脏，加高光会留白斑。
                 val bodyBrush = Brush.horizontalGradient(
                     0f to slice.color,
                     0.80f to slice.color,
@@ -176,7 +171,6 @@ internal fun StorageCylinder(
                     topLeft = Offset(left, fillTop - capHeight / 2f),
                     size = Size(cylinderWidth, capHeight),
                 )
-                // 柱上唯一纯黑，alpha 重了像凹坑。
                 drawOval(
                     brush = Brush.verticalGradient(
                         listOf(Color.Black.copy(alpha = 0.10f), Color.Transparent),
@@ -259,7 +253,6 @@ internal fun DiskUsageCylinder(fraction: Float, modifier: Modifier = Modifier) {
         if (fill > 0f) {
             val fillRight = left + bodyWidth * fill
             val fillColor = colors.Primary
-            // 暗边用同色系，混黑会脏。
             val bodyBrush = Brush.verticalGradient(
                 0f to fillColor,
                 0.80f to fillColor,

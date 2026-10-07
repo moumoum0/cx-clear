@@ -7,10 +7,6 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.sql.DriverManager
 
-/**
- * 扫描 Open Code 会话：读 opencode.db 的 session / project 表，
- * 外加 storage/session_diff/<session_id>.json 的体积。
- */
 internal fun scanOpenCodeSessions(
     onFound: (ChatSessionSummary) -> Unit = {},
 ): List<ChatSessionSummary> {
@@ -20,8 +16,8 @@ internal fun scanOpenCodeSessions(
 
     runCatching {
         DriverManager.getConnection("jdbc:sqlite:$dbFile").use { conn ->
-            // 项目表一次读进内存，后面按 project_id 查项目名
             val projects = mutableMapOf<String, String>()
+            // 项目表一次读进内存，后面按 project_id 查项目名
             conn.createStatement().use { stmt ->
                 stmt.executeQuery("SELECT id, worktree, name FROM project").use { rs ->
                     while (rs.next()) {

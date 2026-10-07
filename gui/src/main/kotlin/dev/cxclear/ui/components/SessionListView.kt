@@ -46,7 +46,6 @@ import dev.cxclear.ui.theme.AppDimensions
 import dev.cxclear.ui.theme.Motion
 import dev.cxclear.util.formatBytes
 
-/** 会话列表叶子：扫描指示、空态骨架、分组头、会话行；展示参数由主体传入。 */
 @Composable
 internal fun ScanningIndicator(
     foundCount: Int,

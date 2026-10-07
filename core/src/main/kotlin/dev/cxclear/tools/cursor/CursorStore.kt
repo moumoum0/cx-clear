@@ -21,10 +21,6 @@ private val CURSOR_KV_PREFIXES = listOf(
     "agentKv:bubbleCheckpoint:",
 )
 
-/**
- * 按 Cursor ComposerService.deleteComposer 的落盘顺序清 state.vscdb。
- * agentKv:blob 保留：那些键没有 composerId 前缀，无法安全归属到单条会话。
- */
 internal fun deleteCursorComposerFromStateDb(dbPath: Path, composerId: String): Pair<Long, List<String>> {
     if (!Files.isRegularFile(dbPath)) {
         return 0L to listOf("Cursor 状态库不存在")

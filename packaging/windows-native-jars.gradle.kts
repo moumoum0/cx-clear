@@ -4,7 +4,6 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipFile
 import java.util.zip.ZipOutputStream
 
-// Only distribution copies are rewritten; dependency caches stay platform-neutral.
 extra["trimWindowsNativeJars"] = { directory: File ->
     val libraries = mapOf(
         "sqlite-jdbc" to "org/sqlite/native/Windows/x86_64/sqlitejdbc.dll",

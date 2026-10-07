@@ -53,7 +53,6 @@ dependencies {
     implementation("net.java.dev.jna:jna:5.19.1")
     implementation(compose.desktop.currentOs)
     implementation(compose.components.resources)
-    // material3 要跟 compose.desktop 带的 foundation 同发布列车，版本错配会在 CustomStyle.applyStyle 抛 AbstractMethodError（输入框一渲染就崩）。
     implementation("org.jetbrains.compose.material3:material3:1.12.0-alpha03")
     add(materialIconsArchive.name, "org.jetbrains.compose.material:material-icons-extended-desktop:$materialIconsVersion")
     implementation("org.jetbrains.compose.material:material-icons-core:$materialIconsVersion")
@@ -78,20 +77,17 @@ compose.desktop {
             "-Dsun.java2d.uiScale.enabled=true",
         )
 
-        // CLI jar 在 app-image 生成后加入；收缩 core 会删除 CLI 独有的调用路径。
         buildTypes.release.proguard {
             isEnabled.set(false)
         }
 
         nativeDistributions {
-            // Windows 安装包用 app-image + Inno Setup（packageInnoSetup 任务），targetFormats 只需 Dmg。
             targetFormats(TargetFormat.Dmg)
             packageName = "CX Clear"
             packageVersion = version.toString()
             description = "AI Agent disk cleanup tool"
             vendor = "CX Clear"
 
-            // 只打进实际用到的 JDK 模块，砍掉捆绑 JRE 体积。
             modules("java.base", "java.desktop", "java.logging", "java.net.http", "java.sql", "jdk.unsupported")
 
             windows {
@@ -333,8 +329,6 @@ fun runIscc(
         "/DOUTPUT_BASE=$outputBase",
         script.absolutePath,
     )
-    // 不能用 inheritIO()：Gradle daemon 后台运行时无人读取子进程管道，
-    // ISCC 打印进度会写满 stdout 缓冲区并永久阻塞（表现为编译卡死、锁住输出文件）。
     val proc = ProcessBuilder(args)
         .directory(script.parentFile)
         .redirectErrorStream(true)
@@ -347,8 +341,6 @@ fun runIscc(
     if (exit != 0) error("Inno Setup 编译失败，退出码 $exit（$outputBase）")
 }
 
-// app-image + Inno Setup / zip：安装器与免安装各出带 Java、不带 Java。
-// 前置：ISCC.exe（Inno Setup 6，winget JRSoftware.InnoSetup）。
 tasks.register("packageInnoSetup") {
     group = "compose desktop"
     description = "打 Windows 安装器与免安装包（带 Java / 不带 Java）"

@@ -12,11 +12,6 @@ import dev.cxclear.util.jsonStr
 import java.nio.file.Files
 import java.nio.file.Path
 
-/**
- * DeepSeek Hermes 会话扫描。
- * ~/.dsh/sessions/<工作区编码>/<会话目录>/session.vN.jsonl.zstd。
- * origin=subagent 的子代理不进列表，删父会话时一起带走。
- */
 internal fun scanDeepSeekHermesSessions(
     onFound: (ChatSessionSummary) -> Unit = {},
 ): List<ChatSessionSummary> {

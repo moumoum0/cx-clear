@@ -9,12 +9,9 @@ import dev.cxclear.tools.cursor.CursorPlugin
 import dev.cxclear.tools.deepseekhermes.DeepSeekHermesPlugin
 import dev.cxclear.tools.opencode.OpenCodePlugin
 
-/**
- * 全工具登记表。新工具在 `tools/<id>/` 写完自己的 Plugin，再追加到 [TOOLS]。
- * 扫描、删会话、图标、偏好里的已知 id 都从这里读，名单只维护这一份。
- *
- * [tools] 按当前系统过滤。某个软件只在部分系统上有数据时，给 Plugin 填 supportedOs。
- */
+// 全工具登记表。新工具在 `tools/<id>/` 写完自己的 Plugin，再追加到 [TOOLS]。
+// 扫描、删会话、图标、偏好里的已知 id 都从这里读，名单只维护这一份。
+// [tools] 按当前系统过滤。某个软件只在部分系统上有数据时，给 Plugin 填 supportedOs。
 internal val TOOLS: List<ToolPlugin> = listOf(
     CodexPlugin,
     ClaudePlugin,

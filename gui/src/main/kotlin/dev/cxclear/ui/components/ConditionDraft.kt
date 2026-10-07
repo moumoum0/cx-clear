@@ -4,7 +4,6 @@ import dev.cxclear.chats.ChatCondition
 import dev.cxclear.chats.ChatConditionType
 import dev.cxclear.chats.ConditionJoin
 
-/** 条件编辑向导的草稿态：已确认条件、连接词、正在选的属性与比较符。 */
 internal data class Draft(
     val committed: List<ChatCondition> = emptyList(),
     val join: ConditionJoin = ConditionJoin.AND,
@@ -12,7 +11,6 @@ internal data class Draft(
     val larger: Boolean? = null,
     val showCombine: Boolean = false,
 ) {
-    // showCombine 时末尾是正在改的那条，算占用会把自己选项弄没。
     val usedTypes: List<ChatConditionType>
         get() = (if (showCombine) committed.dropLast(1) else committed).map { it.type }
 

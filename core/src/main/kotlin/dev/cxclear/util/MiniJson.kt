@@ -1,12 +1,5 @@
 package dev.cxclear.util
 
-/**
- * 只够用的 JSON 读取器。
- *
- * 会话 jsonl 只需要取少量嵌套字段，为此引入完整序列化框架不划算；正则又扛不住
- * `message.content` 这种数组套对象的结构，所以在这里放一个手写解析器。
- * 解析失败返回 null，由调用方跳过该行；这样一行写坏只丢那一行。
- */
 object MiniJson {
     fun parse(text: String): Any? = runCatching { Reader(text).parseRoot() }.getOrNull()
 
@@ -46,7 +39,7 @@ object MiniJson {
         }
 
         private fun obj(): Map<String, Any?> {
-            i++ // '{'
+            i++
             val map = LinkedHashMap<String, Any?>()
             skipWs()
             if (i < s.length && s[i] == '}') {
@@ -75,7 +68,7 @@ object MiniJson {
         }
 
         private fun arr(): List<Any?> {
-            i++ // '['
+            i++
             val list = ArrayList<Any?>()
             skipWs()
             if (i < s.length && s[i] == ']') {
@@ -98,7 +91,7 @@ object MiniJson {
         }
 
         private fun string(): String {
-            i++ // '"'
+            i++
             val sb = StringBuilder()
             while (true) {
                 if (i >= s.length) fail()

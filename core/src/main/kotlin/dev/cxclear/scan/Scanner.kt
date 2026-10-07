@@ -26,35 +26,25 @@ import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.nio.file.Path
 
-// 一个 target 实际会被删掉的东西。Scanner 与 Cleaner 共用同一套解析结果。
 data class ResolvedTarget(
     val target: CleanTarget,
-    // 本项允许删除的根目录。Cleaner 会在实际删除前再次用它确认待删路径仍在根目录内。
     val baseDir: Path,
-    // 待删除的路径。DIRECTORY_CONTENTS 展开成一级子项，GLOB 展开成匹配到的文件。
     val paths: List<Path>,
 )
 
-// 一个工具目录的完整占用，不区分是否允许清理。
 data class ToolSpaceResult(
     val toolId: String,
     val bytes: Long,
     val fileCount: Int,
 )
 
-/**
- * 解析 target 实际使用的根目录。
- *
- * target 一旦声明了自己的 [CleanTarget.baseDir]，解析失败需要返回 null；
- * 回退到 profile 根目录会让空 relPath 等规则把整个工具数据目录当成独立缓存清掉。
- */
+// target 自己的 baseDir 解析失败必须返回 null；回退到 profile 根会把空 relPath 当成整个数据目录清掉。
 fun resolveBase(profile: ToolProfile, target: CleanTarget): Path? {
     val targetBase = target.baseDir
     val resolved = if (targetBase != null) targetBase() else profile.baseDir()
     return resolved?.toAbsolutePath()?.normalize()
 }
 
-// 把 [CleanTarget] 解析成具体路径列表；`*` 路径段展开为该层子目录，末段可文件名 glob。
 fun resolveTarget(baseDir: Path, target: CleanTarget): ResolvedTarget {
     val safeBase = baseDir.toAbsolutePath().normalize()
     val paths: List<Path> = when (target.kind) {
@@ -138,10 +128,7 @@ private class ProgressBatch(
 
 private const val PROGRESS_BATCH_SIZE = 128
 
-/**
- * 递归统计大小与文件数。软链接按自身计（1 个条目、0 字节）：跟随会重复计算甚至走出目标范围。
- * [onProgress] 每条目回调一次增量，供调用方实时累计进度。
- */
+// 软链接按自身计（1 个条目、0 字节）：跟随会重复计算甚至走出目标范围。
 private fun measure(
     path: Path,
     onProgress: (deltaBytes: Long, deltaCount: Int) -> Unit = { _, _ -> },
@@ -186,7 +173,6 @@ private data class PlanBuild(
     val files: Int,
 )
 
-// 单个 target 内缓存已验证为普通目录的目录；否则每个文件都要从 base 重新检查整条父路径。
 private class TraversalSafety(baseDir: Path) {
     private val base = baseDir.toAbsolutePath().normalize()
     private val safeDirectories = hashSetOf<Path>()
@@ -231,7 +217,6 @@ private class TraversalSafety(baseDir: Path) {
     }
 }
 
-// 扫描阶段把每个实际条目及身份冻结下来，Cleaner 直接消费这份计划。
 private fun buildDeletionPlan(
     toolId: String,
     resolved: ResolvedTarget,
@@ -295,7 +280,6 @@ private fun buildDeletionPlan(
     )
 }
 
-// 扫描单个 target。已解析过路径的话直接复用，省一次目录遍历。
 fun scanResolved(toolId: String, resolved: ResolvedTarget): ScanResult {
     val built = buildDeletionPlan(toolId, resolved)
     return ScanResult(
@@ -308,7 +292,6 @@ fun scanResolved(toolId: String, resolved: ResolvedTarget): ScanResult {
     )
 }
 
-// 单个 target 遍历中的实时累计，定时器随时读出「当前扫到多少」。
 private class TargetProgress(
     val toolId: String,
     val targetId: String,
@@ -329,7 +312,6 @@ private class TargetProgress(
     )
 }
 
-// 与 [scanResolved] 等价，边扫边把增量写进 [progress]；复用 scanResolved 会给 Cleaner 引入回调开销。
 private fun scanWithProgress(profile: ToolProfile, target: CleanTarget, progress: TargetProgress) {
     val base = resolveBase(profile, target) ?: return
     val resolved = resolveTarget(base, target)
@@ -342,7 +324,6 @@ private fun scanWithProgress(profile: ToolProfile, target: CleanTarget, progress
     progress.exists.set(built.plan.entries.isNotEmpty())
 }
 
-// 工具目录总占用遍历中的实时累计，与 [TargetProgress] 同理。
 private class SpaceProgress(val toolId: String) {
     val bytes = AtomicLong(0L)
     val files = AtomicInteger(0)
@@ -354,30 +335,19 @@ private class SpaceProgress(val toolId: String) {
     )
 }
 
-// 扫描过程中的增量事件；事件流上报让 UI 能实时反映进度。
 sealed interface ScanEvent {
-    // 本次扫描的工作项总数（可清理项 + 工具目录），用于算进度分母。
     data class Started(val total: Int) : ScanEvent
 
-    // 各工具目录总占用的当前快照，按固定节拍推整份。
     data class SpaceScanned(val spaces: List<ToolSpaceResult>) : ScanEvent
 
-    // 已测完可清理项的当前快照，按固定节拍推整份。
     data class TargetsScanned(val results: List<ScanResult>) : ScanEvent
 }
 
-/**
- * 扫描所有 profile，逐项上报。总占用与可清理项两类 worker 并行开扫：
- * GUI 只拿总占用做实时进度，细分扫完一次性出，不需要先凑齐分母。
- * worker 边遍历边累增量，定时协程每 [SNAPSHOT_INTERVAL_MS] 推一份整份快照，收尾补推全量。
- * 工具未安装（spaceDirs 为空）时上报全 0，由 UI 决定是否显示。
- */
 // 略长于 UI 数字滚动（520ms），留出播完再追上的空档。
 private const val SNAPSHOT_INTERVAL_MS = 800L
 private const val SCAN_PARALLELISM = 8
 private val SCAN_DISPATCHER: CoroutineDispatcher = Dispatchers.IO.limitedParallelism(SCAN_PARALLELISM)
 
-// 边跑 [workers] 边按固定节拍执行 [emit]，全部完成后立即再 emit 一次收尾。
 private suspend fun CoroutineScope.snapshotWhile(
     workers: List<Job>,
     emit: suspend () -> Unit,
@@ -400,7 +370,6 @@ private suspend fun CoroutineScope.snapshotWhile(
 fun scanStream(profiles: List<ToolProfile>): Flow<ScanEvent> = channelFlow {
     send(ScanEvent.Started(profiles.sumOf { it.targets.size } + profiles.size))
 
-    // 工具目录总占用。
     val spaceProgresses = profiles.map { SpaceProgress(it.id) }
     val spaceById = spaceProgresses.associateBy { it.toolId }
     val spaceWorkers = profiles.flatMap { profile ->
@@ -415,7 +384,6 @@ fun scanStream(profiles: List<ToolProfile>): Flow<ScanEvent> = channelFlow {
         }
     }
 
-    // 可清理项，每个 target 一份实时累计。
     val progresses = profiles.flatMap { profile ->
         profile.targets.map { TargetProgress(profile.id, it.id) }
     }

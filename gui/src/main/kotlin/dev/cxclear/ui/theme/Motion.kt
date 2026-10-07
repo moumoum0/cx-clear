@@ -5,10 +5,6 @@ import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
 
-/**
- * 全应用动效节奏。组件里的 tween / AnimatedVisibility 取这里的时长与缓动，
- * 各处自写毫秒数会导致节奏漂移。
- */
 object Motion {
     const val FastMs = 180
     const val NormalMs = 240
@@ -19,7 +15,6 @@ object Motion {
     const val SweepMs = 1600
     const val ScaleMs = 120
 
-    /** sfinterface numbers 默认滚动曲线 cubic-bezier(0.32, 0.72, 0, 1)。 */
     val Roll: Easing = CubicBezierEasing(0.32f, 0.72f, 0f, 1f)
     val Emphasized: Easing = Roll
     val Linear: Easing = LinearEasing

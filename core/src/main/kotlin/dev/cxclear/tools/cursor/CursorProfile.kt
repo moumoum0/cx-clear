@@ -7,11 +7,6 @@ import dev.cxclear.model.TargetEntryType
 import dev.cxclear.model.ToolProfile
 import java.nio.file.Files
 
-/**
- * Cursor：`~/.cursor` 与 `%APPDATA%\Cursor` 两处数据根，安装目录是软件本体。
- * 主状态库 `state.vscdb` 删掉会让历史会话卡在 Loading Chat；`Partitions` 只列缓存子目录，
- * Local Storage / Session Storage 是登录态；`~/.cursor/projects` 的 canvases / rules 是用户产物。
- */
 val CursorProfile = ToolProfile(
     id = "cursor",
     name = "Cursor",
@@ -139,7 +134,6 @@ val CursorProfile = ToolProfile(
             description = "Chromium blob 存储，可能包含尚未持久化的页面或附件数据。删除后不可恢复。",
             baseDir = ::cursorAppData,
         ),
-        // 整删 Partitions 会丢登录态，这里只列缓存子目录。
         CleanTarget(
             id = "cursor.partition-cache",
             label = "内置浏览器 HTTP 缓存",

@@ -7,7 +7,6 @@ import dev.cxclear.util.jsonList
 import dev.cxclear.util.jsonMap
 import dev.cxclear.util.jsonStr
 
-// 策略 JSON 的字段约定。落盘仍走 [RetentionStore] 的 kv 文件，命令行给 AI 的是 JSON，不用手搓 txt。
 object RetentionJson {
     const val VERSION = 2
     const val MAX_RULES = 50

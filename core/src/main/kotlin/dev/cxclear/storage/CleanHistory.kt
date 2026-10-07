@@ -11,13 +11,8 @@ data class CleanRecord(val epochMillis: Long, val freedBytes: Long) {
     val date: LocalDate get() = Instant.ofEpochMilli(epochMillis).atZone(ZoneId.systemDefault()).toLocalDate()
 }
 
-// 按天聚合后的清理量，用于柱状图。没有清理的天不会出现在列表里。
 data class DailyClean(val date: LocalDate, val bytes: Long)
 
-/**
- * 累计清理历史：`~/.cxclear/clean-history.csv`，一行一条 `epochMillis,freedBytes`。
- * 读写都容错：文件不存在、某行损坏都只跳过。
- */
 object CleanHistory {
     private const val FILE_NAME = "clean-history.csv"
 
@@ -58,10 +53,6 @@ object CleanHistory {
         runCatching { Files.deleteIfExists(path) }
     }
 
-    /**
-     * 按天聚合，只返回有清理记录的天，按日期升序（最新在末尾，柱状图从左到右即时间顺序）。
-     * 最多返回最近 [limit] 天。
-     */
     fun recentDaily(limit: Int = 7): List<DailyClean> =
         readAll()
             .groupBy { it.date }

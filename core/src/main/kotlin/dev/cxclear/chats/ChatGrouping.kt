@@ -6,7 +6,6 @@ import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
-// 手动管理页的排列与分组：纯计算，UI 可随状态反复调用。
 enum class ChatSortKey(val label: String) {
     UPDATED("更新时间"),
     SIZE("大小"),
@@ -21,7 +20,6 @@ enum class ChatGroupDimension(val label: String) {
     NONE("不分组"),
 }
 
-// 排列轴：选中即按它排列，[groupDimension] 打开就按同一个轴切档；null 表示无可用分档。
 enum class ChatAxis(
     val label: String,
     val sortKey: ChatSortKey,
@@ -32,6 +30,7 @@ enum class ChatAxis(
     PROJECT("项目", ChatSortKey.PROJECT, ChatGroupDimension.PROJECT),
     TITLE("标题", ChatSortKey.TITLE, null),
 }
+// 排列轴：选中即按它排列，[groupDimension] 打开就按同一个轴切档；null 表示无可用分档。
 
 data class ChatGroup(
     val key: String,
@@ -43,7 +42,6 @@ data class ChatGroup(
 
 private const val MB = 1024L * 1024L
 
-// [min, max) ；顺序即展示顺序。
 private data class SizeBucket(val key: String, val label: String, val min: Long, val max: Long)
 
 private val SIZE_BUCKETS = listOf(
@@ -53,7 +51,6 @@ private val SIZE_BUCKETS = listOf(
     SizeBucket("size-gt-20m", "大于 20 MB", 20 * MB, Long.MAX_VALUE),
 )
 
-// 时间档：距今不超过 [withinDays] 天；`null` 落在「更早」档。顺序即展示顺序。
 private data class TimeBucket(val key: String, val label: String, val withinDays: Long?)
 
 private val TIME_BUCKETS = listOf(
@@ -64,10 +61,9 @@ private val TIME_BUCKETS = listOf(
     TimeBucket("time-older", "更早", null),
 )
 
-// 项目为空时的归档名。Codex 未记录 cwd、Claude 目录名缺失时落到这里。
 private const val NO_PROJECT_LABEL = "未归属项目"
+// 项目为空时的归档名。Codex 未记录 cwd、Claude 目录名缺失时落到这里。
 
-// 展示用项目名。编码规则在各工具自己的 [ChatTool.projectLabel] 里。
 fun projectLabel(session: ChatSessionSummary): String = session.tool.projectLabel(session.project)
 
 fun filterSessions(
@@ -99,7 +95,6 @@ private fun sortSessions(
     return if (ascending) sorted else sorted.reversed()
 }
 
-/** 按 [dimension] 切成可折叠区块，空档不产出；时间档以 [nowMillis] 为基准。 */
 fun groupSessions(
     sessions: List<ChatSessionSummary>,
     dimension: ChatGroupDimension,
@@ -122,7 +117,6 @@ fun groupSessions(
         }
 
         ChatGroupDimension.TIME -> {
-            // 单次遍历分桶：逐档 filter + Set 差集在会话多时会拖慢 UI 线程。
             val zone = ZoneId.systemDefault()
             val startOfToday = LocalDate.now(zone).atStartOfDay(zone).toInstant().toEpochMilli()
             val dayMs = 24L * 3600_000L
@@ -134,6 +128,7 @@ fun groupSessions(
                 }
             }
             val buckets = Array(TIME_BUCKETS.size) { mutableListOf<ChatSessionSummary>() }
+            // 单次遍历分桶：逐档 filter + Set 差集在会话多时会拖慢 UI 线程。
             for (session in sessions) {
                 val t = session.updatedMillis
                 var assigned = floors.lastIndex

@@ -20,6 +20,7 @@ import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.nio.file.Path
 
+// 删除前先完整校验整份计划；任何路径变化都会让该 target 在删除第一个文件前终止。
 data class CleanRequest(
     val profile: ToolProfile,
     val target: CleanTarget,
@@ -37,10 +38,6 @@ private class DeleteOutcome {
     }
 }
 
-/**
- * 冻结快照与当前状态是否仍是同一个对象。会话删除（[dev.cxclear.chats.deleteSessions]）复用同一份判定：
- * 校验分成两套实现，任一套漏比对一项就等于开了一条误删的旁路。
- */
 internal fun sameIdentity(
     expected: PathSnapshot,
     current: PathSnapshot,
@@ -75,7 +72,6 @@ private fun overlapsProtectedPath(path: Path, protected: Path): Boolean {
         realProtected.startsWith(realPath)
 }
 
-// 删除前先完整校验整份计划；任何路径变化都会让该 target 在删除第一个文件前终止。
 private fun validatePlan(request: CleanRequest, outcome: DeleteOutcome): Boolean {
     if (request.plan.toolId != request.profile.id || request.plan.targetId != request.target.id) {
         outcome.note(IOException("扫描计划与所选清理项不匹配，已拒绝清理"))
@@ -108,12 +104,6 @@ private fun validatePlan(request: CleanRequest, outcome: DeleteOutcome): Boolean
     return true
 }
 
-/**
- * 只删除扫描时冻结的条目，按深度从深到浅逐个删除。
- *
- * 逐条删除计划内的路径，不走 walkFileTree 递归：递归会把扫描后新出现的文件一起带走；
- * 父目录非空时保留。
- */
 private fun deletePlan(request: CleanRequest, outcome: DeleteOutcome) {
     if (!validatePlan(request, outcome)) return
 
@@ -149,7 +139,6 @@ internal fun processMatchesTool(profile: ToolProfile, executableName: String): B
     return profile.processNamePrefixes.any { stem == it.lowercase() }
 }
 
-// 清理运行中的工具会产生扫描/删除竞态；检测到目标工具的进程时整批阻断。
 internal fun isToolProcessRunning(profile: ToolProfile): Boolean = runCatching {
     ProcessHandle.allProcesses().use { processes ->
         processes.anyMatch { process ->
@@ -161,12 +150,8 @@ internal fun isToolProcessRunning(profile: ToolProfile): Boolean = runCatching {
         }
     }
 }.getOrDefault(true)
+// 清理运行中的工具会产生扫描/删除竞态；检测到目标工具的进程时整批阻断。
 
-/**
- * 逐项清理并以事件流上报进度。
- *
- * 大小以实际删掉的字节累计。删除前要求工具已退出，并且文件身份与扫描时一致。
- */
 fun clean(
     requests: List<CleanRequest>,
     toolIsRunning: (ToolProfile) -> Boolean = ::isToolProcessRunning,

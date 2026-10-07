@@ -27,7 +27,6 @@ application {
 }
 
 tasks.named<CreateStartScripts>("startScripts") {
-    // 发布包入口是 MinGW 编出的 cxclear.exe；application plugin 顺手生成的 bat/sh 属于多余产物，关掉生成任务
     enabled = false
 }
 
@@ -120,7 +119,6 @@ tasks.register<Sync>("prepareNpmPackage") {
     from(rootProject.file("LICENSE"))
     inputs.property("appVersion", project.version.toString())
     inputs.file(rootProject.file("npm/package.json.in"))
-    // Record the source commit even when the application version has not changed.
     outputs.upToDateWhen { false }
     doLast {
         @Suppress("UNCHECKED_CAST")

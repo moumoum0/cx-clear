@@ -5,13 +5,11 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
-// 条件类型表与 id 生成的一致性。落盘按 id 认规则，改动这些常量会让旧配置读不回来。
 class RetentionRuleTextTest {
     @Test
     fun `new rule ids never collide with existing ones`() {
         assertEquals("rule-1", newRuleId(emptyList()))
         assertEquals("rule-3", newRuleId(listOf("rule-1", "rule-2")))
-        // 删掉中间一条后，新 id 补空位；撞上已有 id 会冲突。
         assertEquals("rule-2", newRuleId(listOf("rule-1", "rule-3")))
     }
 
@@ -27,14 +25,12 @@ class RetentionRuleTextTest {
 
     @Test
     fun `join falls back to and for unknown ids`() {
-        // 配置文件被写坏时要落到更严的一侧：「且」比「或」少删。
         assertEquals(ConditionJoin.AND, ConditionJoin.fromId("garbage"))
         assertEquals(ConditionJoin.OR, ConditionJoin.fromId("or"))
     }
 
     @Test
     fun `numeric defaults are never zero`() {
-        // 0 会让条件命中一切；新建条件必须给一个安全起点。
         ChatConditionType.entries
             .filter { it.kind == ConditionValueKind.DAYS || it.kind == ConditionValueKind.MEGABYTES }
             .forEach { assertTrue(defaultNumberFor(it) >= 1, "${it.id} default must be >= 1") }
@@ -42,7 +38,6 @@ class RetentionRuleTextTest {
 
     @Test
     fun `new rules start disabled`() {
-        // 建好即生效会在用户还没看清条件时就删东西。
         assertFalse(RetentionRule("rule-1").enabled)
     }
 }

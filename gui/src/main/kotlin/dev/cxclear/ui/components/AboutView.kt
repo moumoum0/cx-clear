@@ -51,7 +51,6 @@ import org.jetbrains.compose.resources.painterResource
 import java.awt.Desktop
 import java.net.URI
 
-// 结构对齐 selves [AboutScreen]：顶栏返回 + 图标/名称/版本 + 开发者卡（外链）+ 第三方库列表 + 致谢。
 @Composable
 fun AboutView(
     onBack: () -> Unit,
@@ -62,7 +61,6 @@ fun AboutView(
             .fillMaxSize()
             .background(AppColors.Surface1),
     ) {
-        // 结构对齐 selves TopAppBar
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -109,7 +107,6 @@ fun AboutView(
                 Spacer(modifier = Modifier.height(24.dp))
             }
 
-            // 应用名称
             item {
                 Text(
                     text = AppMeta.NAME,
@@ -120,7 +117,6 @@ fun AboutView(
                 Spacer(modifier = Modifier.height(8.dp))
             }
 
-            // 版本信息
             item {
                 Text(
                     text = "版本 ${AppMeta.VERSION}",
@@ -130,7 +126,6 @@ fun AboutView(
                 Spacer(modifier = Modifier.height(32.dp))
             }
 
-            // 开发者信息卡
             item {
                 OutlinedCard(
                     modifier = Modifier.fillMaxWidth(),
@@ -193,7 +188,6 @@ fun AboutView(
                 Spacer(modifier = Modifier.height(24.dp))
             }
 
-            // 第三方库标题
             item {
                 Text(
                     text = "使用的第三方库",
@@ -320,7 +314,6 @@ private data class ThirdPartyLibrary(
     val description: String,
 )
 
-// 仅列本应用实际依赖，文案风格对齐 selves 关于页。
 private val thirdPartyLibraries = listOf(
     ThirdPartyLibrary(
         name = "Compose Multiplatform",

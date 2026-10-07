@@ -2,11 +2,6 @@ package dev.cxclear.model
 
 import java.nio.file.Path
 
-/**
- * 清理风险等级。
- * SAFE：纯缓存/临时文件，删除后工具会自动重建，不丢任何用户数据。
- * OPTIONAL：会丢历史记录（会话、日志），功能不受影响但内容不可恢复。
- */
 enum class Risk { SAFE, OPTIONAL }
 
 enum class MatchKind {
@@ -18,26 +13,17 @@ enum class MatchKind {
     FILE,
     GLOB,
 
-    /**
-     * 同 [GLOB]，但按修改时间保留最新的一个。
-     * 用于「同一程序留了很多历史版本」的目录：旧版本是垃圾，最新那份可能正在被使用。
-     */
     STALE_VERSIONS,
 }
 
-// target 最终命中的条目类型。删除前会核对；“文件规则”命中同名目录时会递归删错。
 enum class TargetEntryType { FILE, DIRECTORY }
+// target 最终命中的条目类型。删除前会核对；“文件规则”命中同名目录时会递归删错。
 
-// target 的全局唯一键。不能只用 targetId，否则不同工具的同名项会串选、串删。
+// 不能只用 targetId，否则不同工具的同名项会串选、串删。
 data class TargetKey(val toolId: String, val targetId: String)
 
 enum class PathSnapshotKind { FILE, DIRECTORY, LINK }
 
-/**
- * 扫描时冻结的单个待删除条目。
- *
- * Cleaner 会在删除前重新读取 NOFOLLOW_LINKS 属性并核对身份；路径相同但已被替换的文件不会删除。
- */
 data class PathSnapshot(
     val path: Path,
     val kind: PathSnapshotKind,
@@ -47,21 +33,14 @@ data class PathSnapshot(
     val lastModifiedMillis: Long,
 )
 
-// 一次扫描冻结下来的精确删除清单。清理阶段按清单删；重新展开 glob 或目录会把扫描后新增的文件带走。
 data class DeletionPlan(
     val toolId: String,
     val targetId: String,
     val baseDir: Path,
     val entries: List<PathSnapshot>,
 )
+// 一次扫描冻结下来的精确删除清单。清理阶段按清单删；重新展开 glob 或目录会把扫描后新增的文件带走。
 
-/**
- * 一个可清理项。[relPath] 相对 [baseDir]（若指定）或所属 [ToolProfile] 的 baseDir。
- *
- * [relPath] 中单独的路径段 `*` 表示「展开为该层每个子目录」
- *（例：projects 下每个子目录里的 agent-tools）。最后一段的文件名 glob
- *（配合 GLOB / STALE_VERSIONS）与路径段展开不冲突。
- */
 data class CleanTarget(
     val id: String,
     val label: String,
@@ -69,32 +48,15 @@ data class CleanTarget(
     val kind: MatchKind,
     val risk: Risk,
     val description: String,
-    /**
-     * 最终命中项的预期类型。
-     * DIRECTORY / DIRECTORY_CONTENTS 默认目录，FILE / GLOB / STALE_VERSIONS 默认文件；
-     * 像 Cursor CachedData 这种“历史版本目录”需要指定 DIRECTORY。
-     */
     val entryType: TargetEntryType = when (kind) {
         MatchKind.DIRECTORY, MatchKind.DIRECTORY_CONTENTS -> TargetEntryType.DIRECTORY
         MatchKind.FILE, MatchKind.GLOB, MatchKind.STALE_VERSIONS -> TargetEntryType.FILE
     },
-    /**
-     * 默认是否勾选。
-     * 一般 SAFE 默认勾上、OPTIONAL 交给用户；重建成本高（大体积重下、会暂时影响功能）
-     * 的 SAFE 项应设为 false。
-     */
+    // 重建贵的 SAFE 项要显式 false；默认勾选一律读这个字段，禁止写死 risk == SAFE。
     val defaultSelected: Boolean = risk == Risk.SAFE,
-    /**
-     * 覆盖所属 profile 的根目录。
-     * 用于数据分散在多处的工具（如 Cursor：`~/.cursor` 与 `%APPDATA%\\Cursor`）。
-     */
     val baseDir: (() -> Path?)? = null,
 )
 
-/**
- * 一个被支持的工具（Codex / Claude Code / …）。
- * [baseDir] 延迟求值，因为路径解析依赖运行时环境变量。
- */
 data class ToolProfile(
     val id: String,
     val name: String,
@@ -105,10 +67,6 @@ data class ToolProfile(
     val processNamePrefixes: Set<String> = emptySet(),
     // 无论 profile 数据怎样配置都不能删除的路径，是名单之外的最后一道保险。
     val protectedPaths: () -> List<Path> = { emptyList() },
-    /**
-     * 计入「工具总占用」的目录列表（不含安装目录）。
-     * 默认只有 [baseDir]；多根工具（Cursor）在此列出全部数据根。
-     */
     val spaceDirs: () -> List<Path> = { listOfNotNull(baseDir()) },
 )
 
@@ -131,8 +89,8 @@ sealed interface CleanEvent {
         val error: String? = null,
     ) : CleanEvent
 
-    // 检测到目标工具仍在运行，整批清理在删除任何文件前被阻断。
     data class Blocked(val tools: List<String>) : CleanEvent
+    // 检测到目标工具仍在运行，整批清理在删除任何文件前被阻断。
 
     data class AllDone(val totalFreedBytes: Long, val failures: Int) : CleanEvent
 }

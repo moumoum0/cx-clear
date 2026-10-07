@@ -61,16 +61,10 @@ private val UnitRank = mapOf("KB" to 0, "MB" to 1, "GB" to 2, "TB" to 3)
 
 private const val DigitCycle = 10
 
-/** 0–9 排三圈，滚动停在中间那圈，前后都有字可滑过窗口。 */
 private val DigitStrip = List(DigitCycle * 3) { it % DigitCycle }
 
 private const val StripHome = DigitCycle
 
-/**
- * 容量数字的滚动显示：变了的数位沿数字条滚过，没变的列不动。小数点保持静止。
- *
- * 扫描节拍快于动画时中途换值会让滚动被打断，所以显示值等本轮播完再追上最新 [bytes]。
- */
 @Composable
 fun FlipBytesText(
     bytes: Long,
@@ -138,11 +132,6 @@ fun FlipBytesText(
     }
 }
 
-/**
- * 整数个数的滚动显示，节奏与 [FlipBytesText] 相同。
- *
- * [onSettled] 在显示值追上目标并完成本轮滚动后回调，供加载态等「播完再切」使用。
- */
 @Composable
 fun FlipCountText(
     count: Int,
@@ -203,7 +192,6 @@ private fun FlipNumberDigits(
     modifier: Modifier = Modifier,
 ) {
     Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
-        // 数字段自右向左编号：个位恒为 0，进位时左侧长出新列，右侧列身份稳定。
         number.forEachIndexed { index, char ->
             val fromRight = number.lastIndex - index
             key("n$fromRight") {
@@ -222,10 +210,6 @@ private fun FlipNumberDigits(
     }
 }
 
-/**
- * 一列数字条。窗口高度就是一位的行高，条按同一行高逐格排，停住时整格对齐窗口。
- * 模糊跟滚动同步：起步就糊，约 15% 处到最糊，62% 之后收干净。
- */
 @Composable
 private fun DigitReel(
     digit: Int,
@@ -239,7 +223,6 @@ private fun DigitReel(
     LaunchedEffect(digit) {
         val from = index.value
         val fromDigit = ((from.roundToInt() % DigitCycle) + DigitCycle) % DigitCycle
-        // 数值变大时条往上走，经过的每一位都会从窗口里滑过。
         val steps = ((fromDigit - digit) % DigitCycle + DigitCycle) % DigitCycle
         if (steps == 0) {
             if (index.value != (StripHome + digit).toFloat()) {
@@ -274,8 +257,8 @@ private fun DigitReel(
         smear.snapTo(0f)
     }
 
-    // 最糊 0.09em，步数 / 4 封顶。停住时不挂 blur，0 半径会把字抹掉。
     val density = LocalDensity.current
+    // 最糊 0.09em，步数 / 4 封顶。停住时不挂 blur，0 半径会把字抹掉。
     val blurRadius = with(density) { (smear.value * style.fontSize.toPx() * 0.09f).toDp() }
     SubcomposeLayout(
         modifier = modifier
@@ -333,11 +316,6 @@ private fun DigitReel(
     }
 }
 
-/**
- * 单位等非数字符号仍做上下切换，不走数字条。
- *
- * @param wrapRising 数字进位 9→0 时仍视为「往上翻」；单位不适用。
- */
 @Composable
 private fun FlipToken(
     text: String,

@@ -14,8 +14,8 @@ internal fun cursorAppData(): Path? =
 internal fun cursorProjectsRoot(): Path? =
     homeDir()?.resolve(".cursor")?.resolve("projects")?.takeIf { Files.isDirectory(it) }
 
-// 测试注入。null 时按默认路径解析；指向不存在的文件则视为状态库缺失。
 internal var cursorStateDbOverride: Path? = null
+// 测试注入。null 时按默认路径解析；指向不存在的文件则视为状态库缺失。
 
 internal fun cursorStateDbFile(): Path? =
     appDataRoaming()

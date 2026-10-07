@@ -64,10 +64,6 @@ internal fun isoToMillis(iso: String?): Long? {
     }.getOrNull()
 }
 
-/**
- * 把一段消息文本压成一行标题。
- * 首条消息常含 `<environment_context>` 一类注入块，跳过尖括号行，取第一行真正的用户文字。
- */
 internal fun firstLineSummary(raw: String): String? = raw
     .lineSequence()
     .map { it.trim() }

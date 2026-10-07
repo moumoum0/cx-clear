@@ -8,10 +8,6 @@ import dev.cxclear.model.ToolProfile
 import dev.cxclear.platform.HostOs
 import dev.cxclear.platform.currentOs
 
-/**
- * 一个软件对外的全部入口：清理名单、图标标识、会话扫描 / 读消息 / 删除。
- * 没有会话的工具保持 scan / load 默认空实现即可。
- */
 class ToolPlugin(
     val profile: ToolProfile,
     val iconName: String,

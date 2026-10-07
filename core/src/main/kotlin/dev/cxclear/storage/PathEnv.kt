@@ -6,6 +6,8 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
 
+// 用户主目录。Windows 上 USERPROFILE 比 user.home 更可靠。
+// 放在 storage：放 tools 会让 storage 反向依赖工具名单。
 private fun firstExistingDir(candidates: List<String>): Path? = candidates.asSequence()
     .filter { it.isNotBlank() }
     .map { Paths.get(it) }
@@ -16,10 +18,6 @@ private fun xdgPath(env: String, vararg homeParts: String): Path? {
     return homeParts.fold(homeDir()) { acc, part -> acc?.resolve(part) }
 }
 
-/**
- * 用户主目录。Windows 上 USERPROFILE 比 user.home 更可靠。
- * 放在 storage：放 tools 会让 storage 反向依赖工具名单。
- */
 internal fun homeDir(): Path? = firstExistingDir(
     buildList {
         if (currentOs() == HostOs.WINDOWS) System.getenv("USERPROFILE")?.let { add(it) }

@@ -10,8 +10,6 @@ import dev.cxclear.model.TargetKey
 import dev.cxclear.model.ToolProfile
 import dev.cxclear.ui.theme.AppColors
 
-/** 扫描结果的分类桶与展示模型；[buildCategories] 拆「应用共占用」，[categoryAccent] 取色。 */
-
 internal enum class ScanPhase { IDLE, SCANNING, DONE }
 
 internal data class ScanCategory(
@@ -53,8 +51,6 @@ internal fun buildCategories(
         )
     }
 
-    // target.id 的子串关键字决定进哪个桶：新 id 想进「插件与安装缓存」，
-    // 必须带上 plugins / downloads / sandbox / vendor / extension / cached / runtime 之一。
     val packageItems = targets
         .filter { (profile, target) ->
             resultByTarget[TargetKey(profile.id, target.id)]?.exists == true &&

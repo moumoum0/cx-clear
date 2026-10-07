@@ -5,7 +5,6 @@ import dev.cxclear.tools.chatTools
 import dev.cxclear.chats.ConditionValueKind
 import dev.cxclear.chats.RetentionRule
 
-/** 策略中文文案：已存规则的整句描述与编辑草稿的预览句；纯字符串拼接。 */
 internal fun ruleSentence(rule: RetentionRule): String {
     if (rule.conditions.isEmpty()) return "无条件"
     val parts = rule.conditions.map { readableCondition(it) }

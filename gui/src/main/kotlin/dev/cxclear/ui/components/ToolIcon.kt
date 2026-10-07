@@ -26,7 +26,6 @@ import dev.cxclear.ui.theme.Motion
 import org.jetbrains.compose.resources.DrawableResource
 import org.jetbrains.compose.resources.painterResource
 
-// 工具图标按钮。清单和 id 都以 [tools] 为准。
 internal data class ToolEntry(
     val id: String,
     val name: String,

@@ -113,7 +113,7 @@ internal data class FileFilters(
         var result = original
         if (olderThan != null || newerThan != null) {
             val plan = original.deletionPlan ?: return@mapNotNull null
-            // A directory's mtime does not describe its descendants. Keep directories intact.
+            // 目录的 mtime 不代表里面的文件；目录整段保留。
             val entries = plan.entries.filter {
                 it.kind == PathSnapshotKind.FILE &&
                     (olderThan == null || it.lastModifiedMillis < nowMillis - olderThan) &&

@@ -6,11 +6,6 @@ import dev.cxclear.model.Risk
 import dev.cxclear.model.ToolProfile
 import dev.cxclear.storage.homeDir
 
-/**
- * Claude Code：`~/.claude` + CLI MCP 缓存 + Desktop（`Claude-3p`）Electron 缓存。
- * npm 安装目录、Desktop 内嵌 claude-code 二进制 / 会话 / 登录态均留给用户。
- * 顺序按占用从大到小，方便用户从上往下勾。
- */
 val ClaudeCodeProfile = ToolProfile(
     id = "claude",
     name = "Claude Code",

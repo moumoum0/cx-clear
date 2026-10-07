@@ -42,7 +42,6 @@ import dev.cxclear.ui.theme.AppColors
 import dev.cxclear.ui.theme.AppDimensions
 import dev.cxclear.ui.theme.Motion
 
-/** 手动管理面板的筛选栏：排列轴胶囊、升降序按钮、搜索框；轴上第二次点击切分档。 */
 @Composable
 internal fun ChatsFilterBar(
     query: String,
@@ -72,7 +71,6 @@ internal fun ChatsFilterBar(
 
         Spacer(Modifier.weight(1f))
 
-        // 升降序独立成一个按钮，并进排列轴会和「双击切分组」抢同一次点击。
         OrderToggle(ascending = ascending, onClick = onToggleOrder)
 
         SearchField(
@@ -131,7 +129,6 @@ internal fun SearchField(
     }
 }
 
-/** 排列轴胶囊：选中排列，再点同一个轴切分档。 */
 @Composable
 internal fun AxisPill(
     label: String,

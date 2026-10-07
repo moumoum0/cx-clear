@@ -5,10 +5,6 @@ import dev.cxclear.model.MatchKind
 import dev.cxclear.model.Risk
 import dev.cxclear.model.ToolProfile
 
-/**
- * DeepSeek Hermes：数据根见 spaceDirs。npm 全局安装留给 `npm uninstall -g`；
- * 桌面版安装目录路径不固定，清理名单按数据根走。
- */
 val DeepSeekHermesProfile = ToolProfile(
     id = "deepseek-hermes",
     name = "DeepSeek Hermes",
@@ -143,7 +139,6 @@ val DeepSeekHermesProfile = ToolProfile(
             description = "Cookies / Trust Tokens / Network Persistent State。删除后登录态可能失效。",
             baseDir = ::dshDesktopAppData,
         ),
-        // 分区包含持久化数据，这里只列明确的缓存子目录，分区本身及其余存储留给用户。
         CleanTarget(
             id = "dsh.desktop-partitions-cache",
             label = "内置浏览器 HTTP 缓存",
@@ -207,8 +202,6 @@ val DeepSeekHermesProfile = ToolProfile(
             description = "拼写检查字典文件（如 en-US-10-1.bdic）。删除后会重新下载。",
             baseDir = ::dshDesktopAppData,
         ),
-        // DIPS 和它的 WAL/SHM 恢复文件一起保留：把 WAL 当普通日志删掉会丢未落库的数据。
-
         CleanTarget(
             id = "dsh.updater-cache",
             label = "桌面端更新缓存",

@@ -1,11 +1,5 @@
 package dev.cxclear.cli
 
-/**
- * 命令行参数解析。
- *
- * 单独成文件是因为它是 Cli.kt 里唯一被测试直接覆盖的部分（CliArgsTest），
- * 且不依赖 Cli object 的任何状态。
- */
 internal class CliUsageException(message: String) : RuntimeException(message)
 
 internal data class ParsedArgs(
@@ -24,12 +18,10 @@ internal data class ParsedArgs(
 
     fun values(name: String): List<String> = flags[name].orEmpty()
 
-    // 逗号分隔且可重复：--tool a,b --tool c
     fun csv(name: String): List<String> =
         values(name).flatMap { it.split(',') }.map { it.trim() }.filter { it.isNotEmpty() }
 }
 
-// 全部选项只在这里登记类型；命令各自声明可用子集，CliArgsTest 校验子集不越界
 internal val SWITCH_OPTIONS = setOf("yes", "y", "preview", "json", "safe-only", "rules")
 internal val VALUE_OPTIONS = setOf(
     "tool", "type", "older-than", "newer-than", "size-gt", "size-lt",

@@ -1,7 +1,7 @@
 package dev.cxclear.util
 
-//内存单位转化，最小单位 KB，不足 1KB 的非零值兜底 0.1 免得显示成 0.0
 fun formatBytes(bytes: Long): String {
+    // 内存单位转化，最小单位 KB，不足 1KB 的非零值兜底 0.1 免得显示成 0.0
     if (bytes <= 0) return "0 KB"
     val units = listOf("KB", "MB", "GB", "TB")
     var value = (bytes / 1024.0).coerceAtLeast(0.1)

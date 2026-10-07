@@ -5,7 +5,6 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
-// 手写 JSON 解析器的行为：解析失败返回 null 让调用方跳过该行，抛出会把整个列表弄崩。
 class MiniJsonTest {
     @Test
     fun `parses nested objects and arrays`() {
@@ -44,13 +43,11 @@ class MiniJsonTest {
 
     @Test
     fun `later duplicate key wins`() {
-        // 转录文件是追加写的，同名字段以最后一次为准更符合「最新状态」。
         assertEquals("second", MiniJson.parse("""{"k":"first","k":"second"}""").jsonStr("k"))
     }
 
     @Test
     fun `malformed input returns null instead of throwing`() {
-        // 转录被写坏（进程被 kill 留下半行）不该让整页崩掉。
         val broken = listOf(
             "",
             "   ",

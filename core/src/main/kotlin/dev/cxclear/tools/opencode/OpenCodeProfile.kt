@@ -5,10 +5,6 @@ import dev.cxclear.model.MatchKind
 import dev.cxclear.model.Risk
 import dev.cxclear.model.ToolProfile
 
-/**
- * Open Code：四处数据根见 spaceDirs。主数据库是会话本体留给用户；
- * 会话存 SQLite，不支持按文件清理单条会话。
- */
 val OpenCodeProfile = ToolProfile(
     id = "opencode",
     name = "Open Code",

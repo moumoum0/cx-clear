@@ -6,7 +6,6 @@ import dev.cxclear.storage.AppPreferences
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-/** 自动保留执行器：对话页拿到全量会话后跑一次（闸门在 [ChatScanCache.autoRunDone]）；空列表则什么都不做。 */
 object RetentionRunner {
     suspend fun runIfNeeded(
         sessions: List<ChatSessionSummary>,
