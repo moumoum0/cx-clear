@@ -1,13 +1,19 @@
 package dev.cxclear.ui.components
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.keyframes
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Text
@@ -24,28 +30,46 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.SubcomposeLayout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
+import androidx.compose.ui.unit.dp
 import dev.cxclear.ui.theme.Motion
 import dev.cxclear.util.formatBytes
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlin.math.abs
+import kotlin.math.roundToInt
 
-private val UnitRank = mapOf("B" to 0, "KB" to 1, "MB" to 2, "GB" to 3, "TB" to 4)
+private val UnitRank = mapOf("KB" to 0, "MB" to 1, "GB" to 2, "TB" to 3)
 
+private const val DigitCycle = 10
+
+/** 0–9 排三圈，滚动停在中间那圈，前后都有字可滑过窗口。 */
+private val DigitStrip = List(DigitCycle * 3) { it % DigitCycle }
+
+private const val StripHome = DigitCycle
 
 /**
- * 容量数字的翻转显示：每位数字与单位在新旧两值之间直接切换，
- * 旧字上滑淡出、新字下滑淡入。小数点保持静止。
+ * 容量数字的滚动显示：变了的数位沿数字条滚过，没变的列不动。小数点保持静止。
  *
- * 扫描节拍快于动画时中途换值会让翻牌被打断，所以显示值等本轮翻转播完再追上最新 [bytes]。
+ * 扫描节拍快于动画时中途换值会让滚动被打断，所以显示值等本轮播完再追上最新 [bytes]。
  */
 @Composable
 fun FlipBytesText(
@@ -75,7 +99,15 @@ fun FlipBytesText(
     val unit = if (unitStart >= 0) label.substring(unitStart) else ""
     val leadingSpace = unitStart > 0 && label[unitStart - 1] == ' '
 
-    val style = TextStyle(fontSize = fontSize, fontWeight = fontWeight)
+    val style = TextStyle(
+        fontSize = fontSize,
+        fontWeight = fontWeight,
+        lineHeight = fontSize,
+        lineHeightStyle = LineHeightStyle(
+            alignment = LineHeightStyle.Alignment.Center,
+            trim = LineHeightStyle.Trim.Both,
+        ),
+    )
     val measurer = rememberTextMeasurer()
     val digitLayout = remember(style, measurer) { measurer.measure("0", style) }
     val density = LocalDensity.current
@@ -107,9 +139,9 @@ fun FlipBytesText(
 }
 
 /**
- * 整数个数的翻转显示，节奏与 [FlipBytesText] 相同。
+ * 整数个数的滚动显示，节奏与 [FlipBytesText] 相同。
  *
- * [onSettled] 在显示值追上目标并完成本轮翻牌后回调，供加载态等「播完再切」使用。
+ * [onSettled] 在显示值追上目标并完成本轮滚动后回调，供加载态等「播完再切」使用。
  */
 @Composable
 fun FlipCountText(
@@ -136,7 +168,15 @@ fun FlipCountText(
         }
     }
 
-    val style = TextStyle(fontSize = fontSize, fontWeight = fontWeight)
+    val style = TextStyle(
+        fontSize = fontSize,
+        fontWeight = fontWeight,
+        lineHeight = fontSize,
+        lineHeightStyle = LineHeightStyle(
+            alignment = LineHeightStyle.Alignment.Center,
+            trim = LineHeightStyle.Trim.Both,
+        ),
+    )
     val measurer = rememberTextMeasurer()
     val digitLayout = remember(style, measurer) { measurer.measure("0", style) }
     val density = LocalDensity.current
@@ -168,15 +208,11 @@ private fun FlipNumberDigits(
             val fromRight = number.lastIndex - index
             key("n$fromRight") {
                 if (char.isDigit()) {
-                    FlipToken(
-                        text = char.toString(),
-                        rankOf = { it.singleOrNull()?.digitToIntOrNull() ?: 0 },
-                        wrapRising = true,
-                        // 新进位列首次入场时从 0 翻到目标位；没有这个起点就只有个位在转，高位直接跳出。
-                        appearFromZero = true,
+                    DigitReel(
+                        digit = char.digitToInt(),
                         style = style,
                         color = color,
-                        modifier = Modifier.width(digitWidth).height(digitHeight),
+                        modifier = Modifier.width(digitWidth),
                     )
                 } else {
                     Text(text = char.toString(), style = style, color = color)
@@ -187,8 +223,120 @@ private fun FlipNumberDigits(
 }
 
 /**
+ * 一列数字条。窗口高度就是一位的行高，条按同一行高逐格排，停住时整格对齐窗口。
+ * 模糊跟滚动同步：起步就糊，约 15% 处到最糊，62% 之后收干净。
+ */
+@Composable
+private fun DigitReel(
+    digit: Int,
+    style: TextStyle,
+    color: Color,
+    modifier: Modifier = Modifier,
+) {
+    val index = remember { Animatable((StripHome + digit).toFloat()) }
+    val smear = remember { Animatable(0f) }
+
+    LaunchedEffect(digit) {
+        val from = index.value
+        val fromDigit = ((from.roundToInt() % DigitCycle) + DigitCycle) % DigitCycle
+        // 数值变大时条往上走，经过的每一位都会从窗口里滑过。
+        val steps = ((fromDigit - digit) % DigitCycle + DigitCycle) % DigitCycle
+        if (steps == 0) {
+            if (index.value != (StripHome + digit).toFloat()) {
+                index.snapTo((StripHome + digit).toFloat())
+            }
+            smear.snapTo(0f)
+            return@LaunchedEffect
+        }
+        val depth = (abs(steps) / 4f).coerceAtMost(1f)
+        coroutineScope {
+            launch {
+                index.animateTo(
+                    from.roundToInt() - steps.toFloat(),
+                    animationSpec = tween(durationMillis = Motion.FlipMs, easing = Motion.Roll),
+                )
+            }
+            launch {
+                smear.snapTo(0f)
+                smear.animateTo(
+                    0f,
+                    animationSpec = keyframes {
+                        durationMillis = Motion.FlipMs
+                        0f at 0 using LinearEasing
+                        depth at (Motion.FlipMs * 0.15f).toInt() using LinearEasing
+                        0f at (Motion.FlipMs * 0.62f).toInt() using LinearEasing
+                        0f at Motion.FlipMs
+                    },
+                )
+            }
+        }
+        index.snapTo((StripHome + digit).toFloat())
+        smear.snapTo(0f)
+    }
+
+    // 最糊 0.09em，步数 / 4 封顶。停住时不挂 blur，0 半径会把字抹掉。
+    val density = LocalDensity.current
+    val blurRadius = with(density) { (smear.value * style.fontSize.toPx() * 0.09f).toDp() }
+    SubcomposeLayout(
+        modifier = modifier
+            .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+            .drawWithContent {
+                drawContent()
+                val bleed = size.height * 0.27f
+                if (bleed <= 0f) return@drawWithContent
+                val veil = Brush.verticalGradient(
+                    0f to Color.Transparent,
+                    (bleed * 0.35f / size.height).coerceIn(0f, 1f) to Color.Black.copy(alpha = 0.06f),
+                    (bleed * 0.68f / size.height).coerceIn(0f, 1f) to Color.Black.copy(alpha = 0.4f),
+                    (bleed / size.height).coerceIn(0f, 1f) to Color.Black,
+                    (1f - bleed / size.height).coerceIn(0f, 1f) to Color.Black,
+                    (1f - bleed * 0.68f / size.height).coerceIn(0f, 1f) to Color.Black.copy(alpha = 0.4f),
+                    (1f - bleed * 0.35f / size.height).coerceIn(0f, 1f) to Color.Black.copy(alpha = 0.06f),
+                    1f to Color.Transparent,
+                )
+                drawRect(veil, blendMode = BlendMode.DstIn)
+            },
+    ) { constraints ->
+        val probe = subcompose("probe") {
+            Text(text = "0", style = style, color = color, maxLines = 1)
+        }.first().measure(constraints.copy(minWidth = 0, minHeight = 0))
+        val cell = probe.height.coerceAtLeast(1)
+        val cells = subcompose("strip") {
+            Column(
+                modifier = Modifier
+                    .graphicsLayer { translationY = -index.value * cell }
+                    .then(if (blurRadius > 0.05.dp) Modifier.blur(blurRadius) else Modifier),
+            ) {
+                DigitStrip.forEach { n ->
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(cell.toDp()),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            text = n.toString(),
+                            style = style,
+                            color = color,
+                            textAlign = TextAlign.Center,
+                            maxLines = 1,
+                        )
+                    }
+                }
+            }
+        }.first().measure(
+            constraints.copy(minHeight = 0, maxHeight = cell * DigitStrip.size),
+        )
+        layout(cells.width, cell) {
+            cells.place(0, 0)
+        }
+    }
+}
+
+/**
+ * 单位等非数字符号仍做上下切换，不走数字条。
+ *
  * @param wrapRising 数字进位 9→0 时仍视为「往上翻」；单位不适用。
- * @param appearFromZero 首次入场先显示 0 再翻到 [text]，让新数位列也有翻牌过程。
  */
 @Composable
 private fun FlipToken(
@@ -198,11 +346,8 @@ private fun FlipToken(
     style: TextStyle,
     color: Color,
     modifier: Modifier = Modifier,
-    appearFromZero: Boolean = false,
 ) {
-    var shown by remember {
-        mutableStateOf(if (appearFromZero) "0" else text)
-    }
+    var shown by remember { mutableStateOf(text) }
     LaunchedEffect(text) {
         shown = text
     }

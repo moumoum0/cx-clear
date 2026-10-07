@@ -22,6 +22,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -79,6 +80,7 @@ fun MainContent(
     }
     var scanPhase by remember { mutableStateOf(ScanPhase.IDLE) }
     var scanCategories by remember { mutableStateOf(emptyList<ScanCategory>()) }
+    var scanTotalBytes by remember { mutableLongStateOf(0L) }
     var selectedTargets by remember { mutableStateOf(emptySet<TargetKey>()) }
     var isCleaning by remember { mutableStateOf(false) }
     var showCleanConfirm by remember { mutableStateOf(false) }
@@ -148,6 +150,7 @@ fun MainContent(
             } finally {
                 selectedTargets = emptySet()
                 scanCategories = emptyList()
+                scanTotalBytes = 0L
                 scanPhase = ScanPhase.IDLE
                 isCleaning = false
                 cleanTick++
@@ -161,6 +164,7 @@ fun MainContent(
         scanPhase = ScanPhase.SCANNING
         scanCategories = emptyList()
         selectedTargets = emptySet()
+        scanTotalBytes = 0L
         scope.launch {
             val profiles = ALL_PROFILES.filter { it.id in selectedTools }
             var results = emptyList<ScanResult>()
@@ -169,16 +173,20 @@ fun MainContent(
             scanStream(profiles).collect { event ->
                 when (event) {
                     is ScanEvent.Started -> Unit
-                    is ScanEvent.SpaceScanned -> spaces = event.spaces
+                    is ScanEvent.SpaceScanned -> {
+                        spaces = event.spaces
+                        // 扫描中只有总占用实时跳，分类扫完一次性构建。
+                        scanTotalBytes = spaces.sumOf { it.bytes }
+                    }
                     is ScanEvent.TargetsScanned -> results = event.results
                 }
-                scanCategories = buildCategories(
-                    profiles = profiles,
-                    results = results,
-                    totalToolBytes = spaces.sumOf { it.bytes },
-                )
             }
 
+            scanCategories = buildCategories(
+                profiles = profiles,
+                results = results,
+                totalToolBytes = spaces.sumOf { it.bytes },
+            )
             // 默认勾选读 defaultSelected，写死 risk == SAFE 会多勾。
             selectedTargets = scanCategories
                 .flatMap { it.items }
@@ -239,6 +247,7 @@ fun MainContent(
             ScanView(
                 phase = scanPhase,
                 categories = scanCategories,
+                totalBytes = scanTotalBytes,
                 selectedTargets = selectedTargets,
                 onTargetToggle = { targetKey ->
                     selectedTargets = if (targetKey in selectedTargets) {

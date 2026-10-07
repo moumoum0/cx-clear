@@ -51,7 +51,7 @@ private enum class ViewState { IDLE, SCANNING, SCAN_DONE }
 // 工具筛选的「所有」键；ChatsNotice.kt 的顶栏也在用，所以是 internal。
 internal const val TOOL_FILTER_ALL = "all"
 
-private const val SCAN_SNAPSHOT_INTERVAL_MS = 500L
+private const val SCAN_SNAPSHOT_INTERVAL_MS = 800L
 
 private fun resolveTools(filter: String): Set<ChatTool> = when (filter) {
     TOOL_FILTER_ALL -> chatTools().toSet()

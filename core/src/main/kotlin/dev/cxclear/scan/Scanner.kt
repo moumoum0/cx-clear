@@ -367,13 +367,13 @@ sealed interface ScanEvent {
 }
 
 /**
- * 扫描所有 profile，逐项上报。先测各工具目录总占用（分母）再扫可清理项：
- * 两阶段并发会让最慢的总占用最后才到，分母突变一次。
+ * 扫描所有 profile，逐项上报。总占用与可清理项两类 worker 并行开扫：
+ * GUI 只拿总占用做实时进度，细分扫完一次性出，不需要先凑齐分母。
  * worker 边遍历边累增量，定时协程每 [SNAPSHOT_INTERVAL_MS] 推一份整份快照，收尾补推全量。
  * 工具未安装（spaceDirs 为空）时上报全 0，由 UI 决定是否显示。
  */
-// 略长于 UI 数字翻转（~260ms）；太短会让下一拍打断还没播完的翻牌。
-private const val SNAPSHOT_INTERVAL_MS = 500L
+// 略长于 UI 数字滚动（520ms），留出播完再追上的空档。
+private const val SNAPSHOT_INTERVAL_MS = 800L
 private const val SCAN_PARALLELISM = 8
 private val SCAN_DISPATCHER: CoroutineDispatcher = Dispatchers.IO.limitedParallelism(SCAN_PARALLELISM)
 
@@ -400,7 +400,7 @@ private suspend fun CoroutineScope.snapshotWhile(
 fun scanStream(profiles: List<ToolProfile>): Flow<ScanEvent> = channelFlow {
     send(ScanEvent.Started(profiles.sumOf { it.targets.size } + profiles.size))
 
-    // 阶段一：工具目录总占用。边测边报，供 UI「已找到」实时更新。
+    // 工具目录总占用。
     val spaceProgresses = profiles.map { SpaceProgress(it.id) }
     val spaceById = spaceProgresses.associateBy { it.toolId }
     val spaceWorkers = profiles.flatMap { profile ->
@@ -414,28 +414,22 @@ fun scanStream(profiles: List<ToolProfile>): Flow<ScanEvent> = channelFlow {
             }
         }
     }
-    snapshotWhile(spaceWorkers) {
-        send(ScanEvent.SpaceScanned(spaceProgresses.map { it.snapshot() }))
-    }
 
-    // 阶段二：可清理项。每个 target 一份实时累计。
+    // 可清理项，每个 target 一份实时累计。
     val progresses = profiles.flatMap { profile ->
         profile.targets.map { TargetProgress(profile.id, it.id) }
     }
     val progressByKey = progresses.associateBy { it.key }
-    val workers = buildList {
-        for (profile in profiles) {
-            for (target in profile.targets) {
-                val progress = progressByKey.getValue(TargetKey(profile.id, target.id))
-                add(
-                    launch(SCAN_DISPATCHER) {
-                        scanWithProgress(profile, target, progress)
-                    },
-                )
+    val targetWorkers = profiles.flatMap { profile ->
+        profile.targets.map { target ->
+            launch(SCAN_DISPATCHER) {
+                scanWithProgress(profile, target, progressByKey.getValue(TargetKey(profile.id, target.id)))
             }
         }
     }
-    snapshotWhile(workers) {
+
+    snapshotWhile(spaceWorkers + targetWorkers) {
+        send(ScanEvent.SpaceScanned(spaceProgresses.map { it.snapshot() }))
         send(ScanEvent.TargetsScanned(progresses.map { it.snapshot() }))
     }
 }

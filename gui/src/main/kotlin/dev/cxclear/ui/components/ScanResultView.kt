@@ -58,6 +58,7 @@ import dev.cxclear.util.formatBytes
 internal fun ScanView(
     phase: ScanPhase,
     categories: List<ScanCategory>,
+    totalBytes: Long,
     selectedTargets: Set<TargetKey>,
     onTargetToggle: (TargetKey) -> Unit,
 ) {
@@ -66,7 +67,7 @@ internal fun ScanView(
         categories = displayCategories,
         isScanning = phase != ScanPhase.DONE,
         showCylinderSweep = phase == ScanPhase.SCANNING,
-        totalBytes = displayCategories.sumOf { it.bytes },
+        totalBytes = totalBytes,
         selectedTargets = selectedTargets,
         onTargetToggle = onTargetToggle,
     )
@@ -278,15 +279,12 @@ internal fun ScanResultView(
                                 }
                             }
 
-                            // 扫描中 retained 在变，扫完再出数。
-                            if (!(isScanning && isRetained)) {
-                                FlipBytesText(
-                                    bytes = category.bytes,
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.Medium,
-                                    color = if (isRetained) AppColors.TextSecondary else AppColors.TextPrimary,
-                                )
-                            }
+                            FlipBytesText(
+                                bytes = category.bytes,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = if (isRetained) AppColors.TextSecondary else AppColors.TextPrimary,
+                            )
                             if (canExpand) {
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Icon(

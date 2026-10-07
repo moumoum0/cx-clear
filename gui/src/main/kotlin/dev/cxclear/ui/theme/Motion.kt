@@ -1,7 +1,7 @@
 package dev.cxclear.ui.theme
 
 import androidx.compose.animation.core.Easing
-import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
 
@@ -15,11 +15,13 @@ object Motion {
     const val MediumMs = 320
     const val GrowMs = 440
     const val SlowMs = 560
-    const val FlipMs = 260
+    const val FlipMs = 520
     const val SweepMs = 1600
     const val ScaleMs = 120
 
-    val Emphasized: Easing = FastOutSlowInEasing
+    /** sfinterface numbers 默认滚动曲线 cubic-bezier(0.32, 0.72, 0, 1)。 */
+    val Roll: Easing = CubicBezierEasing(0.32f, 0.72f, 0f, 1f)
+    val Emphasized: Easing = Roll
     val Linear: Easing = LinearEasing
 
     fun <T> fast() = tween<T>(durationMillis = FastMs, easing = Emphasized)
@@ -28,5 +30,5 @@ object Motion {
     fun <T> grow() = tween<T>(durationMillis = GrowMs, easing = Emphasized)
     fun <T> slow() = tween<T>(durationMillis = SlowMs, easing = Emphasized)
     fun <T> scale() = tween<T>(durationMillis = ScaleMs, easing = Emphasized)
-    fun <T> flip() = tween<T>(durationMillis = FlipMs, easing = Emphasized)
+    fun <T> flip() = tween<T>(durationMillis = FlipMs, easing = Roll)
 }
