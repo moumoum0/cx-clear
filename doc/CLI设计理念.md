@@ -296,3 +296,5 @@ cxclear delete files --tool cursor --type downloads --size-gt 500MB --yes
 AI 按设置页提供的规则提示词直接修改 `%USERPROFILE%\.cxclear\chat-retention.txt`，新建规则默认关闭，在 GUI 中核对后启用。CLI 不提供规则写入命令。
 
 `rules get` 读取现有配置并输出 JSON；`rules validate --file <path>` 校验规则 JSON，也可从标准输入读取，校验只读不写配置。JSON 用在读取和校验接口，`chat-retention.txt` 本身用 `RetentionStore` 自己的存储格式。验证策略的实际命中用 `find chats --rules`（已保存策略）或 `find chats --rules-file`（候选 JSON）。
+
+登录 Windows 时自动执行策略由 `autoclean` 命令组负责：`autoclean on` 注册当前用户的计划任务（S4U 非交互，无窗口、不存密码），`autoclean run` 是任务实际执行的入口（不带 `--yes` 时只预览），`autoclean off` 删任务并关闭总开关 `auto_clean_enabled`，`autoclean status` 汇总开关与任务状态。

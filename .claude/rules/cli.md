@@ -12,4 +12,5 @@ paths:
 - `CliSchema.kt` 里的策略格式是 `RetentionStore` / `RetentionJson` 的平行副本，改一边要同步另一边。
 - 文件 / 会话的筛选与删除（delete / clean）共用 `CliPipelines.kt`，新命令不另写删除。
 - CLI 有意不提供策略写入：`rules put` 返回用法错误（`CliArgsTest` 覆盖），只有 `rules get` / `rules validate`。
+- 登录时自动清理在 `CliAutoClean.kt`：`autoclean on` 用 schtasks /xml 建一个限定当前用户、S4U 非交互登录的计划任务，执行 `autoclean run --yes`；npm 包没有 cxclear.exe，会退回 `java.exe -cp <lib>\*`。总开关是 preferences 的 `auto_clean_enabled`，`on`/`off` 会同步写它。
 - 发布包里 CLI 走 `cxclear.exe`（`packaging/cli_launcher.cpp`），不走 GUI 子系统的 `CX Clear.exe`——后者 stdout 管道常是空的，AI 拿不到输出；启动器内部再用 `java.exe` 跑 `app/cli-*.jar`。

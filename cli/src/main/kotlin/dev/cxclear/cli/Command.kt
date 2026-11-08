@@ -1,5 +1,9 @@
 package dev.cxclear.cli
 
+import dev.cxclear.cli.commands.AutocleanOffCommand
+import dev.cxclear.cli.commands.AutocleanOnCommand
+import dev.cxclear.cli.commands.AutocleanRunCommand
+import dev.cxclear.cli.commands.AutocleanStatusCommand
 import dev.cxclear.cli.commands.CleanCommand
 import dev.cxclear.cli.commands.DeleteChatsCommand
 import dev.cxclear.cli.commands.DeleteFilesCommand
@@ -45,4 +49,8 @@ internal val ALL_COMMANDS: List<Command> = listOf(
     HistoryCommand,
     RulesGetCommand,
     RulesValidateCommand,
+    AutocleanOnCommand,
+    AutocleanOffCommand,
+    AutocleanStatusCommand,
+    AutocleanRunCommand,
 )

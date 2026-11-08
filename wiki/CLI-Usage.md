@@ -44,6 +44,9 @@ $env:CXCLEAR_SILENT = '1'; irm https://raw.githubusercontent.com/moumoum0/cx-cle
 | `history` | 清理历史 | `--limit <n>`（默认 10） |
 | `rules get` | 读取已保存的自动清理策略 | — |
 | `rules validate` | 校验策略 JSON，不写入 | `--file <path>`（不给或 `-` 读标准输入） |
+| `autoclean on` / `off` | 注册 / 移除登录时自动清理的计划任务 | — |
+| `autoclean status` | 自动清理总开关状态与计划任务 | — |
+| `autoclean run` | 立即按策略跑一遍（不带 `--yes` 只预览） | `--yes`、`--preview` |
 | `schema` | 机器可读的完整定义（命令、参数、退出码、工具 id） | — |
 | `help` / `-h` / `--help` | 用法与示例 | — |
 | `version` / `-v` / `--version` | 版本号 | — |
@@ -127,6 +130,17 @@ cxclear find chats --rules-file rules.json --rule r1   # 试跑某条规则会�
 ```
 
 CLI 没有写入策略的命令，策略只能在 GUI 设置页编辑。
+
+### 登录时自动清理
+
+```bash
+cxclear autoclean on       # 注册当前用户的登录计划任务，每次登录 Windows 静默执行策略
+cxclear autoclean status  # 查看开关状态、任务是否已注册、执行的具体命令
+cxclear autoclean run     # 立即预览会删哪些会话；加 --yes 直接执行
+cxclear autoclean off     # 删除计划任务并把自动清理总开关关掉
+```
+
+任务用 S4U 非交互登录方式运行，不弹窗口、不用存密码；`autoclean on` 要在安装好的 CLI 上执行（开发环境的 classes 目录解析不出可执行入口）。总开关存在 `preferences.txt` 的 `auto_clean_enabled`，GUI 进对话页时的自动清理也读它。
 
 ## JSON 输出
 

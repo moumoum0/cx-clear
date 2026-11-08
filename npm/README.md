@@ -27,6 +27,7 @@ cxclear --version
 | `scan` / `clean` | 按内置名单扫描和清理 |
 | `status` / `history` | 查看占用、对话数量和清理历史 |
 | `rules get` / `validate` | 读取和校验自动清理策略 |
+| `autoclean on` / `off` / `status` / `run` | 登录时自动清理的开关与手动执行 |
 | `schema` / `help` | 查看完整定义 |
 | `version` / `--version` / `-v` | 查看版本号 |
 

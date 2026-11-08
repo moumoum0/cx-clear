@@ -122,6 +122,16 @@ class CliArgsTest {
     }
 
     @Test
+    fun `autoclean subcommands accept only their own switches`() {
+        // 只测参数校验，不触发 schtasks / 清理动作
+        assertEquals(Cli.EXIT_USAGE, Cli.run(arrayOf("autoclean", "on", "--yes")))
+        assertEquals(Cli.EXIT_USAGE, Cli.run(arrayOf("autoclean", "off", "--preview")))
+        assertEquals(Cli.EXIT_USAGE, Cli.run(arrayOf("autoclean", "status", "--rules")))
+        assertEquals(Cli.EXIT_USAGE, Cli.run(arrayOf("autoclean", "run", "--rules")))
+        assertEquals(Cli.EXIT_USAGE, Cli.run(arrayOf("autoclean", "nope")))
+    }
+
+    @Test
     fun `csv values split repeated and comma separated flags`() {
         val parsed = parseArgs(arrayOf("find", "chats", "--tool", "cursor, codex", "--tool=claude,", "--rule", "r1"))!!
         assertEquals(listOf("cursor", "codex", "claude"), parsed.csv("tool"))
