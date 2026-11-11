@@ -158,9 +158,27 @@ export async function ensureJava({ root, env = process.env }) {
   return installRuntime({ cacheRoot, runtime });
 }
 
-function runtimeCacheRoot(env) {
-  return env.CXCLEAR_RUNTIME_DIR
-    || join(env.LOCALAPPDATA || join(homedir(), 'AppData', 'Local'), 'cxclear-java');
+// java.exe 的 Windows 启动器按 ANSI 代码页定位运行时（java_md.c: GetApplicationHome →
+// GetModuleFileNameA + stat），路径里有系统代码页表示不了的字符时会报
+// "could not find java.dll"。因此缓存目录必须纯 ASCII，ASCII 是所有代码页的公共子集。
+function isAsciiSafe(value) {
+  return /^[\x20-\x7e]+$/.test(value);
+}
+
+export function runtimeCacheRoot(env) {
+  const override = env.CXCLEAR_RUNTIME_DIR;
+  if (override && !isAsciiSafe(override)) {
+    console.warn('cxclear: ignoring CXCLEAR_RUNTIME_DIR because the Java launcher cannot run from paths with characters outside the system code page');
+  }
+  const candidates = [
+    override,
+    join(env.LOCALAPPDATA || join(homedir(), 'AppData', 'Local'), 'cxclear-java'),
+    join(env.ProgramData || join(env.SystemDrive || 'C:', 'ProgramData'), 'cxclear-java'),
+  ];
+  for (const candidate of candidates) {
+    if (candidate && isAsciiSafe(candidate)) return candidate;
+  }
+  throw new Error('No ASCII-safe directory is available for the Java runtime cache');
 }
 
 export function recordPath(root, env) {

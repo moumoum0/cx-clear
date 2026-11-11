@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { mkdtemp, mkdir, readFile, writeFile, rm, readdir, access } from 'node:fs/promises';
 import { join } from 'node:path';
-import { assertSupportedPlatform, downloadVerified, installJava, installRuntime, installedJava, recordPath, usableJavaHome } from '../lib/java.js';
+import { assertSupportedPlatform, downloadVerified, installJava, installRuntime, installedJava, recordPath, runtimeCacheRoot, usableJavaHome } from '../lib/java.js';
 
 const payload = Buffer.from('a pinned Java archive fixture');
 const runtime = {
@@ -23,6 +23,18 @@ test('only Windows x64 is supported', () => {
   assert.doesNotThrow(() => assertSupportedPlatform('win32', 'x64'));
   assert.throws(() => assertSupportedPlatform('linux', 'x64'), /Windows x64/);
   assert.throws(() => assertSupportedPlatform('win32', 'arm64'), /Windows x64/);
+});
+
+test('runtime cache root falls back to an ASCII-safe directory', () => {
+  assert.equal(runtimeCacheRoot({ CXCLEAR_RUNTIME_DIR: 'D:\\ascii-cache' }), 'D:\\ascii-cache');
+  assert.equal(
+    runtimeCacheRoot({ CXCLEAR_RUNTIME_DIR: 'D:\\中文缓存', LOCALAPPDATA: 'C:\\Users\\u\\AppData\\Local' }),
+    'C:\\Users\\u\\AppData\\Local\\cxclear-java',
+  );
+  assert.equal(
+    runtimeCacheRoot({ CXCLEAR_RUNTIME_DIR: 'D:\\中文缓存', LOCALAPPDATA: 'C:\\Users\\中文\\AppData\\Local' }),
+    join('C:\\ProgramData', 'cxclear-java'),
+  );
 });
 
 test('missing Java cannot be reused', async t => {

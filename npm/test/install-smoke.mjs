@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, readFile, readdir, writeFile, access } from 'node:fs/pr
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
-import { ensureJava } from '../lib/java.js';
+import { ensureJava, runtimeCacheRoot } from '../lib/java.js';
 
 if (process.platform !== 'win32' || process.arch !== 'x64') throw new Error('Run npm smoke tests on Windows x64');
 if (!process.argv[2]) throw new Error('Usage: node npm/test/install-smoke.mjs <package.tgz> [--download-java]');
@@ -14,7 +14,10 @@ await mkdir(build, { recursive: true });
 const root = await mkdtemp(join(build, 'install space \u4e2d\u6587-'));
 const npmCli = process.env.npm_execpath || join(dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js');
 await access(npmCli);
-const env = { ...process.env, CXCLEAR_RUNTIME_DIR: join(root, 'java-cache') };
+// java.exe 启动器按 ANSI 代码页定位运行时，Java 缓存必须留在纯 ASCII 路径；
+// 中文路径只留给 CLI 本身（node 对 Unicode 路径没有问题）。
+const env = { ...process.env, CXCLEAR_RUNTIME_DIR: join(build, 'java-cache') };
+const cacheRoot = runtimeCacheRoot(env);
 if (process.argv.includes('--download-java')) {
   env.JAVA_HOME = '';
   env.PATH = `${dirname(process.execPath)};${join(process.env.SystemRoot, 'System32')}`;
@@ -36,9 +39,12 @@ const source = JSON.parse(await readFile(join(installed, 'source.json'), 'utf8')
 assert.equal(manifest.version, source.version);
 assert.deepEqual(await readdir(join(installed, 'native')), ['lib']);
 const installKey = createHash('sha256').update(installed).digest('hex');
-const record = join(env.CXCLEAR_RUNTIME_DIR, 'installs', `${installKey}.json`);
+const record = join(cacheRoot, 'installs', `${installKey}.json`);
 const selected = JSON.parse(await readFile(record, 'utf8'));
-if (process.argv.includes('--download-java')) assert.ok(selected.home.startsWith(env.CXCLEAR_RUNTIME_DIR));
+if (process.argv.includes('--download-java')) {
+  assert.ok(/^[\x20-\x7e]+$/.test(selected.home), `runtime home must be ASCII-safe: ${selected.home}`);
+  assert.ok(selected.home.startsWith(cacheRoot));
+}
 const launcher = join(installed, 'bin', 'cxclear.js');
 for (const alias of ['--version', '-v', 'version']) {
   assert.equal(JSON.parse(run([launcher, alias]).stdout).version, manifest.version);
@@ -67,7 +73,7 @@ const skippedPrefix = join(root, 'ignored scripts');
 run([npmCli, ...npmArgs, 'install', '--global', '--prefix', skippedPrefix, '--ignore-scripts', tarball]);
 const skipped = join(skippedPrefix, 'node_modules', '@moumoum', 'cxclear');
 const skippedKey = createHash('sha256').update(skipped).digest('hex');
-const skippedRecord = join(env.CXCLEAR_RUNTIME_DIR, 'installs', `${skippedKey}.json`);
+const skippedRecord = join(cacheRoot, 'installs', `${skippedKey}.json`);
 await assert.rejects(access(skippedRecord));
 assert.equal(JSON.parse(run([join(skipped, 'bin', 'cxclear.js'), 'schema']).stdout).version, manifest.version);
 assert.equal(JSON.parse(await readFile(skippedRecord, 'utf8')).home, selected.home);
@@ -75,8 +81,8 @@ assert.equal(JSON.parse(await readFile(skippedRecord, 'utf8')).home, selected.ho
 const npx = run([npmCli, ...npmArgs, 'exec', '--yes', '--offline', '--ignore-scripts', `--package=${tarball}`, '--', 'cxclear', 'schema']);
 assert.equal(JSON.parse(npx.stdout).version, manifest.version);
 
-const before = await readdir(env.CXCLEAR_RUNTIME_DIR).catch(() => []);
+const before = await readdir(cacheRoot).catch(() => []);
 const npmSource = dirname(dirname(fileURLToPath(import.meta.url)));
 assert.equal(await ensureJava({ root: npmSource, env }), selected.home);
-assert.deepEqual(await readdir(env.CXCLEAR_RUNTIME_DIR).catch(() => []), before);
+assert.deepEqual(await readdir(cacheRoot).catch(() => []), before);
 console.log(`npm install / npx smoke tests passed for cxclear ${manifest.version}: ${root}`);
