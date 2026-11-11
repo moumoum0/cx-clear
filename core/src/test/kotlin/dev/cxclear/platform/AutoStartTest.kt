@@ -1,6 +1,7 @@
 package dev.cxclear.platform
 
 import java.nio.file.Path
+import java.util.Base64
 import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -18,13 +19,22 @@ class AutoStartTest {
             val add = ProcessBuilder(command).redirectErrorStream(true).start()
             val output = add.inputStream.readBytes()
             assertEquals(0, add.waitFor(), output.decodeToString())
-            val query = ProcessBuilder("reg", "query", key, "/v", AutoStart.VALUE_NAME)
-                .redirectErrorStream(true).start()
-            val stored = query.inputStream.readBytes().toString(
-                java.nio.charset.Charset.forName(System.getProperty("native.encoding")),
-            )
-            assertEquals(0, query.waitFor(), stored)
-            assertEquals(AutoStart.runValue(exe), stored.substringAfter("REG_SZ").trim())
+            // Base64 preserves Unicode registry values across Windows console code pages.
+            val script = """
+                ${'$'}ErrorActionPreference = 'Stop'
+                ${'$'}value = [Microsoft.Win32.Registry]::GetValue(
+                    '${key.replace("HKCU\\", "HKEY_CURRENT_USER\\")}', '${AutoStart.VALUE_NAME}', ${'$'}null)
+                if (${'$'}null -eq ${'$'}value) { throw 'Startup registry value is missing' }
+                [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes([string]${'$'}value))
+            """.trimIndent()
+            val encodedScript = Base64.getEncoder().encodeToString(script.toByteArray(Charsets.UTF_16LE))
+            val query = ProcessBuilder(
+                "powershell.exe", "-NoProfile", "-NonInteractive", "-EncodedCommand", encodedScript,
+            ).redirectErrorStream(true).start()
+            val outputValue = query.inputStream.readBytes().toString(Charsets.US_ASCII).trim()
+            assertEquals(0, query.waitFor(), outputValue)
+            val stored = Base64.getDecoder().decode(outputValue).toString(Charsets.UTF_8)
+            assertEquals(AutoStart.runValue(exe), stored)
         } finally {
             val delete = ProcessBuilder("reg", "delete", key, "/f").redirectErrorStream(true).start()
             delete.inputStream.readBytes()
