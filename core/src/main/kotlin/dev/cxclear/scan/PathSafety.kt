@@ -149,7 +149,7 @@ internal fun readPathSnapshot(path: Path): PathSnapshot? {
         kind = kind,
         fileKey = attrs.fileKey()?.toString(),
         size = if (kind == PathSnapshotKind.FILE) attrs.size() else 0L,
-        creationMillis = attrs.creationTime().toMillis(),
-        lastModifiedMillis = attrs.lastModifiedTime().toMillis(),
+        creationTime = attrs.creationTime(),
+        lastModifiedTime = attrs.lastModifiedTime(),
     )
 }

@@ -103,7 +103,7 @@ class ChatDeleterTest {
         val root = tempDir()
         val main = Files.writeString(root.resolve("a.jsonl"), "old")
         val s = session(main, root)
-        Files.delete(main)
+        Files.move(main, root.resolve("original.jsonl"))
         Files.writeString(main, "old")
 
         val result = deleteSessions(listOf(s), neverRunning)

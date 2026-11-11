@@ -1,6 +1,7 @@
 package dev.cxclear.model
 
 import java.nio.file.Path
+import java.nio.file.attribute.FileTime
 
 enum class Risk { SAFE, OPTIONAL }
 
@@ -29,9 +30,11 @@ data class PathSnapshot(
     val kind: PathSnapshotKind,
     val fileKey: String?,
     val size: Long,
-    val creationMillis: Long,
-    val lastModifiedMillis: Long,
-)
+    val creationTime: FileTime,
+    val lastModifiedTime: FileTime,
+) {
+    val lastModifiedMillis: Long get() = lastModifiedTime.toMillis()
+}
 
 data class DeletionPlan(
     val toolId: String,

@@ -89,6 +89,17 @@ jobs:
       - name: Build CLI distribution
         run: .\gradlew.bat :core:test :cli:test :cli:verifyWindowsNativeJars :cli:packageCli :cli:prepareNpmPackage --no-daemon --stacktrace
 
+      - name: Save test failure reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-failure-reports
+          path: |
+            core/build/test-results/test/
+            core/build/reports/tests/test/
+            cli/build/test-results/test/
+            cli/build/reports/tests/test/
+
       - name: Test Java installation support
         run: node --test npm/test/java.test.mjs
 

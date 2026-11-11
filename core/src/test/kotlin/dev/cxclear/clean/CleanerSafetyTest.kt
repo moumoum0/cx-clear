@@ -8,11 +8,14 @@ import dev.cxclear.model.ToolProfile
 import dev.cxclear.platform.HostOs
 import dev.cxclear.platform.currentOs
 import dev.cxclear.scan.resolveTarget
+import dev.cxclear.scan.readPathSnapshot
 import dev.cxclear.scan.scanResolved
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.attribute.FileTime
+import java.util.concurrent.TimeUnit
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -21,6 +24,18 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class CleanerSafetyTest {
+    @Test
+    fun `identity detects timestamp changes within one millisecond`() {
+        val file = Files.writeString(Files.createTempDirectory("cxclear-base").resolve("cache.bin"), "old")
+        val time = FileTime.from(1_000_000, TimeUnit.NANOSECONDS)
+        val later = FileTime.from(1_000_100, TimeUnit.NANOSECONDS)
+        val snapshot = assertNotNull(readPathSnapshot(file)).copy(creationTime = time, lastModifiedTime = time)
+
+        assertEquals(time.toMillis(), later.toMillis())
+        assertFalse(sameIdentity(snapshot, snapshot.copy(creationTime = later)))
+        assertFalse(sameIdentity(snapshot, snapshot.copy(lastModifiedTime = later)))
+    }
+
     @Test
     fun `file created after scan is never deleted`() = runBlocking {
         val base = Files.createTempDirectory("cxclear-base")
@@ -89,7 +104,9 @@ class CleanerSafetyTest {
         val target = target("cache", MatchKind.DIRECTORY)
         val profile = profile(base, target)
         val plan = assertNotNull(scanResolved(profile.id, resolveTarget(base, target)).deletionPlan)
+        val scannedTime = Files.getLastModifiedTime(cache)
         val createdLater = Files.writeString(cache.resolve("created-later.txt"), "keep")
+        Files.setLastModifiedTime(cache, scannedTime)
 
         val events = clean(
             listOf(CleanRequest(profile, target, plan)),

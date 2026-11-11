@@ -47,15 +47,15 @@ internal fun sameIdentity(
     if (expected.fileKey != null || current.fileKey != null) {
         if (expected.fileKey == null || expected.fileKey != current.fileKey) return false
     }
-    if (expected.creationMillis != current.creationMillis) return false
+    if (expected.creationTime != current.creationTime) return false
     return when (expected.kind) {
         // 子项删除会改变父目录 mtime，因此只在删除动作已经开始后放宽这一项。
         PathSnapshotKind.DIRECTORY ->
-            allowDirectoryMtimeChange || expected.lastModifiedMillis == current.lastModifiedMillis
+            allowDirectoryMtimeChange || expected.lastModifiedTime == current.lastModifiedTime
         PathSnapshotKind.FILE ->
-            expected.lastModifiedMillis == current.lastModifiedMillis &&
+            expected.lastModifiedTime == current.lastModifiedTime &&
                 expected.size == current.size
-        PathSnapshotKind.LINK -> expected.lastModifiedMillis == current.lastModifiedMillis
+        PathSnapshotKind.LINK -> expected.lastModifiedTime == current.lastModifiedTime
     }
 }
 
@@ -86,6 +86,7 @@ private fun validatePlan(request: CleanRequest, outcome: DeleteOutcome): Boolean
         outcome.note(IOException("无法校验永久保护路径，已拒绝清理", it))
         return false
     }
+    val plannedChildren = request.plan.entries.groupBy { it.path.parent }
     for (expected in request.plan.entries) {
         if (!isSafeDeletionPath(request.plan.baseDir, expected.path)) {
             outcome.note(IOException("扫描后路径边界发生变化，已取消该项清理"))
@@ -99,6 +100,19 @@ private fun validatePlan(request: CleanRequest, outcome: DeleteOutcome): Boolean
         if (current == null || !sameIdentity(expected, current)) {
             outcome.note(IOException("扫描后文件已新增、替换或修改，请重新扫描"))
             return false
+        }
+        if (expected.kind == PathSnapshotKind.DIRECTORY) {
+            // Windows may report the same directory timestamp after a child is added.
+            val childrenMatch = runCatching {
+                Files.newDirectoryStream(expected.path).use { children ->
+                    children.map { it.toAbsolutePath().normalize() }.toSet() ==
+                        plannedChildren[expected.path].orEmpty().map { it.path }.toSet()
+                }
+            }.getOrDefault(false)
+            if (!childrenMatch) {
+                outcome.note(IOException("扫描后目录内容发生变化，请重新扫描"))
+                return false
+            }
         }
     }
     return true
