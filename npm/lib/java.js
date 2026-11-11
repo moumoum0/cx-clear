@@ -28,15 +28,20 @@ function run(executable, args, options = {}) {
   });
 }
 
-export async function usableJavaHome(home) {
+export async function usableJavaHome(home, logFailure) {
   if (!home) return false;
   try {
     const executable = join(home, 'bin', 'java.exe');
     await access(executable);
     const output = await run(executable, ['-XshowSettings:properties', '-version'], { timeout: 10000 });
-    return /^\s*java\.version\s*=\s*21(?:\.|\s|$)/m.test(output)
-      && /^\s*os\.arch\s*=\s*(amd64|x86_64)\s*$/m.test(output);
-  } catch {
+    const versionOk = /^\s*java\.version\s*=\s*21(?:\.|\s|$)/m.test(output);
+    const archOk = /^\s*os\.arch\s*=\s*(amd64|x86_64)\s*$/m.test(output);
+    if (!(versionOk && archOk) && logFailure) {
+      logFailure(`probe rejected runtime: versionOk=${versionOk}, archOk=${archOk}, output=${JSON.stringify(output.slice(-600))}`);
+    }
+    return versionOk && archOk;
+  } catch (error) {
+    logFailure?.(`probe failed: ${error.message}`);
     return false;
   }
 }
@@ -100,7 +105,7 @@ export async function installRuntime({ cacheRoot, runtime, probe = usableJavaHom
   const deadline = Date.now() + 600000;
   let handle;
   while (!handle) {
-    if (await probe(home)) return home;
+    if (await probe(home, log)) return home;
     try {
       handle = await open(lock, 'wx');
     } catch (error) {
@@ -113,7 +118,7 @@ export async function installRuntime({ cacheRoot, runtime, probe = usableJavaHom
   let staging;
   try {
     await handle.writeFile(String(process.pid));
-    if (await probe(home)) return home;
+    if (await probe(home, log)) return home;
     staging = await mkdtemp(join(cacheRoot, `${runtime.id}-download-`));
     log(`cxclear: downloading Java 21 (${runtime.id}); this is only needed once`);
     const archive = join(staging, 'java.zip');
@@ -124,7 +129,7 @@ export async function installRuntime({ cacheRoot, runtime, probe = usableJavaHom
     const candidates = roots.filter(entry => entry.isDirectory());
     if (candidates.length !== 1) throw new Error('Unexpected Java archive layout');
     const candidate = join(extracted, candidates[0].name);
-    if (!await probe(candidate)) throw new Error('Downloaded runtime is not Windows x64 Java 21');
+    if (!await probe(candidate, log)) throw new Error('Downloaded runtime is not Windows x64 Java 21');
     await rm(home, { recursive: true, force: true });
     await rename(candidate, home);
     return home;
