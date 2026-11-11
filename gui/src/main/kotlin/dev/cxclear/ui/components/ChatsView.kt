@@ -1,9 +1,12 @@
 package dev.cxclear.ui.components
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -23,6 +26,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import dev.chrisbanes.haze.HazeInput
+import dev.chrisbanes.haze.HazePerformanceMode
+import dev.chrisbanes.haze.blur.HazeBlurStyle
+import dev.chrisbanes.haze.blur.hazeBlur
+import dev.chrisbanes.haze.hazeSource
+import dev.chrisbanes.haze.rememberHazeState
 import dev.cxclear.model.ChatDeleteResult
 import dev.cxclear.model.ChatSessionSummary
 import dev.cxclear.model.ChatTool
@@ -67,18 +76,17 @@ private fun filterCachedSessions(
 }
 
 @Composable
-fun ChatsView(modifier: Modifier = Modifier) {
+fun ChatsView(
+    modifier: Modifier = Modifier,
+) {
     val scope = rememberCoroutineScope()
     val initialPrefs = remember { AppPreferences.read() }
 
-    var mode by remember {
-        mutableStateOf(
-            if (initialPrefs.defaultChatsMode == "auto") ChatsMode.AUTO else ChatsMode.MANUAL
-        )
-    }
+    var mode by remember { mutableStateOf(ChatsMode.AUTO) }
     var selectedTool by remember { mutableStateOf(TOOL_FILTER_ALL) }
 
     var config by remember { mutableStateOf(RetentionConfig()) }
+    val enabledRuleCount = remember(config) { config.rules.count { it.enabled } }
 
     val cachedOnEnter = remember { ChatScanCache.snapshot() }
     var viewState by remember {
@@ -91,6 +99,11 @@ fun ChatsView(modifier: Modifier = Modifier) {
     var rescanToken by remember { mutableIntStateOf(0) }
     var notice by remember { mutableStateOf<String?>(null) }
     var noticeIsWarning by remember { mutableStateOf(false) }
+
+    var autoCleanEnabled by remember { mutableStateOf(initialPrefs.autoCleanEnabled) }
+    // 「暂未开启自动清理」胶囊的就地子页：不切屏，导航栏停在对话管理
+    var showAutoCleanSettings by remember { mutableStateOf(false) }
+    val hazeState = rememberHazeState()
 
     LaunchedEffect(Unit) {
         config = withContext(Dispatchers.IO) { RetentionStore.read() }
@@ -159,64 +172,97 @@ fun ChatsView(modifier: Modifier = Modifier) {
         filterCachedSessions(allSessions, selectedTool)
     }
 
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .background(AppColors.Surface1)
-            .padding(AppDimensions.SpacingLarge.dp),
-        verticalArrangement = Arrangement.spacedBy(AppDimensions.SpacingLarge.dp),
-    ) {
-        ChatsTopBar(
-            selectedTool = selectedTool,
-            onToolSelect = { selectedTool = it },
-            mode = mode,
-            onModeChange = { mode = it },
-        )
-
-        notice?.let { message ->
-            ChatsNotice(
-                message = message,
-                warning = noticeIsWarning,
-                onDismiss = { notice = null },
-            )
-        }
-
-        Box(
+    Box(modifier = modifier.fillMaxSize()) {
+        Column(
             modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f),
+                .fillMaxSize()
+                .hazeSource(hazeState)
+                .then(
+                    if (showAutoCleanSettings) {
+                        Modifier.hazeBlur(
+                            input = HazeInput.Content,
+                            style = HazeBlurStyle { blurRadius(12.dp) },
+                            performanceMode = HazePerformanceMode.Performance,
+                        )
+                    } else Modifier
+                )
+                .background(AppColors.Surface1)
+                .padding(AppDimensions.SpacingLarge.dp),
+            verticalArrangement = Arrangement.spacedBy(AppDimensions.SpacingLarge.dp),
         ) {
-            AnimatedContent(
-                targetState = mode,
-                transitionSpec = {
-                    (fadeIn(Motion.normal()) togetherWith fadeOut(Motion.fast()))
-                        .using(SizeTransform(clip = false))
-                },
-                label = "chatsMode",
-            ) { currentMode ->
-                when (currentMode) {
-                    ChatsMode.MANUAL -> ChatsManualPane(
-                        modifier = Modifier.fillMaxSize(),
-                        isScanning = viewState != ViewState.SCAN_DONE,
-                        foundCount = foundCount,
-                        allSessions = displayedSessions,
-                        nowMillis = now.toEpochMilli(),
-                        onDeleted = { result ->
-                            notice = deleteNotice(result, auto = false)
-                            noticeIsWarning = result.blockedTools.isNotEmpty() || result.errors.isNotEmpty()
-                            if (result.deletedSessions > 0) {
-                                ChatScanCache.invalidate()
-                                rescanToken++
-                            }
-                        },
-                    )
-                    ChatsMode.AUTO -> ChatsAutoPane(
-                        modifier = Modifier.fillMaxSize(),
-                        config = config,
-                        onConfigChange = ::updateConfig,
-                    )
+            ChatsTopBar(
+                selectedTool = selectedTool,
+                onToolSelect = { selectedTool = it },
+                mode = mode,
+                onModeChange = { mode = it },
+                autoCleanEnabled = autoCleanEnabled,
+                enabledRuleCount = enabledRuleCount,
+                totalRuleCount = config.rules.size,
+                onOpenAutoCleanSettings = { showAutoCleanSettings = true },
+            )
+
+            notice?.let { message ->
+                ChatsNotice(
+                    message = message,
+                    warning = noticeIsWarning,
+                    onDismiss = { notice = null },
+                )
+            }
+
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+            ) {
+                AnimatedContent(
+                    targetState = mode,
+                    transitionSpec = {
+                        (fadeIn(Motion.normal()) togetherWith fadeOut(Motion.fast()))
+                            .using(SizeTransform(clip = false))
+                    },
+                    label = "chatsMode",
+                ) { currentMode ->
+                    when (currentMode) {
+                        ChatsMode.MANUAL -> ChatsManualPane(
+                            modifier = Modifier.fillMaxSize(),
+                            isScanning = viewState != ViewState.SCAN_DONE,
+                            foundCount = foundCount,
+                            allSessions = displayedSessions,
+                            nowMillis = now.toEpochMilli(),
+                            onDeleted = { result ->
+                                notice = deleteNotice(result, auto = false)
+                                noticeIsWarning = result.blockedTools.isNotEmpty() || result.errors.isNotEmpty()
+                                if (result.deletedSessions > 0) {
+                                    ChatScanCache.invalidate()
+                                    rescanToken++
+                                }
+                            },
+                        )
+                        ChatsMode.AUTO -> ChatsAutoPane(
+                            modifier = Modifier.fillMaxSize(),
+                            config = config,
+                            onConfigChange = ::updateConfig,
+                        )
+                    }
                 }
             }
+        }
+
+        // 自动清理子页就地滑入，动画与设置子页一致；返回时刷新总开关，胶囊即时收起
+        AnimatedVisibility(
+            visible = showAutoCleanSettings,
+            enter = slideInHorizontally(Motion.normal()) { it / 4 } + fadeIn(Motion.normal()),
+            exit = slideOutHorizontally(Motion.fast()) { it / 6 } + fadeOut(Motion.fast()),
+        ) {
+            AutoCleanSettingsView(
+                modifier = Modifier.fillMaxSize(),
+                onBack = {
+                    showAutoCleanSettings = false
+                    scope.launch {
+                        autoCleanEnabled = withContext(Dispatchers.IO) { AppPreferences.read().autoCleanEnabled }
+                    }
+                },
+            )
         }
     }
 }

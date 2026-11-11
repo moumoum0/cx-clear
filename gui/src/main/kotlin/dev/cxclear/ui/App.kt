@@ -37,8 +37,13 @@ import dev.chrisbanes.haze.blur.HazeBlurStyle
 import dev.chrisbanes.haze.blur.hazeBlur
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
+import dev.cxclear.chats.ChatScanCache
+import dev.cxclear.chats.RetentionRunner
+import dev.cxclear.chats.scanAllChatSessions
 import dev.cxclear.storage.AppPreferences
 import dev.cxclear.storage.AppPrefs
+import dev.cxclear.storage.CleanHistory
+import dev.cxclear.tools.chatTools
 import dev.cxclear.ui.components.AppTitleBar
 import dev.cxclear.ui.components.MainContent
 import dev.cxclear.ui.components.Sidebar
@@ -83,11 +88,18 @@ val LocalThemeController = staticCompositionLocalOf<ThemeController> {
 fun WindowScope.App(
     windowState: WindowState,
     onCloseRequest: () -> Unit,
+    runStartupAutoClean: Boolean = false,
 ) {
     val scope = rememberCoroutineScope()
     var prefs by remember { mutableStateOf<AppPrefs?>(null) }
     LaunchedEffect(Unit) {
         prefs = withContext(Dispatchers.IO) { AppPreferences.read() }
+    }
+
+    if (runStartupAutoClean) {
+        LaunchedEffect(Unit) {
+            withContext(Dispatchers.IO) { silentStartupAutoClean() }
+        }
     }
 
     val initialPrefs = prefs ?: AppPrefs()
@@ -106,6 +118,7 @@ fun WindowScope.App(
             }
         }
     }
+
     val isMaximized = windowState.placement == WindowPlacement.Maximized
     val windowShape = if (isMaximized) {
         RoundedCornerShape(0.dp)
@@ -242,5 +255,20 @@ fun WindowScope.App(
         overlay?.invoke()
     }
     }
+    }
+}
+
+// 开机自启动时的静默清理。和对话页的自动清理共用 ChatScanCache.autoRunDone 占位
+// （每进程只跑一次，谁先到谁跑）；总开关关着就不占位，进对话页时仍按原逻辑判定。
+private suspend fun silentStartupAutoClean() {
+    val prefs = AppPreferences.read()
+    if (!prefs.autoCleanEnabled) return
+    ChatScanCache.markAutoRunDone()
+    val sessions = scanAllChatSessions(chatTools().toSet())
+    val result = RetentionRunner.runIfNeeded(sessions)
+    if (result.freedBytes > 0L) {
+        CleanHistory.append(result.freedBytes)
+        // 清理期间用户可能已进对话页扫出旧列表，作废缓存让它重扫
+        ChatScanCache.invalidate()
     }
 }

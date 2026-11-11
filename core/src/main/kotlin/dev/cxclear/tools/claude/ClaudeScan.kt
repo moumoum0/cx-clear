@@ -1,5 +1,6 @@
 package dev.cxclear.tools.claude
 
+import dev.cxclear.chats.ChatFileMetaCache
 import dev.cxclear.model.ChatSessionSummary
 import dev.cxclear.tools.firstLineSummary
 import dev.cxclear.tools.listDir
@@ -95,7 +96,7 @@ internal fun scanClaudeSessions(
                 readPathSnapshot(entry)?.let { entries += it }
                 if (hasSiblingDir) entries += snapshotTree(siblingDir)
 
-                val title = readClaudeTitle(entry) ?: uuid
+                val title = cachedTitle(entry, updatedMs, fileSize) ?: uuid
 
                 val summary = ChatSessionSummary(
                     tool = ClaudePlugin.chat,
@@ -115,4 +116,13 @@ internal fun scanClaudeSessions(
     }
 
     return sessions.sortedByDescending { it.updatedMillis }
+}
+
+// 标题要整文件逐行解析；按 mtime+size 缓存，没变就不重读。
+private fun cachedTitle(file: Path, mtime: Long, size: Long): String? {
+    val cached = ChatFileMetaCache.lookup(ClaudePlugin.chat.id, file, mtime, size)
+    if (cached != null) return cached.jsonStr("title")
+    val title = readClaudeTitle(file)
+    ChatFileMetaCache.remember(ClaudePlugin.chat.id, file, mtime, size, mapOf("title" to title))
+    return title
 }

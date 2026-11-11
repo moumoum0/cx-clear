@@ -1,5 +1,6 @@
 package dev.cxclear.tools.deepseekhermes
 
+import dev.cxclear.chats.ChatFileMetaCache
 import dev.cxclear.model.ChatSessionSummary
 import dev.cxclear.model.PathSnapshot
 import dev.cxclear.scan.readPathSnapshot
@@ -7,10 +8,12 @@ import dev.cxclear.tools.firstLineSummary
 import dev.cxclear.tools.listDir
 import dev.cxclear.tools.snapshotTree
 import dev.cxclear.tools.treeSize
+import dev.cxclear.util.jsonBool
 import dev.cxclear.util.jsonObj
 import dev.cxclear.util.jsonStr
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.attribute.BasicFileAttributes
 
 internal fun scanDeepSeekHermesSessions(
     onFound: (ChatSessionSummary) -> Unit = {},
@@ -24,7 +27,7 @@ internal fun scanDeepSeekHermesSessions(
             if (!Files.isDirectory(sessionDir)) continue
             runCatching {
                 val log = findSessionLog(sessionDir) ?: return@runCatching
-                val header = readSessionHeader(log) ?: return@runCatching
+                val header = cachedHeader(log) ?: return@runCatching
                 located += LocatedSession(sessionDir, log, header)
             }
         }
@@ -67,6 +70,43 @@ private data class LocatedSession(
     val log: Path,
     val header: DeepSeekSessionHeader,
 )
+
+// 会话头要解压并解析整个日志；按日志 mtime+size 缓存。id 记成 null 表示上次也没读到头。
+private fun cachedHeader(log: Path): DeepSeekSessionHeader? {
+    val attrs = runCatching {
+        Files.readAttributes(log, BasicFileAttributes::class.java,
+            java.nio.file.LinkOption.NOFOLLOW_LINKS)
+    }.getOrNull() ?: return null
+    val mtime = attrs.lastModifiedTime().toMillis()
+    val size = attrs.size()
+
+    val cached = ChatFileMetaCache.lookup(DeepSeekHermesPlugin.chat.id, log, mtime, size)
+    if (cached != null) {
+        val id = cached.jsonStr("id") ?: return null
+        return DeepSeekSessionHeader(
+            id = id,
+            cwd = cached.jsonStr("cwd"),
+            parentId = cached.jsonStr("parentId"),
+            title = cached.jsonStr("title"),
+            updatedMillis = (cached["updatedMillis"] as? Number)?.toLong() ?: 0L,
+            subagent = cached.jsonBool("subagent") == true,
+        )
+    }
+
+    val header = readSessionHeader(log)
+    ChatFileMetaCache.remember(
+        DeepSeekHermesPlugin.chat.id, log, mtime, size,
+        if (header == null) mapOf<String, Any?>("id" to null) else mapOf(
+            "id" to header.id,
+            "cwd" to header.cwd,
+            "parentId" to header.parentId,
+            "title" to header.title,
+            "updatedMillis" to header.updatedMillis,
+            "subagent" to header.subagent,
+        ),
+    )
+    return header
+}
 
 private fun includeCache(home: Path, sessionId: String, entries: MutableList<PathSnapshot>): Long {
     val cache = dshProjCacheFile(home, sessionId)

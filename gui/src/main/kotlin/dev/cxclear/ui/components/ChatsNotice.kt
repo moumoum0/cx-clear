@@ -1,6 +1,14 @@
 package dev.cxclear.ui.components
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -13,6 +21,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
@@ -20,6 +29,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.AutoDelete
 import androidx.compose.material.icons.filled.Checklist
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Warning
@@ -29,6 +39,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.cxclear.model.ChatDeleteResult
@@ -45,29 +56,104 @@ internal fun ChatsTopBar(
     onToolSelect: (String) -> Unit,
     mode: ChatsMode,
     onModeChange: (ChatsMode) -> Unit,
+    autoCleanEnabled: Boolean,
+    enabledRuleCount: Int,
+    totalRuleCount: Int,
+    onOpenAutoCleanSettings: () -> Unit,
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(AppDimensions.SpacingSmall.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            AllFilterButton(isSelected = selectedTool == TOOL_FILTER_ALL) {
-                onToolSelect(TOOL_FILTER_ALL)
-            }
-            ToolEntries.forEach { entry ->
-                ToolIcon(entry.name, entry.resource, selectedTool == entry.id) {
-                    onToolSelect(entry.id)
+        // 手动页的图标行是会话筛选；自动页策略全局生效，换成「定时策略」标题 + 开启/总数
+        AnimatedContent(
+            targetState = mode,
+            transitionSpec = {
+                (fadeIn(Motion.normal()) togetherWith fadeOut(Motion.fast()))
+                    .using(SizeTransform(clip = false))
+            },
+            label = "chatsTopBarLeft",
+        ) { currentMode ->
+            when (currentMode) {
+                ChatsMode.MANUAL -> Row(
+                    horizontalArrangement = Arrangement.spacedBy(AppDimensions.SpacingSmall.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    AllFilterButton(isSelected = selectedTool == TOOL_FILTER_ALL) {
+                        onToolSelect(TOOL_FILTER_ALL)
+                    }
+                    ToolEntries.forEach { entry ->
+                        ToolIcon(entry.name, entry.resource, selectedTool == entry.id) {
+                            onToolSelect(entry.id)
+                        }
+                    }
+                }
+
+                ChatsMode.AUTO -> Row(
+                    // 与手动页 48dp 图标行等高，切换模式时右侧分段按钮位置不动
+                    modifier = Modifier.height(48.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = "清理策略",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Normal,
+                        color = AppColors.TextPrimary,
+                    )
+                    Text(
+                        text = "$enabledRuleCount/$totalRuleCount",
+                        fontSize = 13.sp,
+                        color = AppColors.TextSecondary,
+                    )
                 }
             }
         }
 
-        ModeSegmentedControl(
-            mode = mode,
-            onModeChange = onModeChange,
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(AppDimensions.SpacingSmall.dp),
+        ) {
+            // 总开关关闭时才出现的提示胶囊，点击就地滑出自动清理子页
+            AnimatedVisibility(
+                visible = mode == ChatsMode.AUTO && !autoCleanEnabled,
+                enter = expandHorizontally(Motion.fast()) + fadeIn(Motion.fast()),
+                exit = shrinkHorizontally(Motion.fast()) + fadeOut(Motion.fast()),
+            ) {
+                AutoCleanDisabledPill(onClick = onOpenAutoCleanSettings)
+            }
+            ModeSegmentedControl(
+                mode = mode,
+                onModeChange = onModeChange,
+            )
+        }
+    }
+}
+
+// 自动清理总开关关闭时的提示：灰色胶囊、无状态点，整条可点就地打开自动清理子页
+@Composable
+internal fun AutoCleanDisabledPill(onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(AppDimensions.RadiusFull.dp))
+            .background(AppColors.Surface3)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Text(
+            text = "暂未开启自动清理",
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Medium,
+            color = AppColors.TextSecondary,
+        )
+        Icon(
+            imageVector = Icons.Filled.ChevronRight,
+            contentDescription = "自动清理设置",
+            tint = AppColors.TextTertiary,
+            modifier = Modifier.size(16.dp),
         )
     }
 }
@@ -125,23 +211,9 @@ internal fun ModeSegmentedControl(
             inactiveBorderColor = AppColors.OutlineVariant,
         )
         SegmentedButton(
-            selected = mode == ChatsMode.MANUAL,
-            onClick = { onModeChange(ChatsMode.MANUAL) },
-            shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
-            colors = colors,
-            icon = {},
-            modifier = Modifier.width(ModeSegmentWidth),
-        ) {
-            Icon(
-                imageVector = Icons.Filled.Checklist,
-                contentDescription = "手动",
-                modifier = Modifier.size(20.dp),
-            )
-        }
-        SegmentedButton(
             selected = mode == ChatsMode.AUTO,
             onClick = { onModeChange(ChatsMode.AUTO) },
-            shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
+            shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
             colors = colors,
             icon = {},
             modifier = Modifier.width(ModeSegmentWidth),
@@ -149,6 +221,20 @@ internal fun ModeSegmentedControl(
             Icon(
                 imageVector = Icons.Filled.AutoDelete,
                 contentDescription = "自动",
+                modifier = Modifier.size(20.dp),
+            )
+        }
+        SegmentedButton(
+            selected = mode == ChatsMode.MANUAL,
+            onClick = { onModeChange(ChatsMode.MANUAL) },
+            shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
+            colors = colors,
+            icon = {},
+            modifier = Modifier.width(ModeSegmentWidth),
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Checklist,
+                contentDescription = "手动",
                 modifier = Modifier.size(20.dp),
             )
         }

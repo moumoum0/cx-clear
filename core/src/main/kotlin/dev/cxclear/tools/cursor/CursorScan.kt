@@ -1,5 +1,6 @@
 package dev.cxclear.tools.cursor
 
+import dev.cxclear.chats.ChatFileMetaCache
 import dev.cxclear.model.ChatSessionSummary
 import dev.cxclear.tools.firstLineSummary
 import dev.cxclear.tools.listDir
@@ -143,15 +144,13 @@ internal fun scanCursorSessions(
                 // Cursor 应用内删除后 jsonl 常残留；没索引的标题会退化成 UUID。
                 val composerData = composerDataMap[composerId] ?: return@runCatching
 
-                val updatedMs = composerData.lastUpdatedAt ?: run {
-                    val attrs = Files.readAttributes(file, BasicFileAttributes::class.java,
-                        java.nio.file.LinkOption.NOFOLLOW_LINKS)
-                    attrs.lastModifiedTime().toMillis()
-                }
+                val attrs = Files.readAttributes(file, BasicFileAttributes::class.java,
+                    java.nio.file.LinkOption.NOFOLLOW_LINKS)
+                val updatedMs = composerData.lastUpdatedAt ?: attrs.lastModifiedTime().toMillis()
 
                 val title = composerData.name?.takeIf { it.isNotBlank() }
                     ?: composerData.subtitle?.takeIf { it.isNotBlank() }
-                    ?: readCursorTranscriptTitle(file)
+                    ?: cachedTranscriptTitle(file, attrs.lastModifiedTime().toMillis(), attrs.size())
                     ?: composerId
 
                 // 项目名取 composerData 工作区路径末段，取不到退回项目目录名推断
@@ -184,4 +183,13 @@ internal fun scanCursorSessions(
     }
 
     return sessions.sortedByDescending { it.updatedMillis }
+}
+
+// composerData 没给标题时才解析转录文件；按 mtime+size 缓存，没变就不重读。
+private fun cachedTranscriptTitle(file: Path, mtime: Long, size: Long): String? {
+    val cached = ChatFileMetaCache.lookup(CursorPlugin.chat.id, file, mtime, size)
+    if (cached != null) return cached.jsonStr("title")
+    val title = readCursorTranscriptTitle(file)
+    ChatFileMetaCache.remember(CursorPlugin.chat.id, file, mtime, size, mapOf("title" to title))
+    return title
 }

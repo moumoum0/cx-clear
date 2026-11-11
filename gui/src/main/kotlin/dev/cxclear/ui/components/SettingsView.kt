@@ -23,11 +23,13 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.CleaningServices
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -59,6 +61,9 @@ import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
 import dev.cxclear.AppMeta
 import dev.cxclear.chats.RetentionAiPrompt
+import dev.cxclear.platform.AutoStart
+import dev.cxclear.platform.HostOs
+import dev.cxclear.platform.currentOs
 import dev.cxclear.storage.AppDir
 import dev.cxclear.storage.AppPreferences
 import dev.cxclear.storage.AppPrefs
@@ -80,8 +85,11 @@ import java.awt.datatransfer.StringSelection
 import java.nio.file.Files
 
 @Composable
-fun SettingsView(modifier: Modifier = Modifier) {
+fun SettingsView(
+    modifier: Modifier = Modifier,
+) {
     var showAbout by remember { mutableStateOf(false) }
+    var showAutoClean by remember { mutableStateOf(false) }
     val hazeState = rememberHazeState()
 
     Box(modifier = modifier.fillMaxSize()) {
@@ -90,7 +98,7 @@ fun SettingsView(modifier: Modifier = Modifier) {
                 .fillMaxSize()
                 .hazeSource(hazeState)
                 .then(
-                    if (showAbout) {
+                    if (showAbout || showAutoClean) {
                         Modifier.hazeBlur(
                             input = HazeInput.Content,
                             style = HazeBlurStyle { blurRadius(12.dp) },
@@ -99,6 +107,7 @@ fun SettingsView(modifier: Modifier = Modifier) {
                     } else Modifier
                 ),
             onOpenAbout = { showAbout = true },
+            onOpenAutoClean = { showAutoClean = true },
         )
 
         AnimatedVisibility(
@@ -111,12 +120,24 @@ fun SettingsView(modifier: Modifier = Modifier) {
                 onBack = { showAbout = false },
             )
         }
+
+        AnimatedVisibility(
+            visible = showAutoClean,
+            enter = slideInHorizontally(Motion.normal()) { it / 4 } + fadeIn(Motion.normal()),
+            exit = slideOutHorizontally(Motion.fast()) { it / 6 } + fadeOut(Motion.fast()),
+        ) {
+            AutoCleanSettingsView(
+                modifier = Modifier.fillMaxSize(),
+                onBack = { showAutoClean = false },
+            )
+        }
     }
 }
 
 @Composable
 private fun SettingsListPage(
     onOpenAbout: () -> Unit,
+    onOpenAutoClean: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val scope = rememberCoroutineScope()
@@ -128,10 +149,48 @@ private fun SettingsListPage(
     var showColorSchemeDialog by remember { mutableStateOf(false) }
     var promptCopied by remember { mutableStateOf(false) }
 
+    val isWindows = remember { currentOs() == HostOs.WINDOWS }
+    var autostartOn by remember { mutableStateOf(false) }
+    var autostartAvailable by remember { mutableStateOf(false) }
+    var autostartError by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(isWindows) {
+        if (!isWindows) return@LaunchedEffect
+        withContext(Dispatchers.IO) {
+            autostartAvailable = AutoStart.installedExePath() != null
+            autostartOn = AutoStart.isEnabled()
+        }
+    }
+
+    fun toggleAutostart(checked: Boolean) {
+        autostartOn = checked
+        autostartError = null
+        scope.launch {
+            val result = withContext(Dispatchers.IO) {
+                val exe = AutoStart.installedExePath()
+                when {
+                    exe == null -> null
+                    checked -> AutoStart.enable(exe)
+                    else -> AutoStart.disable()
+                }
+            }
+            when {
+                // 开关已禁用时点不到这里；以防万一保持现状
+                result == null -> Unit
+                result.ok -> autostartOn = withContext(Dispatchers.IO) { AutoStart.isEnabled() }
+                else -> {
+                    autostartOn = !checked
+                    autostartError = result.output.trim()
+                        .ifEmpty { "注册表操作失败（代码 ${result.exitCode}）" }
+                }
+            }
+        }
+    }
+
+    // 磁盘新鲜读改写，不整份覆盖：自动清理子页可能同时改了别的字段
     fun updatePrefs(transform: (AppPrefs) -> AppPrefs) {
-        val next = transform(prefs)
-        prefs = next
-        scope.launch { withContext(Dispatchers.IO) { AppPreferences.write(next) } }
+        prefs = transform(prefs)
+        scope.launch { withContext(Dispatchers.IO) { AppPreferences.update(transform) } }
     }
 
     LaunchedEffect(promptCopied) {
@@ -199,6 +258,22 @@ private fun SettingsListPage(
                         },
                     )
                 }
+                if (isWindows) {
+                    item {
+                        SettingsSwitchItem(
+                            icon = Icons.Default.PowerSettingsNew,
+                            title = "开机自启动",
+                            subtitle = when {
+                                autostartError != null -> autostartError!!
+                                !autostartAvailable -> "仅安装版可用"
+                                else -> "登录 Windows 后最小化启动，静默执行自动清理"
+                            },
+                            checked = autostartOn,
+                            onCheckedChange = ::toggleAutostart,
+                            enabled = autostartAvailable,
+                        )
+                    }
+                }
                 item {
                     SettingsItem(
                         icon = Icons.Default.FolderOpen,
@@ -219,6 +294,17 @@ private fun SettingsListPage(
                         },
                         onClick = { showClearHistoryConfirm = true },
                         enabled = historyTotal > 0L,
+                    )
+                }
+
+                item { Spacer(modifier = Modifier.height(12.dp)) }
+                item { SettingsGroupTitle("自动清理") }
+                item {
+                    SettingsItem(
+                        icon = Icons.Default.CleaningServices,
+                        title = "自动清理",
+                        subtitle = "总开关与清理完成通知",
+                        onClick = onOpenAutoClean,
                     )
                 }
 

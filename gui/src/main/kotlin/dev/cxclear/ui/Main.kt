@@ -7,6 +7,7 @@ import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import dev.cxclear.WindowsDpi
+import dev.cxclear.platform.AutoStart
 import dev.cxclear.platform.HostOs
 import dev.cxclear.platform.currentOs
 import dev.cxclear.resources.Res
@@ -23,13 +24,16 @@ private fun configureHighDpiRendering() {
 
 fun main(args: Array<String>) {
     configureHighDpiRendering()
-    startApplication()
+    // 开机自启动：最小化驻留任务栏，后台静默执行自动清理
+    val autostart = args.contains(AutoStart.AUTOSTART_ARG)
+    startApplication(startMinimized = autostart)
 }
 
-private fun startApplication() = application {
+private fun startApplication(startMinimized: Boolean = false) = application {
     val windowState = rememberWindowState(
         size = DpSize(1070.dp, 750.dp),
-        position = WindowPosition.Aligned(androidx.compose.ui.Alignment.Center)
+        position = WindowPosition.Aligned(androidx.compose.ui.Alignment.Center),
+        isMinimized = startMinimized,
     )
 
     Window(
@@ -47,6 +51,7 @@ private fun startApplication() = application {
         App(
             windowState = windowState,
             onCloseRequest = ::exitApplication,
+            runStartupAutoClean = startMinimized,
         )
     }
 }

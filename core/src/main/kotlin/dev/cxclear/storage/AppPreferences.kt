@@ -11,7 +11,6 @@ data class AppPrefs(
     val defaultTools: Set<String> = knownToolIds(),
     val rememberLastScreen: Boolean = false,
     val lastScreenId: String = "scan",
-    val defaultChatsMode: String = "manual",
     val autoCleanEnabled: Boolean = true,
     val autoCleanNotify: Boolean = true,
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
@@ -24,7 +23,6 @@ object AppPreferences {
 
     private val knownTools get() = knownToolIds()
     private val knownScreens = setOf("scan", "chats", "settings")
-    private val knownChatsModes = setOf("manual", "auto")
 
     private fun file(): Path? = AppDir.dir()?.resolve(FILE_NAME)
 
@@ -55,13 +53,11 @@ object AppPreferences {
             ?: knownTools
 
         val screen = props["last_screen"]?.takeIf { it in knownScreens } ?: "scan"
-        val chatsMode = props["default_chats_mode"]?.takeIf { it in knownChatsModes } ?: "manual"
 
         return AppPrefs(
             defaultTools = tools,
             rememberLastScreen = props["remember_last_screen"]?.toBooleanStrictOrNull() ?: false,
             lastScreenId = screen,
-            defaultChatsMode = chatsMode,
             autoCleanEnabled = props["auto_clean_enabled"]?.toBooleanStrictOrNull() ?: true,
             autoCleanNotify = props["auto_clean_notify"]?.toBooleanStrictOrNull() ?: true,
             themeMode = parseThemeMode(props["theme_mode"]),
@@ -74,12 +70,10 @@ object AppPreferences {
         val path = file() ?: return
         val tools = prefs.defaultTools.filter { it in knownTools }.ifEmpty { knownTools.toList() }
         val screen = prefs.lastScreenId.takeIf { it in knownScreens } ?: "scan"
-        val chatsMode = prefs.defaultChatsMode.takeIf { it in knownChatsModes } ?: "manual"
         val lines = listOf(
             "default_tools=${tools.joinToString(",")}",
             "remember_last_screen=${prefs.rememberLastScreen}",
             "last_screen=$screen",
-            "default_chats_mode=$chatsMode",
             "auto_clean_enabled=${prefs.autoCleanEnabled}",
             "auto_clean_notify=${prefs.autoCleanNotify}",
             "theme_mode=${prefs.themeMode.name}",

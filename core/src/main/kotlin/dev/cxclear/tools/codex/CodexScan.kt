@@ -1,5 +1,6 @@
 package dev.cxclear.tools.codex
 
+import dev.cxclear.chats.ChatFileMetaCache
 import dev.cxclear.model.ChatSessionSummary
 import dev.cxclear.tools.firstLineSummary
 import dev.cxclear.tools.isoToMillis
@@ -92,7 +93,7 @@ internal fun scanCodexSessions(
                         java.nio.file.LinkOption.NOFOLLOW_LINKS)
                     val updatedMs = isoToMillis(indexEntry?.updatedAt)
                         ?: attrs.lastModifiedTime().toMillis()
-                    val meta = readCodexMeta(file)
+                    val meta = cachedMeta(file, attrs.lastModifiedTime().toMillis(), attrs.size())
                     val title = indexEntry?.title?.ifBlank { null }
                         ?: meta.title
                         ?: file.fileName.toString()
@@ -116,4 +117,16 @@ internal fun scanCodexSessions(
     }
 
     return sessions.sortedByDescending { it.updatedMillis }
+}
+
+// 文件内的标题/项目名兜底也要读会话文件；按 mtime+size 缓存。
+private fun cachedMeta(file: Path, mtime: Long, size: Long): CodexMeta {
+    val cached = ChatFileMetaCache.lookup(CodexPlugin.chat.id, file, mtime, size)
+    if (cached != null) return CodexMeta(cached.jsonStr("title"), cached.jsonStr("project"))
+    val meta = readCodexMeta(file)
+    ChatFileMetaCache.remember(
+        CodexPlugin.chat.id, file, mtime, size,
+        mapOf("title" to meta.title, "project" to meta.project),
+    )
+    return meta
 }

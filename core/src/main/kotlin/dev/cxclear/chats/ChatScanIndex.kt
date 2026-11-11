@@ -22,6 +22,7 @@ fun scanAllChatSessions(
     for (plugin in registeredTools()) {
         if (plugin.chat in tools) result += plugin.scan(onFound)
     }
+    ChatFileMetaCache.flush()
     return result.sortedByDescending { it.updatedMillis }
 }
 

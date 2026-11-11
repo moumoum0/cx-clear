@@ -28,7 +28,6 @@ class AppPreferencesTest {
         assertEquals(setOf("codex", "claude", "cursor", "opencode", "deepseek-hermes"), prefs.defaultTools)
         assertFalse(prefs.rememberLastScreen)
         assertEquals("scan", prefs.lastScreenId)
-        assertEquals("manual", prefs.defaultChatsMode)
         assertTrue(prefs.autoCleanEnabled)
         assertTrue(prefs.autoCleanNotify)
         assertEquals(ThemeMode.SYSTEM, prefs.themeMode)
@@ -43,7 +42,6 @@ class AppPreferencesTest {
                 defaultTools = setOf("claude", "cursor"),
                 rememberLastScreen = true,
                 lastScreenId = "chats",
-                defaultChatsMode = "auto",
                 autoCleanEnabled = false,
                 autoCleanNotify = false,
                 themeMode = ThemeMode.DARK,
@@ -55,7 +53,6 @@ class AppPreferencesTest {
         assertEquals(setOf("claude", "cursor"), prefs.defaultTools)
         assertTrue(prefs.rememberLastScreen)
         assertEquals("chats", prefs.lastScreenId)
-        assertEquals("auto", prefs.defaultChatsMode)
         assertFalse(prefs.autoCleanEnabled)
         assertFalse(prefs.autoCleanNotify)
         assertEquals(ThemeMode.DARK, prefs.themeMode)
@@ -69,14 +66,12 @@ class AppPreferencesTest {
         Files.write(path, listOf(
             "default_tools=foo,codex,bar",
             "last_screen=nowhere",
-            "default_chats_mode=weird",
             "theme_mode=neon",
             "color_scheme=wallpaper",
         ))
         val prefs = AppPreferences.read()
         assertEquals(setOf("codex"), prefs.defaultTools)
         assertEquals("scan", prefs.lastScreenId)
-        assertEquals("manual", prefs.defaultChatsMode)
         assertEquals(ThemeMode.SYSTEM, prefs.themeMode)
         assertEquals(AppColorScheme.APP_DEFAULT, prefs.colorScheme)
     }

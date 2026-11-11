@@ -85,7 +85,9 @@ compose.desktop {
             targetFormats(TargetFormat.Dmg)
             packageName = "CX Clear"
             packageVersion = version.toString()
-            description = "AI Agent disk cleanup tool"
+            // 会写进 exe 版本资源的 FileDescription，Windows 任务栏固定/右键显示的应用名取自这里，
+            // 不要写成描述性文案（否则任务栏会显示这段话而不是应用名）
+            description = "CX Clear"
             vendor = "CX Clear"
 
             modules("java.base", "java.desktop", "java.logging", "java.net.http", "java.sql", "jdk.unsupported")

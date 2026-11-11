@@ -52,6 +52,7 @@ Name: "chinesesimp"; MessagesFile: "ChineseSimplified.isl"
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 Name: "addtopath"; Description: "将 cxclear 添加到用户 PATH"; Flags: checkedonce
+Name: "autostart"; Description: "开机自启动 CX Clear"; Flags: unchecked
 
 [Files]
 Source: "{#APP_DIR}\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
@@ -59,6 +60,11 @@ Source: "{#APP_DIR}\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs
 Name: "{group}\{#APP_NAME}"; Filename: "{app}\{#APP_EXE}"; IconFilename: "{app}\app_icon.ico"
 Name: "{group}\{cm:UninstallProgram,{#APP_NAME}}"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\{#APP_NAME}"; Filename: "{app}\{#APP_EXE}"; IconFilename: "{app}\app_icon.ico"; Tasks: desktopicon
+
+; 和 GUI 设置里的「开机自启动」开关共用同一个值名（见 core 的 AutoStart），
+; uninsdeletevalue 保证卸载时清除（含用户后来在设置里手动开启的情况）。
+[Registry]
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "{#APP_NAME}"; ValueData: """{app}\{#APP_EXE}"" --autostart"; Flags: uninsdeletevalue; Tasks: autostart
 
 [Run]
 Filename: "{app}\{#APP_EXE}"; Description: "{cm:LaunchProgram,{#APP_NAME}}"; Flags: nowait postinstall skipifsilent
