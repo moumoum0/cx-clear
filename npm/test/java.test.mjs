@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { mkdtemp, mkdir, readFile, writeFile, rm, readdir, access } from 'node:fs/promises';
 import { join } from 'node:path';
-import { assertSupportedPlatform, downloadVerified, installJava, installRuntime, installedJava, recordPath, runtimeCacheRoot, usableJavaHome } from '../lib/java.js';
+import { assertSupportedPlatform, downloadVerified, installJava, installRuntime, installedJava, recordPath, runtimeCacheRoot, stagedLibraries, usableJavaHome } from '../lib/java.js';
 
 const payload = Buffer.from('a pinned Java archive fixture');
 const runtime = {
@@ -110,6 +110,44 @@ test('invalid cached runtime is replaced only after successful verification', as
 test('runtime IDs cannot escape the cache directory', async t => {
   const root = await temporary(t);
   await assert.rejects(installRuntime(fixture(root, { runtime: { ...runtime, id: '..' } })), /metadata/);
+});
+
+test('cli jars are staged into an ASCII-safe cache directory', async t => {
+  const packageRoot = join(await temporary(t), '中文前缀');
+  const lib = join(packageRoot, 'native', 'lib');
+  await mkdir(lib, { recursive: true });
+  await writeFile(join(lib, 'cli.jar'), payload);
+  const cache = await temporary(t);
+  const env = { CXCLEAR_RUNTIME_DIR: cache };
+  const libDir = await stagedLibraries({ root: packageRoot, env });
+  assert.ok(/^[\x20-\x7e]+$/.test(libDir), `staged lib dir must be ASCII-safe: ${libDir}`);
+  assert.ok(libDir.startsWith(cache));
+  assert.deepEqual(await readdir(libDir), ['cli.jar']);
+  assert.equal(await readFile(join(libDir, 'cli.jar'), 'utf8'), payload.toString('utf8'));
+  assert.equal(await stagedLibraries({ root: packageRoot, env }), libDir);
+  const updated = Buffer.from(payload);
+  updated[0] ^= 1;
+  await writeFile(join(lib, 'cli.jar'), updated);
+  const updatedLib = await stagedLibraries({ root: packageRoot, env });
+  assert.notEqual(updatedLib, libDir);
+  assert.deepEqual(await readFile(join(updatedLib, 'cli.jar')), updated);
+});
+
+test('concurrent jar staging publishes one complete directory', async t => {
+  const root = await temporary(t);
+  const lib = join(root, 'native', 'lib');
+  await mkdir(lib, { recursive: true });
+  await writeFile(join(lib, 'cli.jar'), payload);
+  await writeFile(join(lib, 'core.jar'), payload);
+  const cache = await temporary(t);
+  const env = { CXCLEAR_RUNTIME_DIR: cache };
+  const directories = await Promise.all(Array.from({ length: 4 }, () => stagedLibraries({ root, env })));
+  assert.equal(new Set(directories).size, 1);
+  assert.deepEqual(await readdir(directories[0]), ['cli.jar', 'core.jar']);
+  for (const name of ['cli.jar', 'core.jar']) {
+    assert.deepEqual(await readFile(join(directories[0], name)), payload);
+  }
+  assert.equal((await readdir(join(cache, 'apps'))).length, 1);
 });
 
 test('a missing install record is repaired on launch', async t => {

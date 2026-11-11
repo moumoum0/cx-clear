@@ -3,15 +3,16 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { access } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
-import { installedJava, assertSupportedPlatform } from '../lib/java.js';
+import { installedJava, assertSupportedPlatform, stagedLibraries } from '../lib/java.js';
 
 async function main() {
   assertSupportedPlatform();
   const root = dirname(dirname(fileURLToPath(import.meta.url)));
   await access(join(root, 'native', 'lib'));
   const javaHome = await installedJava({ root });
+  const libDir = await stagedLibraries({ root });
   const child = spawn(join(javaHome, 'bin', 'java.exe'), [
-    '-Dfile.encoding=UTF-8', '-cp', join(root, 'native', 'lib', '*'),
+    '-Dfile.encoding=UTF-8', '-cp', join(libDir, '*'),
     'dev.cxclear.cli.MainKt', ...process.argv.slice(2),
   ], {
     stdio: 'inherit',

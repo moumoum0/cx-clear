@@ -11,11 +11,10 @@ if (!process.argv[2]) throw new Error('Usage: node npm/test/install-smoke.mjs <p
 const tarball = resolve(process.argv[2]);
 const build = resolve('build', 'npm-smoke');
 await mkdir(build, { recursive: true });
-const root = await mkdtemp(join(build, 'install space \u4e2d\u6587-'));
+const root = await mkdtemp(join(build, 'install space \u4e2d\u6587-\ud83d\ude80-'));
 const npmCli = process.env.npm_execpath || join(dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js');
 await access(npmCli);
-// java.exe 启动器按 ANSI 代码页定位运行时，Java 缓存必须留在纯 ASCII 路径；
-// 中文路径只留给 CLI 本身（node 对 Unicode 路径没有问题）。
+// Java 缓存使用 ASCII 路径，npm 安装目录覆盖空格及系统代码页之外的字符。
 const env = { ...process.env, CXCLEAR_RUNTIME_DIR: join(build, 'java-cache') };
 const cacheRoot = runtimeCacheRoot(env);
 if (process.argv.includes('--download-java')) {
@@ -56,7 +55,8 @@ const invalid = run([launcher, 'schema', '--nope'], { expected: 3 });
 assert.match(invalid.stderr, /unknown option/);
 assert.equal(JSON.parse(invalid.stdout).ok, false);
 
-const fixture = join(root, 'rule space \u4e2d\u6587.json');
+// Java 启动器会按系统代码页转换文件参数，此处使用带空格的 ASCII 文件名。
+const fixture = join(build, 'rule space.json');
 await writeFile(fixture, '{"version":2,"rules":[]}');
 assert.equal(JSON.parse(run([launcher, 'rules', 'validate', '--file', fixture]).stdout).ok, true);
 

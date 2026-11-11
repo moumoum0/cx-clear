@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { createWriteStream } from 'node:fs';
-import { access, mkdir, mkdtemp, readFile, readdir, rename, rm, open, stat, writeFile } from 'node:fs/promises';
+import { createReadStream, createWriteStream } from 'node:fs';
+import { access, copyFile, mkdir, mkdtemp, readFile, readdir, rename, rm, open, stat, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { Readable, Transform } from 'node:stream';
@@ -184,6 +184,46 @@ export function runtimeCacheRoot(env) {
 export function recordPath(root, env) {
   const key = createHash('sha256').update(root).digest('hex');
   return join(runtimeCacheRoot(env), 'installs', `${key}.json`);
+}
+
+// Windows Java 启动器会把类路径转换成系统代码页，缓存路径使用 ASCII 字符。
+export async function stagedLibraries({ root, env = process.env }) {
+  const source = join(root, 'native', 'lib');
+  const names = (await readdir(source, { withFileTypes: true }))
+    .filter(entry => entry.isFile() && entry.name.endsWith('.jar')).map(entry => entry.name).sort();
+  if (!names.length) throw new Error(`No jars found in ${source}`);
+  const contents = [];
+  for (const name of names) {
+    const hash = createHash('sha256');
+    for await (const chunk of createReadStream(join(source, name))) hash.update(chunk);
+    contents.push([name, hash.digest('hex')]);
+  }
+  const key = createHash('sha256').update(JSON.stringify(contents)).digest('hex');
+  const appsRoot = join(runtimeCacheRoot(env), 'apps');
+  const destination = join(appsRoot, key);
+  try {
+    await access(join(destination, 'lib'));
+    return join(destination, 'lib');
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+  }
+  await mkdir(appsRoot, { recursive: true });
+  const staging = await mkdtemp(join(appsRoot, `staging-${key}-`));
+  try {
+    const lib = join(staging, 'lib');
+    await mkdir(lib);
+    for (const name of names) await copyFile(join(source, name), join(lib, name));
+    try {
+      await rename(staging, destination);
+    } catch (error) {
+      // 并发启动时，另一个进程可能已经发布了相同内容。
+      if (!['EEXIST', 'EPERM', 'ENOTEMPTY'].includes(error.code)) throw error;
+      await access(join(destination, 'lib'));
+    }
+    return join(destination, 'lib');
+  } finally {
+    await rm(staging, { recursive: true, force: true });
+  }
 }
 
 async function replaceRecord(source, destination) {
